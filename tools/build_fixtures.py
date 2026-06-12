@@ -21,6 +21,8 @@ from pathlib import Path
 
 from docx import Document
 from docx.document import Document as DocxDocument
+from openpyxl import Workbook, load_workbook
+from PIL import Image, ImageDraw
 from pypdf import PdfReader
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -270,19 +272,181 @@ def _verify_internal() -> None:
     assert chapter_docs >= 3, f"标准章节条件应 ≥3,实际 {chapter_docs}"
 
 
+# ── P3:坏样例(确定可复现)──────────────────────────────────────────────────
+#: 坏样例元数据(供 P4 manifest)。scanned → 隔离演示;gap → QC 指标2 拦截演示。
+BAD_DOCS = [
+    {"filename": "bad_scanned.pdf", "title": "扫描件外规(隔离演示)", "corpus_type": "P-EXT",
+     "doc_number": "扫描件无文号", "issuer": "CSRC", "biz_domain": "DISCLOSURE", "kind": "scanned"},
+    {"filename": "bad_gap.docx", "title": "XX单位安全生产管理办法", "corpus_type": "P-INT",
+     "doc_number": "XX发〔2024〕7号", "issuer": "INTERNAL", "biz_domain": "FINANCE", "kind": "gap"},
+]
+
+
+def _make_scanned_pdf(dest: Path, pages: int = 2) -> None:
+    """PIL 画图片版 PDF(无文本层):模拟扫描件,pypdf 抽不出文本 → S1 隔离。"""
+    imgs = []
+    for pg in range(1, pages + 1):
+        im = Image.new("RGB", (1240, 1754), "white")  # A4 @150dpi
+        dr = ImageDraw.Draw(im)
+        dr.text((100, 80), f"SCANNED PAGE {pg} (image only, no text layer)", fill="black")
+        for i in range(22):
+            dr.text((100, 150 + i * 64), "xxxxxx " * 12, fill="black")  # 像素占位行
+        imgs.append(im)
+    imgs[0].save(str(dest), save_all=True, append_images=imgs[1:], format="PDF", resolution=150.0)
+
+
+def _make_gap_docx(dest: Path) -> None:
+    """标准内规但人工删去第八条,留第七→九跳号(QC 指标2:条号连续性)。"""
+    paras = [
+        "第一章 总则",
+        "第一条 为加强本单位安全生产管理,保障人员与财产安全,制定本办法。",
+        "第二条 本办法适用于本单位各部门的安全生产活动。",
+        "第二章 管理要求",
+        "第三条 各部门应当落实安全生产主体责任。",
+        "第四条 应当定期开展安全检查并建立台账。",
+        "第五条 发现安全隐患应当及时整改。",
+        "第六条 应当组织开展安全教育培训。",
+        "第七条 应当制定应急预案并定期演练。",
+        "第九条 发生安全事故应当按规定及时报告。",  # 跳过第八条
+        "第十条 对违反安全规定的行为应当追究责任。",
+        "第三章 附则",
+        "第十一条 本办法自发布之日起施行。",
+    ]
+    _build("XX单位安全生产管理办法", paras).save(str(dest))
+
+
+def gen_bad() -> int:
+    BATCH01.mkdir(parents=True, exist_ok=True)
+    _make_scanned_pdf(BATCH01 / "bad_scanned.pdf")
+    print("  ✓ 扫描件(图片版,无文本层) → bad_scanned.pdf")
+    _make_gap_docx(BATCH01 / "bad_gap.docx")
+    print("  ✓ 跳号件(缺第八条) → bad_gap.docx")
+    _verify_bad()
+    print(f"\n坏样例生成完成:{len(BAD_DOCS)} 件 → {BATCH01}")
+    return len(BAD_DOCS)
+
+
+def _verify_bad() -> None:
+    reader = PdfReader(str(BATCH01 / "bad_scanned.pdf"))
+    txt = "".join((p.extract_text() or "") for p in reader.pages)
+    assert len(txt.strip()) < 50, f"扫描件不应有文本层(抽出 {len(txt.strip())} 字)"
+    d = Document(str(BATCH01 / "bad_gap.docx"))
+    joined = "\n".join(p.text for p in d.paragraphs)
+    assert "第七条" in joined and "第九条" in joined, "跳号件应含第七条与第九条"
+    assert "第八条" not in joined, "跳号件不应含第八条(缺口)"
+
+
+# ── P4:batch02 真实修订对 + manifest 汇总 ────────────────────────────────────
+BATCH02 = ROOT / "fixtures" / "batch02_revision"
+BATCH02_SOURCES = Path(__file__).resolve().parent / "fixtures_batch02_sources.csv"
+
+#: manifest 9 必填列契约(B2 s0 解析须一致;后续可上提到 pipeline 作为单一来源)
+MANIFEST_COLS = [
+    "filename", "title", "doc_number", "issuer", "perm_tag",
+    "corpus_type", "biz_domain", "issue_date", "supersedes",
+]
+
+
+def _row(
+    filename: str, title: str, doc_number: str, issuer: str, perm_tag: str,
+    corpus_type: str, biz_domain: str, issue_date: str = "", supersedes: str = "",
+) -> dict[str, str]:
+    return {
+        "filename": filename, "title": title, "doc_number": doc_number, "issuer": issuer,
+        "perm_tag": perm_tag, "corpus_type": corpus_type, "biz_domain": biz_domain,
+        "issue_date": issue_date, "supersedes": supersedes,
+    }
+
+
+def _batch01_rows() -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    with SOURCES.open(encoding="utf-8-sig") as f:  # 外规下载
+        for r in csv.DictReader(f):
+            rows.append(_row(r["filename"], r["title"], r["doc_number"], r["issuer"],
+                             r["perm_tag"], r["corpus_type"], r["biz_domain"],
+                             r.get("issue_date", ""), r.get("supersedes", "")))
+    for meta, _ in INTERNAL_DOCS:  # 自拟内规
+        rows.append(_row(meta["filename"], meta["title"], meta["doc_number"], "INTERNAL",
+                         "内部", "P-INT", meta["biz_domain"], "2024-06-01", ""))
+    for m in BAD_DOCS:  # 坏样例
+        perm = "公开" if m["corpus_type"] == "P-EXT" else "内部"
+        rows.append(_row(m["filename"], m["title"], m["doc_number"], m["issuer"],
+                         perm, m["corpus_type"], m["biz_domain"], "", ""))
+    return rows
+
+
+def _batch02_rows() -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    with BATCH02_SOURCES.open(encoding="utf-8-sig") as f:
+        for r in csv.DictReader(f):
+            if r["role"] != "version":
+                continue  # 修订说明不入 manifest(走 revision_notes CLI 录入)
+            rows.append(_row(r["filename"], r["title"], r["doc_number"], r["issuer"],
+                             r["perm_tag"], r["corpus_type"], r["biz_domain"],
+                             r["issue_date"], r["supersedes"]))
+    return rows
+
+
+def _write_manifest(path: Path, rows: list[dict[str, str]]) -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "manifest"
+    ws.append(MANIFEST_COLS)  # 表头 = 9 必填列
+    for r in rows:
+        ws.append([r[c] for c in MANIFEST_COLS])
+    wb.save(str(path))
+
+
+def gen_batch02() -> int:
+    BATCH02.mkdir(parents=True, exist_ok=True)
+    n_ok = 0
+    with BATCH02_SOURCES.open(encoding="utf-8-sig") as f:
+        for r in csv.DictReader(f):
+            dest = BATCH02 / r["filename"]
+            _curl(r["url"], dest)
+            ok, npages = _text_layer_pages(dest)
+            print(f"  {'✓' if ok else '✗'} {r['filename']} ({npages} 页,{r['role']})")
+            n_ok += int(ok)
+    _write_manifest(BATCH01 / "manifest.xlsx", _batch01_rows())
+    _write_manifest(BATCH02 / "manifest.xlsx", _batch02_rows())
+    _verify_manifests()
+    print(f"\nbatch02 修订对 + manifest 完成 → {BATCH02}")
+    return n_ok
+
+
+def _verify_manifests() -> None:
+    for p in (BATCH01 / "manifest.xlsx", BATCH02 / "manifest.xlsx"):
+        ws = load_workbook(str(p)).active
+        header = [c.value for c in ws[1]]
+        assert header == MANIFEST_COLS, f"{p.name} 列不符:{header}"
+    ws = load_workbook(str(BATCH02 / "manifest.xlsx")).active
+    by_file = {
+        r[0]: dict(zip(MANIFEST_COLS, r, strict=False))
+        for r in ws.iter_rows(min_row=2, values_only=True)
+    }
+    assert by_file["ext_xxpl_226.pdf"]["supersedes"] == "ext_xxpl_182.pdf", "226 未声明替代 182"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="构造 fixtures 语料")
-    ap.add_argument("--download", action="store_true", help="下载外规 PDF(仅文本层)")
+    ap.add_argument("--download", action="store_true", help="下载外规 PDF(仅文本层,P1)")
     ap.add_argument("--gen-internal", action="store_true", help="生成自拟内规 docx(P2)")
+    ap.add_argument("--gen-bad", action="store_true", help="生成坏样例:扫描件 + 跳号 docx(P3)")
+    ap.add_argument("--gen-batch02", action="store_true", help="下载 batch02 修订对 + manifest(P4)")
+    ap.add_argument("--all", action="store_true", help="全部:download/internal/bad/batch02")
     args = ap.parse_args()
 
-    if args.download:
-        if download() < 3:
-            sys.exit("✗ 外规真下载不足 3 篇,P1 验收不通过")
-    if args.gen_internal:
-        if gen_internal() < 6:
-            sys.exit("✗ 内规生成不足 6 件,P2 验收不通过")
-    if not (args.download or args.gen_internal):
+    if args.all:
+        args.download = args.gen_internal = args.gen_bad = args.gen_batch02 = True
+    if args.download and download() < 3:
+        sys.exit("✗ 外规真下载不足 3 篇,P1 验收不通过")
+    if args.gen_internal and gen_internal() < 6:
+        sys.exit("✗ 内规生成不足 6 件,P2 验收不通过")
+    if args.gen_bad and gen_bad() < 2:
+        sys.exit("✗ 坏样例不足 2 件,P3 验收不通过")
+    if args.gen_batch02 and gen_batch02() < 2:
+        sys.exit("✗ batch02 下载/manifest 不完整,P4 验收不通过")
+    if not (args.download or args.gen_internal or args.gen_bad or args.gen_batch02):
         ap.print_help()
 
 
