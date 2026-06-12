@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audit-doc-pipeline-demo"
+version = "0.1.0"
+description = "文档处理管线 · 本地 Demo(M1)"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "pymilvus>=2.4,<2.5",
+    "python-docx>=1.1",
+    "pdfplumber>=0.11",
+    "rapidfuzz>=3.6",
+    "openpyxl>=3.1",
+    "python-ulid>=2.2",
+    "setuptools>=68,<81",  # 提供 pkg_resources(pymilvus 2.4 运行期需要;81+ 已移除 pkg_resources)
+]
+
+[project.optional-dependencies]
+# 本地嵌入(torch,重)——仅运行 local 模式时需要;endpoint 模式不需
+embed = ["FlagEmbedding>=1.2"]
+dev = ["ruff>=0.4", "pytest>=8.0", "pypdf>=4.0"]
+
+[project.scripts]
+demo = "pipeline.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["alembic/versions"]  # autogenerate 出的迁移不纳入 lint
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

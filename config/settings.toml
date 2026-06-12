@@ -1,0 +1,44 @@
+# 连接串、嵌入模式、开关、Milvus/对齐/解析/切块参数。
+# 所有 ⚠ 值集中于此;运行期/敏感值(DSN、endpoint、密钥、HF_HOME)可由 env 覆盖。
+
+[db]
+# env 覆盖:PIPELINE_DB_DSN
+dsn = "postgresql+psycopg://pipeline:pipeline@localhost:5432/audit_pipeline"
+
+[milvus]
+# env 覆盖:PIPELINE_MILVUS_HOST
+host = "localhost"
+port = 19530
+collection = "audit_corpus"
+hnsw_m = 16                     # ⚠ HNSW M
+hnsw_ef_construction = 200      # ⚠ HNSW efConstruction
+upsert_batch = 500              # ⚠ 批量 upsert 条数
+
+[embedding]
+# env 覆盖:PIPELINE_EMBEDDING_MODE / OPENAI_BASE_URL / OPENAI_API_KEY / HF_HOME
+mode = "local"                  # local | endpoint(M1 默认 local)
+model_name = "BAAI/bge-m3"
+batch_size = 64                 # ⚠
+max_length = 1024               # ⚠
+retries = 3                     # ⚠ 指数退避次数
+
+[object_store]
+root = "./_objectstore"
+
+[toggles]
+l2_enabled = false              # M1 零 LLM
+e1_enabled = true               # E1 义务预打标默认开(零 LLM 正则)
+
+[align]
+header_band_pct = 0.08          # ⚠ 顶部页眉带占页高比例
+footer_band_pct = 0.08          # ⚠ 底部页脚带占页高比例
+fuzzy_threshold = 90            # ⚠ rapidfuzz 兜底阈值(0-100)
+
+[parse]
+scanned_char_per_page_max = 50  # ⚠ <50 字/页 判扫描件 → 隔离(E202-DEMO)
+parse_timeout_sec = 300         # ⚠ 单文档解析超时 5min(E203)
+
+[chunk]
+target_token_min = 300          # ⚠ 切块目标下界
+target_token_max = 600          # ⚠ 切块目标上界
+parent_block_token_max = 2000   # ⚠ 父块(节级)上限,仅 PG

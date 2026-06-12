@@ -1,0 +1,10 @@
+code,name,parent_code
+DISCLOSURE,信息披露,
+SUITABILITY,投资者适当性,
+LISTING,上市管理,
+SELF_REGULATION,自律管理,
+EXPENSE,费用报销,FINANCE
+FINANCE,财务管理,
+APPROVAL,审批管理,
+SEAL,印章管理,
+CONTRACT,合同管理,

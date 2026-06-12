@@ -1,0 +1,9 @@
+# S2 质检七指标阈值 + 边缘通过带 ε(全部 ⚠,demo 默认值,不据此对甲方承诺指标)
+clause_coverage_min: 0.95       # 指标1 条款覆盖率 ≥95%
+clause_continuity_max_gap: 0    # 指标2 条号连续性:允许缺口数 = 0
+hierarchy_illegal_max: 0        # 指标3 层级合法性:章→节→条倒挂块数 = 0
+page_anchor_complete_min: 1.0   # 指标4 页码锚点完整率 = 100%
+table_empty_max: 0.05           # 指标5 空表占比 ≤5%
+text_garbled_max: 0.01          # 指标6 非 CJK 乱码占比 ≤1%
+extraction_sufficiency_min: 0.7 # 指标7 抽取充分性(字符数 / (页数×中位密度))≥0.7
+edge_band_epsilon: 0.02         # 边缘通过带 ε:落 [阈值, 阈值+ε] → qc_marginal 标记
