@@ -99,8 +99,8 @@ def _tail_doc() -> IRDocument:
         doc_version_id="DVMIN",
         source_format=SourceFormat.DOCX,
         blocks=[
-            Block(index=0, type=P, text="第一条 甲乙丙丁戊己庚辛壬癸", page=1),  # 超 max 的条头
-            Block(index=1, type=P, text="尾。", page=1),  # 极短尾款
+            Block(index=0, type=P, text="第一条 正文正文正文", page=1),  # 9 token ≤max
+            Block(index=1, type=P, text="补。", page=1),  # 2 token 小尾款
         ],
     )
 
@@ -111,6 +111,48 @@ def test_target_token_min_coalesces_tail():
     with_min = ChunkConfig(target_token_min=5, target_token_max=10, parent_block_token_max=50)
     a = _by_norm(build_chunks(_tail_doc(), no_min), "1")
     b = _by_norm(build_chunks(_tail_doc(), with_min), "1")
-    assert len(a) == 2  # 碎尾"尾。"独立成块
+    assert len(a) == 2  # 碎尾"补。"独立成块
     assert len(b) == 1  # 尾块并回 → 单块
-    assert "尾" in b[0].text and "甲乙丙丁" in b[0].text  # 合并后含两段
+    assert "正文" in b[0].text and "补" in b[0].text  # 合并后含两段
+
+
+def test_single_oversize_paragraph_splits_semantically():
+    # 单段超长条(整条一个段落):在 项标记（N）/句末；。 切,内容每块 ≤max,非硬切
+    cfg = ChunkConfig(target_token_min=1, target_token_max=12, parent_block_token_max=50)
+    doc = IRDocument(
+        doc_version_id="DVO",
+        source_format=SourceFormat.DOCX,
+        blocks=[
+            Block(
+                index=0,
+                type=BlockType.PARAGRAPH,
+                text="第二条 应当报告:（一）甲类事项情况；（二）乙类事项情况；（三）丙类事项情况。",
+                page=1,
+            )
+        ],
+    )
+    chunks = _by_norm(build_chunks(doc, cfg), "2")
+    assert len(chunks) >= 2
+    assert all(c.token_count <= cfg.target_token_max for c in chunks)  # 内容 ≤max
+    assert not any(c.oversize for c in chunks)
+
+
+def test_oversize_no_boundary_hard_splits_and_marks():
+    # 无 项标记/句末 的超长串:字符硬切兜底,内容仍 ≤max 且标 oversize
+    cfg = ChunkConfig(target_token_min=1, target_token_max=10, parent_block_token_max=50)
+    doc = IRDocument(
+        doc_version_id="DVH",
+        source_format=SourceFormat.DOCX,
+        blocks=[
+            Block(
+                index=0,
+                type=BlockType.PARAGRAPH,
+                text="第三条甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥天地玄黄",
+                page=1,
+            )
+        ],
+    )
+    chunks = _by_norm(build_chunks(doc, cfg), "3")
+    assert len(chunks) >= 2
+    assert all(c.token_count <= cfg.target_token_max for c in chunks)
+    assert any(c.oversize for c in chunks)

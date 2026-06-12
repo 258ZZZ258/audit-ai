@@ -18,6 +18,8 @@ from pipeline.chunking.normalize import normalize_clause_no, strip_ws, to_halfwi
 from pipeline.ir import Block
 
 _NUM = r"[〇零一二三四五六七八九十百千两\d]+"
+# 条号(可含插入条西文/小数写法:21bis、21.1b);最终交 normalize_clause_no 归一与校验
+_ART_NUM = rf"(?:{_NUM}(?:bis|ter|quater|quinquies)?|\d+\.\d+[a-zA-Z]?)"
 _CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫"
 
 
@@ -67,11 +69,14 @@ def classify_heading(text: str) -> Heading | None:
         m = re.match(rf"^第({_NUM}){suffix}", s)
         if m:
             return Heading(nt, normalize_clause_no(m.group(1)), m.group(0))
-    # 条(含插入条 之N)
-    m = re.match(rf"^第({_NUM})条(?:之({_NUM}))?", s)
+    # 条(插入条:中文之N / 西文 bis / 小数式 21.1b)
+    m = re.match(rf"^第({_ART_NUM})条(?:之({_NUM}))?", s)
     if m:
-        num = m.group(1) + ("之" + m.group(2) if m.group(2) else "")
-        return Heading(NodeType.ARTICLE, normalize_clause_no(num), m.group(0))
+        raw = m.group(1) + ("之" + m.group(2) if m.group(2) else "")
+        try:
+            return Heading(NodeType.ARTICLE, normalize_clause_no(raw), m.group(0))
+        except ValueError:
+            pass  # 第…条 但号非法 → 落到项/目(通常不命中)
     # 项:(一) / （一） / 一、
     m = re.match(rf"^[（(]({_NUM})[）)]", s) or re.match(rf"^({_NUM})、", s)
     if m:
@@ -87,11 +92,14 @@ def find_internal_refs(text: str) -> list[InternalRef]:
     """捕获正文中的 第X[章节条款项](含之N),归一化。"""
     s = strip_ws(to_halfwidth(text))
     refs: list[InternalRef] = []
-    # 第 + 数字 + 级别字 + 可选「之N」(插入条:第X条之一)
-    for m in re.finditer(rf"第({_NUM})([章节条款项])(?:之({_NUM}))?", s):
+    # 第 + 号(含 bis/小数式)+ 级别字 + 可选「之N」(插入条:第X条之一)
+    for m in re.finditer(rf"第({_ART_NUM})([章节条款项])(?:之({_NUM}))?", s):
         base, level, insert = m.group(1), m.group(2), m.group(3)
-        num = base + ("之" + insert if insert else "")
-        refs.append(InternalRef(level, normalize_clause_no(num), m.group(0)))
+        raw = base + ("之" + insert if insert else "")
+        try:
+            refs.append(InternalRef(level, normalize_clause_no(raw), m.group(0)))
+        except ValueError:
+            continue
     return refs
 
 

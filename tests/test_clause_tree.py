@@ -21,6 +21,9 @@ def blk(i: int, text: str) -> Block:
         ("第二节 信息披露", NodeType.SECTION, "2"),
         ("第二十一条 信息披露义务人应当……", NodeType.ARTICLE, "21"),
         ("第二十一条之一 新增情形……", NodeType.ARTICLE, "21-1"),
+        ("第21bis条 西文插入条", NodeType.ARTICLE, "21-1"),
+        ("第21ter条 第二个插入", NodeType.ARTICLE, "21-2"),
+        ("第21.1b条 小数式插入条", NodeType.ARTICLE, "21-1"),
         ("第二款 前款所称……", NodeType.CLAUSE, "2"),
         ("（三）其他情形", NodeType.ITEM, "3"),
         ("三、其他情形", NodeType.ITEM, "3"),
@@ -38,6 +41,20 @@ def test_classify_heading(text, ntype, number):
 def test_classify_heading_non_heading():
     assert classify_heading("本条所称信息披露义务人，是指……") is None
     assert classify_heading("   ") is None
+    # 「第三方协议条款」不是条标题(号非「条」前合法数字),不应误判
+    assert classify_heading("第三方协议条款应当明确双方权利义务") is None
+
+
+def test_build_tree_and_refs_handle_bis():
+    blocks = [
+        blk(0, "第二十一条 一般情形……"),
+        blk(1, "第21bis条 新增的西文插入条规定如下。"),
+        blk(2, "前述适用第21bis条与第二十一条之一的规定。"),  # 正文引用
+    ]
+    root = build_tree(blocks)
+    assert [a.number for a in iter_articles(root)] == ["21", "21-1"]  # bis 进树
+    refs = [(r.level, r.number) for r in find_internal_refs(blocks[2].text)]
+    assert ("条", "21-1") in refs
 
 
 def test_build_tree_nesting_and_path_norm():

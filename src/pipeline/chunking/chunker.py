@@ -2,8 +2,9 @@
 
 六规则:
 1. 原子 = 条:每个 ARTICLE 是基础切块单元。
-2. 超长按款拆 + 条头续接:条文 token 超 target_max → 按款(段落)贪心分组(尾组 < target_min
-   则并回前组,允许略超 max,仅同条内),g>0 组前缀条头。
+2. 超长按款拆 + 条头续接:条文 token 超 target_max → 按款(段落)分组;**单段超长**再在
+   项标记（N）/句末；。 语义边界内切(无边界长句字符硬切,标 oversize);贪心打包 ≤max
+   (尾组 < target_min 并回前组,仅同条内),g>0 组前缀条头。
 3. 超短独立:短条自成一块,不与邻块合并。
 4. 父块 = 节级仅 PG:每个 SECTION 出一个 is_parent 块(≤parent_block_token_max),仅入 PG、不进 Milvus。
 5. 表格独立块按行组拆 + 重复表头:表格块自成块;超长按行组拆,每组重复表头;is_table。
@@ -15,6 +16,7 @@ chunk_id = sha1(doc_version_id|clause_path_norm|seq)[:24] —— 逐字确定性
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
@@ -38,6 +40,7 @@ class ChunkSpec:
     token_count: int
     is_parent: bool = False
     is_table: bool = False
+    oversize: bool = False  # 单段超长无语义边界,被字符硬切(质量信号)
 
 
 def compute_chunk_id(doc_version_id: str, clause_path_norm: str, seq: int) -> str:
@@ -111,6 +114,48 @@ def _coalesce_tail(groups: list[list], count_fn: Callable[[object], int], min_to
         groups[-2].extend(groups.pop())
 
 
+_ITEM_MARK = r"(?=[（(][〇零一二三四五六七八九十百千两\d]+[）)])"  # 项标记（N）之前
+_SENT_END = r"(?<=[；。;])"  # 句末；。 之后
+
+
+def _split_oversize(text: str, max_tokens: int) -> list[tuple[str, bool]]:
+    """超 max 单段:项标记/句末边界切子单元 → 贪心打包 ≤max;无边界长句字符硬切(标 oversize)。"""
+    subunits: list[str] = []
+    for part in re.split(_ITEM_MARK, text):
+        subunits.extend(s for s in re.split(_SENT_END, part) if s.strip())
+    if not subunits:
+        subunits = [text]
+    out: list[tuple[str, bool]] = []
+    cur = ""
+    for u in subunits:
+        if count_tokens(u) > max_tokens:  # 无边界长句 → 字符硬切
+            if cur:
+                out.append((cur, False))
+                cur = ""
+            out.extend((u[i : i + max_tokens], True) for i in range(0, len(u), max_tokens))
+            continue
+        if cur and count_tokens(cur) + count_tokens(u) > max_tokens:
+            out.append((cur, False))
+            cur = ""
+        cur += u
+    if cur:
+        out.append((cur, False))
+    return out
+
+
+def _decompose(
+    text_pairs: list[tuple[str, Block]], max_tokens: int
+) -> list[tuple[str, Block, bool]]:
+    """段落级单元;单段超长者再拆为子单元(继承所属 block 用于页码)。"""
+    units: list[tuple[str, Block, bool]] = []
+    for text, block in text_pairs:
+        if count_tokens(text) > max_tokens:
+            units.extend((seg, block, hard) for seg, hard in _split_oversize(text, max_tokens))
+        else:
+            units.append((text, block, False))
+    return units
+
+
 def _mk_chunk(
     dvid: str,
     cp_norm: str,
@@ -121,9 +166,12 @@ def _mk_chunk(
     *,
     is_parent: bool = False,
     is_table: bool = False,
+    oversize: bool = False,
+    content_tokens: int | None = None,
 ) -> ChunkSpec:
     text = f"{breadcrumb}\n{body}" if breadcrumb else body
     ps, pe = _page_span(page_blocks)
+    # token_count 量内容(默认 body,不含面包屑;拆分路径可显式传不含条头续接的内容数)
     return ChunkSpec(
         chunk_id=compute_chunk_id(dvid, cp_norm, seq),
         doc_version_id=dvid,
@@ -134,9 +182,10 @@ def _mk_chunk(
         breadcrumb=breadcrumb,
         page_start=ps,
         page_end=pe,
-        token_count=count_tokens(text),
+        token_count=content_tokens if content_tokens is not None else count_tokens(body),
         is_parent=is_parent,
         is_table=is_table,
+        oversize=oversize,
     )
 
 
@@ -178,15 +227,17 @@ def _article_chunks(
             out.append(_mk_chunk(dvid, cp_norm, seq, breadcrumb, body_text, pblocks))
             seq += 1
         else:
-            groups = _group_by_budget(
-                text_pairs, lambda p: count_tokens(p[0]), cfg.target_token_max
-            )
-            _coalesce_tail(groups, lambda p: count_tokens(p[0]), cfg.target_token_min)
+            units = _decompose(text_pairs, cfg.target_token_max)  # 含单段超长拆分
+            groups = _group_by_budget(units, lambda u: count_tokens(u[0]), cfg.target_token_max)
+            _coalesce_tail(groups, lambda u: count_tokens(u[0]), cfg.target_token_min)
             for g, grp in enumerate(groups):
-                seg = "\n".join(t for t, _ in grp)
-                if g > 0:
-                    seg = f"{heading}\n{seg}"  # 条头续接
-                out.append(_mk_chunk(dvid, cp_norm, seq, breadcrumb, seg, [b for _, b in grp]))
+                content = "\n".join(u[0] for u in grp)
+                body = content if g == 0 else f"{heading}\n{content}"  # 条头续接
+                out.append(_mk_chunk(
+                    dvid, cp_norm, seq, breadcrumb, body, [u[1] for u in grp],
+                    oversize=any(u[2] for u in grp),
+                    content_tokens=count_tokens(content),
+                ))
                 seq += 1
 
     for tb in table_blocks:
