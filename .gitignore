@@ -7,3 +7,5 @@ __pycache__/
 .ruff_cache/
 _objectstore/
 .DS_Store
+# fixtures 可由 tools/build_fixtures.py 重建,不入库(二进制语料)
+/fixtures/

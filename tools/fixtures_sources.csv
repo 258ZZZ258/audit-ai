@@ -1,0 +1,4 @@
+filename,url,corpus_type,doc_number,issuer,biz_domain,perm_tag,title
+ext_xxpl_182.pdf,https://www.csrc.gov.cn/csrc/c106256/c1653948/1653948/files/317acd342b4a437596920f576209385f.pdf,P-EXT,证监会令第182号,CSRC,DISCLOSURE,公开,上市公司信息披露管理办法（2021）
+ext_fei_shangshi_shougou.pdf,http://www.csrc.gov.cn/csrc/c106256/c1653991/1653991/files/23c61cffa4924e2e8dfce8a5b81ac553.pdf,P-EXT,证监会令第102号,CSRC,LISTING,公开,非上市公众公司收购管理办法
+ext_sse_listing.pdf,https://www.sse.com.cn/lawandrules/sselawsrules/repeal/rules/c/10635645/files/a58091aef75c46c0a43ce2cd11d1379c.pdf,P-EXT,上证发〔2013〕26号,SSE,SELF_REGULATION,公开,上海证券交易所股票上市规则
