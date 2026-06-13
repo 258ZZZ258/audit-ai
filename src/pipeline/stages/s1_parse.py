@@ -1,5 +1,9 @@
 """S1 解析:渲染件生成(写一次,reprocess 复用)→ light 抽结构 → 文本对齐回填页码 → IR 落库。
 
+两个 stage 入口(均经 orchestrator 按当前态调用):
+- ``start``:REGISTERED → PARSING,登记后认领解析的薄 stage(纯状态翻转,见下方说明);
+- ``run``:PARSING → QC_PENDING,实际解析。
+
 docx:soffice 渲染为规范 PDF(页码权威)→ python-docx 抽结构 → page_align 回填;
 渲染失败 → PARSE_FAILED(E204-DEMO)。
 pdf:pdfplumber 直接抽(页码原生);扫描件(字符密度 <阈值)→ QUARANTINED(E202-DEMO)。
@@ -19,6 +23,17 @@ from pipeline.parsing.page_align import align_blocks
 from pipeline.parsing.rendition import page_texts, render_pdf
 from pipeline.stage_base import QueueItem, QueueType, StageContext, StageResult
 from pipeline.states import ErrorCode, PipelineState
+
+
+def start(ctx: StageContext, doc_version_id: str) -> StageResult:  # noqa: ARG001 (统一 stage 签名)
+    """REGISTERED → PARSING:登记后认领解析的薄 stage,纯状态翻转,不读不写。
+
+    ``run`` 建模 PARSING → QC_PENDING,故需要本 stage 先把 REGISTERED 推进到 PARSING
+    (迁移表无 REGISTERED → QC_PENDING)。起始时间已由 orchestrator 写入 pipeline_events,
+    无需再挂 DocVersion。PARSING 因此是落库的"解析中"态:worker 崩在 ``run`` 中途时文档停在
+    PARSING,重启后被重新轮询并重跑 ``run``(渲染件写一次 + IR 覆盖,天然幂等)。
+    """
+    return StageResult(next_state=PipelineState.PARSING)
 
 
 def run(ctx: StageContext, doc_version_id: str) -> StageResult:

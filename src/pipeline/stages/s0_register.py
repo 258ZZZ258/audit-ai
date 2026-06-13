@@ -14,6 +14,7 @@ import io
 import zipfile
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -70,6 +71,23 @@ def detect_format(data: bytes) -> str:
     return "unknown"
 
 
+def _parse_issue_date(value: object) -> date | None:
+    """manifest issue_date 归一到 date:openpyxl 日期格给 datetime,文本格给 ISO 字符串。
+
+    空 → None;非空但无法解析 → None(由调用方仅告警入报告,不拒批)。
+    """
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):  # datetime 是 date 的子类,须先判
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value).strip())
+    except ValueError:
+        return None
+
+
 def _read_manifest(path: Path) -> tuple[list, list[dict]]:
     ws = load_workbook(str(path)).active
     header = [c.value for c in ws[1]]
@@ -112,19 +130,38 @@ def _resolve_logical(
     return prior.logical_id, prior.doc_version_id, "revise_replace"
 
 
+def _ensure_batch(
+    ctx: StageContext, batch_id: str, batch_dir: Path, manifest_path: Path
+) -> None:
+    """get-or-create 批次行:同 batch_id 重跑复用既有行(不重插、不动 created_at/report)。
+
+    使 register_batch 对同 batch_id 幂等可重试——中途崩溃后拿同 batch_id 续跑不再撞主键,
+    后续每文件 SHA 去重照常命中已登记文件(返回 DUPLICATE,不新建 doc_version → chunk_id 稳定)。
+    """
+    if ctx.db.get(ImportBatch, batch_id) is not None:
+        return
+    ctx.db.add(
+        ImportBatch(batch_id=batch_id, source_dir=str(batch_dir), manifest_path=str(manifest_path))
+    )
+
+
 def register_batch(
     ctx: StageContext, batch_id: str, batch_dir: Path, manifest_path: Path
 ) -> RegisterReport:
     header, rows = _read_manifest(Path(manifest_path))
-    missing = [c for c in REQUIRED_COLUMNS if c not in (header or [])]
-    if missing:  # 9 列不匹配 → 整批拒收,不落库
+    # SPEC §S0:9 列契约要求列集合精确匹配——缺列/多列均整批拒收(空表头单元格不计为列)。
+    header_cols = [c for c in (header or []) if c not in (None, "")]
+    missing = [c for c in REQUIRED_COLUMNS if c not in header_cols]
+    extra = [c for c in header_cols if c not in REQUIRED_COLUMNS]
+    if missing or extra:
+        parts = ([f"缺必填列: {missing}"] if missing else []) + (
+            [f"多余列: {extra}"] if extra else []
+        )
         return RegisterReport(
-            batch_id, accepted=False, reject_reason=f"manifest 缺必填列: {missing}"
+            batch_id, accepted=False, reject_reason="manifest 列不匹配(" + "; ".join(parts) + ")"
         )
 
-    ctx.db.add(
-        ImportBatch(batch_id=batch_id, source_dir=str(batch_dir), manifest_path=str(manifest_path))
-    )
+    _ensure_batch(ctx, batch_id, batch_dir, manifest_path)
     report = RegisterReport(batch_id, accepted=True)
     for row in rows:
         if not row.get("filename"):
@@ -151,6 +188,10 @@ def _register_one(
 
     if not doc_number:
         report.warnings.append(f"{fn}: 发文字号缺失(仅告警)")
+
+    issue_date = _parse_issue_date(row.get("issue_date"))
+    if row.get("issue_date") and issue_date is None:
+        report.warnings.append(f"{fn}: issue_date 无法解析({row.get('issue_date')!r}),置空(仅告警)")
 
     dup = _find_by_hash(ctx, sha)
     if dup is not None:  # 精确去重:不重复登记,标注关联
@@ -191,6 +232,7 @@ def _register_one(
                 biz_domain=str(row.get("biz_domain") or "") or None,
                 issuer=str(row.get("issuer") or "") or None,
                 doc_number=doc_number or None,
+                issue_date=issue_date,
                 title=title or None,
                 version_relation=relation,
                 supersedes_version_id=supersedes_vid,

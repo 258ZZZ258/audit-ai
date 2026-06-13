@@ -12,7 +12,7 @@ from pipeline.config import load_config
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
 from pipeline.index.pg_models import Document, DocVersion, ImportBatch, PipelineEvent
-from pipeline.parsing.rendition import render_pdf, soffice_bin
+from pipeline.parsing.rendition import render_pdf
 from pipeline.stage_base import StageContext
 from pipeline.stages import s1_parse as s1
 from pipeline.states import PipelineState as PS
@@ -45,13 +45,6 @@ def env(pg, tmp_path):
             s.execute(delete(Document).where(Document.logical_id.in_(lids)))
         if batches:
             s.execute(delete(ImportBatch).where(ImportBatch.batch_id.in_(batches)))
-
-
-def _need_soffice():
-    try:
-        soffice_bin()
-    except RuntimeError:
-        pytest.skip("soffice 不可用")
 
 
 def _make_doc(ctx, fmt, data, *, corpus="P-INT") -> tuple[str, str]:
@@ -89,8 +82,15 @@ def _scanned_pdf_bytes() -> bytes:
     return buf.getvalue()
 
 
-def test_docx_renders_aligns_writes_ir(env):
-    _need_soffice()
+def test_start_claims_registered_to_parsing():
+    # 薄 stage:REGISTERED → PARSING,纯状态翻转,不读不写、无入队/错误码(无需 PG/soffice)
+    res = s1.start(StageContext(config=load_config()), "anydvid")
+    assert res.next_state is PS.PARSING
+    assert res.queue is None
+    assert res.error_code is None
+
+
+def test_docx_renders_aligns_writes_ir(env, soffice):
     ctx, batches = env
     bid, dvid = _make_doc(ctx, "docx", _docx_bytes())
     batches.append(bid)
@@ -103,8 +103,7 @@ def test_docx_renders_aligns_writes_ir(env):
     assert dv.ir_object_key and dv.rendition_object_key
 
 
-def test_pdf_native_pages(env, tmp_path):
-    _need_soffice()
+def test_pdf_native_pages(env, tmp_path, soffice):
     ctx, batches = env
     src = tmp_path / "s.docx"
     src.write_bytes(_docx_bytes())
@@ -128,8 +127,7 @@ def test_scanned_pdf_quarantined(env):
     assert res.queue is not None and res.queue.queue_type == "quarantine"
 
 
-def test_rendition_write_once_on_reprocess(env):
-    _need_soffice()
+def test_rendition_write_once_on_reprocess(env, soffice):
     ctx, batches = env
     bid, dvid = _make_doc(ctx, "docx", _docx_bytes())
     batches.append(bid)

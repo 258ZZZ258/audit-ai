@@ -1,6 +1,5 @@
 import io
 
-import pytest
 from docx import Document as Docx
 from PIL import Image, ImageDraw
 
@@ -55,13 +54,9 @@ def test_unsupported_format():
     assert not res.ok and res.error_code == "E101-DEMO"  # 白名单外
 
 
-def test_pdf_text_layer(tmp_path):
-    from pipeline.parsing.rendition import render_pdf, soffice_bin
+def test_pdf_text_layer(tmp_path, soffice):
+    from pipeline.parsing.rendition import render_pdf
 
-    try:
-        soffice_bin()
-    except RuntimeError:
-        pytest.skip("soffice 不可用")
     src = tmp_path / "a.docx"
     src.write_bytes(_docx_bytes())
     pdf = render_pdf(src, tmp_path)

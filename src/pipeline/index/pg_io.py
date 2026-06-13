@@ -23,6 +23,7 @@ from pipeline.index.pg_models import (
     DictIssuer,
     DocVersion,
     PipelineEvent,
+    ReviewQueue,
 )
 from pipeline.states import PipelineState, can_transition
 
@@ -74,8 +75,14 @@ class PgIO:
         actor: str = "system",
         error_code: str | None = None,
         detail: dict | None = None,
+        queue_row: ReviewQueue | None = None,
     ) -> None:
-        """原子迁移:校验合法性 → 更新 pipeline_status → 写 pipeline_events。"""
+        """原子迁移:校验合法性 → 更新 pipeline_status → 写 pipeline_events(可选同事务入队)。
+
+        ``queue_row`` 非空时与迁移共用同一事务:守卫失败(非法迁移)或任何 DB 错误都会
+        一并回滚,不会遗留"有 open 队列项却没进对应等待态"的孤儿行(入队与迁移要么全成、
+        要么全滚)。
+        """
         to = PipelineState(to_state)
         with self.session() as s:
             dv = s.get(DocVersion, doc_version_id)
@@ -97,6 +104,8 @@ class PgIO:
                     detail=detail,
                 )
             )
+            if queue_row is not None:
+                s.add(queue_row)
 
     # ── chunks ────────────────────────────────────────────────
     def bulk_insert_chunks(self, chunks: list[Chunk]) -> None:

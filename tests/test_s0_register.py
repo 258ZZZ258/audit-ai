@@ -1,6 +1,7 @@
 """s0_register 集成测试(连真 PG;不可达 skip)。临时构造批次,测完按 FK 序清理。"""
 
 import io
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -70,12 +71,16 @@ def _bid() -> str:
     return "t_" + str(ULID())  # 完整 ULID:前缀是时间戳,截断会在同毫秒内相撞
 
 
-def _make_batch(base: Path, bid: str, rows: list[dict], files: dict, *, drop_col=None):
+def _make_batch(
+    base: Path, bid: str, rows: list[dict], files: dict, *, drop_col=None, extra_col=None
+):
     d = base / bid
     d.mkdir(parents=True, exist_ok=True)
     for fn, data in files.items():
         (d / fn).write_bytes(data)
     cols = [c for c in REQUIRED_COLUMNS if c != drop_col]
+    if extra_col:
+        cols.append(extra_col)
     wb = Workbook()
     ws = wb.active
     ws.append(cols)
@@ -103,6 +108,27 @@ def test_manifest_missing_column_rejects_batch(reg):
     rep = register_batch(ctx, bid, d, mp)
     assert rep.accepted is False and "biz_domain" in rep.reject_reason
     assert ctx.db.get(ImportBatch, bid) is None  # 整批拒收,未落库
+
+
+def test_manifest_extra_column_rejects_batch(reg):
+    ctx, base, _ = reg
+    bid = _bid()
+    d, mp = _make_batch(
+        base, bid, [_row("a.docx")], {"a.docx": _docx()}, extra_col="unexpected_col"
+    )
+    rep = register_batch(ctx, bid, d, mp)
+    assert rep.accepted is False and "unexpected_col" in rep.reject_reason  # 多列整批拒收
+    assert ctx.db.get(ImportBatch, bid) is None  # 未落库
+
+
+def test_issue_date_written_to_doc_version(reg):
+    ctx, base, batches = reg
+    bid = _bid()
+    batches.append(bid)
+    d, mp = _make_batch(base, bid, [_row("a.docx", issue_date="2024-03-15")], {"a.docx": _docx()})
+    o = register_batch(ctx, bid, d, mp).outcomes[0]
+    dv = ctx.db.get(DocVersion, o.doc_version_id)
+    assert dv.issue_date == date(2024, 3, 15)  # manifest issue_date 写入并归一为 date
 
 
 def test_registers_docx_and_pdf(reg):
@@ -150,6 +176,22 @@ def test_sha_dedup_second_is_duplicate(reg):
     d2, mp2 = _make_batch(base, bid2, [_row("a.docx")], {"a.docx": data})
     o = register_batch(ctx, bid2, d2, mp2).outcomes[0]
     assert o.status == "DUPLICATE"
+
+
+def test_reingest_same_batch_id_is_idempotent(reg):
+    ctx, base, batches = reg
+    bid = _bid()
+    batches.append(bid)
+    d, mp = _make_batch(base, bid, [_row("a.docx")], {"a.docx": _docx("同一内容")})
+    out1 = register_batch(ctx, bid, d, mp).outcomes[0]
+    assert out1.status == "REGISTERED"
+    # 同 batch_id 重跑:不撞主键(get-or-create),SHA 去重命中 → DUPLICATE,doc_version_id 不变
+    out2 = register_batch(ctx, bid, d, mp).outcomes[0]
+    assert out2.status == "DUPLICATE"
+    assert out2.doc_version_id == out1.doc_version_id  # 复用既有 doc_version → chunk_id 稳定
+    with ctx.db.session() as s:  # 仍只有一行批次
+        n = len(list(s.scalars(select(ImportBatch).where(ImportBatch.batch_id == bid))))
+    assert n == 1
 
 
 def test_supersede_inherits_logical(reg):

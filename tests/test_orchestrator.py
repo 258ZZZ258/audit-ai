@@ -89,6 +89,22 @@ def test_advances_until_human_wait_and_enqueues(pg, doc_version):
     assert len(qs) == 1 and qs[0].queue_type == "qc_fix" and qs[0].status == "open"
 
 
+def test_illegal_transition_with_queue_rolls_back_atomically(pg, doc_version):
+    # 非法迁移(REGISTERED → INDEXED)且带队列项:transition 守卫抛错,入队 + event 应一并回滚
+    stages = {PS.REGISTERED: _stage(PS.INDEXED, queue=True)}
+    orch = Orchestrator(pg, _ctx(), stages)
+    dv = pg.get(DocVersion, doc_version)
+    with pytest.raises(ValueError):
+        orch.step(dv)
+    with pg.session() as s:
+        qs = list(s.scalars(select(ReviewQueue).where(ReviewQueue.doc_version_id == doc_version)))
+        ev_q = select(PipelineEvent).where(PipelineEvent.doc_version_id == doc_version)
+        evs = list(s.scalars(ev_q))
+    assert qs == []  # 无孤儿队列行
+    assert evs == []  # event 同事务一并回滚
+    assert pg.get(DocVersion, doc_version).pipeline_status == PS.REGISTERED.value  # 文档未动
+
+
 def test_human_wait_state_not_polled(pg, doc_version):
     # 文档先到 META_REVIEW(人工等待态),即便注册了 stage 也不应被轮询推进
     pg.transition(doc_version, PS.PARSING)

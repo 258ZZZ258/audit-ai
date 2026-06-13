@@ -32,28 +32,25 @@ class Orchestrator:
         states = [s for s in WORKER_ADVANCEABLE_STATES if s in self.stages]
         return self.pg.docs_in_states(states)
 
-    def _enqueue(self, item: QueueItem) -> None:
-        with self.pg.session() as s:
-            s.add(
-                ReviewQueue(
-                    queue_id=str(ULID()),
-                    queue_type=item.queue_type,
-                    doc_version_id=item.doc_version_id,
-                    reason=item.reason,
-                    evidence=item.evidence,
-                    status="open",
-                )
-            )
+    def _queue_row(self, item: QueueItem) -> ReviewQueue:
+        return ReviewQueue(
+            queue_id=str(ULID()),
+            queue_type=item.queue_type,
+            doc_version_id=item.doc_version_id,
+            reason=item.reason,
+            evidence=item.evidence,
+            status="open",
+        )
 
     def _apply(self, dvid: str, result: StageResult) -> None:
-        if result.queue is not None:
-            self._enqueue(result.queue)
+        # 入队与迁移同一事务(pg_io.transition 内):非法迁移/DB 错误一并回滚,不留孤儿队列行。
         self.pg.transition(
             dvid,
             result.next_state,
             actor="system",
             error_code=result.error_code,
             detail=result.evidence,
+            queue_row=self._queue_row(result.queue) if result.queue is not None else None,
         )
 
     def step(self, dv: DocVersion) -> bool:
