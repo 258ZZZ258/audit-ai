@@ -76,6 +76,7 @@ class DocVersion(AuditMixin, Base):
     raw_object_key: Mapped[str] = mapped_column(String(512))
     rendition_object_key: Mapped[str | None] = mapped_column(String(512))  # 规范渲染件
     ir_object_key: Mapped[str | None] = mapped_column(String(512))
+    source_filename: Mapped[str | None] = mapped_column(String(256))  # 原始文件名(替代解析/溯源)
 
     pipeline_status: Mapped[str] = mapped_column(String(32), index=True, default="REGISTERED")
     # version_status: effective | superseded(版本链原子切换标量)
