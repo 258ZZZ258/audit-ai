@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This repo is **design-stage**: the only content is the spec `文档处理管线_本地Demo_开发文档_v0.1.md` (the "Demo dev doc", V0.1). No source code, `compose.yaml`, `alembic/`, `fixtures/`, or `tests/` exist yet. When implementing, create the layout described in §8 of that doc. Read the spec before writing code — it encodes deliberate cut decisions ("裁机制不裁契约": cut mechanisms, never cut contracts) that the implementation must respect.
+**Implementation in progress** (M1). Specs: `SPEC.md` (M1 scope, contracts), `PLAN.md` (4-phase plan), `TASKS.md` (per-task acceptance), upstream `文档处理管线_本地Demo_开发文档_v0.1.md` (V0.1). **The full build narrative — every module, decision, and pitfall — is in `docs/devlog.md`; read it to understand why things are the way they are.** Phase A done (checkpoint A passed); Phase B in progress (s0→s2 chain built). Read the spec before changing contracts — it encodes deliberate cut decisions ("裁机制不裁契约": cut mechanisms, never cut contracts).
+
+Run tests/tools via the project venv: `.venv/bin/python -m pytest -q`, `.venv/bin/ruff check .`, `.venv/bin/demo up`. The stack (pg16 + milvus2.4) comes up via `demo up`; integration tests skip when it's down.
 
 The spec positions this demo as a local, minimal-runnable subset of an upstream production design ("生产设计 V1.5", not in this repo). Section references like §6.2 / §18.2 / §21 point into that production doc.
 
@@ -107,3 +109,23 @@ Python 3.11 · typer · SQLAlchemy 2.x + Alembic · PostgreSQL 16 (Docker) · Mi
 - **M3 (optional ~1d)**: E1 obligation tagging + report polish → V8
 
 If DeepDoc vendoring exceeds 1 day, M2 falls back to the light parser for the demo — the IR boundary guarantees this fallback affects no other acceptance point.
+
+## Implementation conventions & pitfalls (learned during the build)
+
+**Environment (non-obvious, easy to re-trip):**
+- **Python 3.11 only.** The machine default is 3.14, which has no grpcio/torch wheels → pymilvus/FlagEmbedding won't install. Use `.venv` built from brew `python@3.11`.
+- **`setuptools<81`** is pinned: pymilvus 2.4 imports `pkg_resources`, removed in setuptools ≥81. Without the pin, `import pymilvus` fails.
+- **LibreOffice** provides `soffice` for the docx→PDF rendition. `rendition.soffice_bin()` resolves it via env `PIPELINE_SOFFICE` > PATH > mac `.app` — set `PIPELINE_SOFFICE` in 信创 deploys.
+- **FlagEmbedding (torch)** is the `[embed]` extra, not installed by default; pymilvus emits a benign `pkg_resources` DeprecationWarning.
+
+**Page anchoring — the one real architectural mechanism (see SPEC《页码锚点机制》):** docx has no native page numbers, so page is NOT guessed from the docx. s1 renders a canonical PDF (soffice), parses structure from docx XML, and backfills page via `page_align` — a monotonic two-pointer exact match against the rendition's per-page text (rapidfuzz fallback; miss → `page=None`, caught by QC indicator 4). The rendition is written once (`reprocess` reuses it). pdf inputs use native pages, no rendition.
+
+**Orchestration:** the worker is stage-injection (`Orchestrator(pg, ctx, stages: dict[state→stage])`). It only polls `WORKER_ADVANCEABLE_STATES` that have a registered stage, so human-wait states are structurally never polled. Stages are pure `(ctx, dvid) -> StageResult`; the orchestrator owns the transition + `pipeline_events` (via `pg_io.transition`, which guards with `can_transition`) and enqueues `StageResult.queue`.
+
+**Conventions that bit us:**
+- **SQLAlchemy insert order:** no ORM relationships are declared, so FK-dependent inserts in one session are NOT auto-ordered — call `s.flush()` after the parent (e.g. Document before DocVersion, DocVersion before PipelineEvent).
+- **ULID prefixes collide:** a ULID's leading chars are the timestamp; `str(ULID())[:8]` truncation collides within the same millisecond. Use the full ULID for unique ids in loops/tests.
+- **QC marginal band degenerates** for indicators whose threshold sits at the achievable extreme (page-anchor =100%) or within ε of it (text-garbled 0.01<ε 0.02) — those two have the edge band disabled.
+- **chunker `token_count` measures content only** (excludes breadcrumb + 条头续接), so "≤ target_token_max" is a clean invariant. Single oversized paragraphs split at 项（N）/句末；。 boundaries, char-hard-split as last resort (marked `oversize`). `target_token_min` drives same-条 tail coalescing.
+- **Integration tests** connect to the live stack and `pytest.skip` when PG/Milvus/soffice are down; each cleans up its rows by `batch_id` in FK-safe order. **fixtures/ is git-ignored** (rebuilt by `tools/build_fixtures.py --all`).
+- **Migrations are add-only**, authored by `alembic revision --autogenerate` then verified with `alembic upgrade head` + `alembic check` (no drift).
