@@ -21,7 +21,15 @@ from openpyxl import load_workbook
 from sqlalchemy import select
 from ulid import ULID
 
-from pipeline.index.pg_models import Document, DocVersion, ImportBatch, PipelineEvent
+from pipeline.index.pg_models import (
+    Document,
+    DocVersion,
+    ImportBatch,
+    PipelineEvent,
+    ReviewQueue,
+)
+from pipeline.meta import version_chain
+from pipeline.meta.version_chain import RelationType
 from pipeline.stage_base import StageContext
 from pipeline.states import ErrorCode, PipelineState
 
@@ -115,19 +123,30 @@ def _suspect_duplicate(ctx: StageContext, title: str, doc_number: str) -> bool:
         return s.scalars(q).first() is not None
 
 
-def _resolve_logical(
-    ctx: StageContext, supersedes: str
-) -> tuple[str | None, str | None, str | None]:
-    """替代声明 → (继承的 logical_id, 被替代 version_id, version_relation);找不到则全 None。"""
-    if not supersedes:
-        return None, None, None
+def _prior_version(ctx: StageContext, filename: str) -> DocVersion | None:
     with ctx.db.session() as s:
-        prior = s.scalars(
-            select(DocVersion).where(DocVersion.source_filename == supersedes)
+        return s.scalars(
+            select(DocVersion).where(DocVersion.source_filename == filename)
         ).first()
-    if prior is None:
+
+
+def _resolve_version(
+    ctx: StageContext, rel: RelationType, targets: list[str], report: RegisterReport, fn: str
+) -> tuple[str | None, str | None, str | None]:
+    """支持的关系 → (继承 logical_id, 被替代 version_id, version_relation);其余/未命中全 None。
+
+    revise_replace 继承旧版 logical(内容延续);abolish_only 不继承(独立文书)但记被废止版。
+    NONE / MERGE / SPLIT_REPLACE → 不在此建模(merge/split 由调用方入队转人工)。
+    """
+    if rel not in version_chain.SUPPORTED:
         return None, None, None
-    return prior.logical_id, prior.doc_version_id, "revise_replace"
+    prior = _prior_version(ctx, targets[0]) if targets else None
+    if prior is None:
+        report.warnings.append(f"{fn}: supersedes 目标未找到({targets},仅告警,按新建处理)")
+        return None, None, None
+    if rel is RelationType.REVISE_REPLACE:
+        return prior.logical_id, prior.doc_version_id, rel.value
+    return None, prior.doc_version_id, rel.value  # ABOLISH_ONLY:新 logical + 记被废止版
 
 
 def _ensure_batch(
@@ -162,16 +181,23 @@ def register_batch(
         )
 
     _ensure_batch(ctx, batch_id, batch_dir, manifest_path)
+    # split 需批次级视角(≥2 新件指向同一旧件),先于逐件登记算出
+    split_targets = version_chain.detect_split_targets(
+        [(str(r.get("filename") or ""), str(r.get("supersedes") or "")) for r in rows]
+    )
     report = RegisterReport(batch_id, accepted=True)
     for row in rows:
         if not row.get("filename"):
             continue
-        report.outcomes.append(_register_one(ctx, batch_id, Path(batch_dir), row, report))
+        report.outcomes.append(
+            _register_one(ctx, batch_id, Path(batch_dir), row, report, split_targets)
+        )
     return report
 
 
 def _register_one(
-    ctx: StageContext, batch_id: str, batch_dir: Path, row: dict, report: RegisterReport
+    ctx: StageContext, batch_id: str, batch_dir: Path, row: dict, report: RegisterReport,
+    split_targets: set[str],
 ) -> FileOutcome:
     fn = str(row["filename"])
     path = batch_dir / fn
@@ -207,7 +233,13 @@ def _register_one(
     elif _suspect_duplicate(ctx, title, doc_number):
         reason = "疑似重复(标题+文号命中,hash 不同)"
 
-    logical_id, supersedes_vid, relation = _resolve_logical(ctx, str(row.get("supersedes") or ""))
+    rel, targets = version_chain.classify(
+        str(row.get("supersedes") or ""), split_targets=split_targets
+    )
+    logical_id, supersedes_vid, relation = _resolve_version(ctx, rel, targets, report, fn)
+    unsupported = rel in (RelationType.MERGE, RelationType.SPLIT_REPLACE)
+    if unsupported:
+        report.warnings.append(f"{fn}: 版本关系 {rel.value} demo 不支持,转人工(meta_confirm 队列)")
     dvid = str(ULID())
     ext = fmt if fmt in WHITELIST_FORMATS else (Path(fn).suffix.lstrip(".") or "bin")
     raw_key = ctx.object_store.put_raw(corpus, batch_id, dvid, ext, data)  # 写一次
@@ -250,6 +282,17 @@ def _register_one(
                 detail={"reason": reason} if reason else None,
             )
         )
+        if unsupported:  # merge/split:登记照常,版本关系转人工
+            s.add(
+                ReviewQueue(
+                    queue_id=str(ULID()),
+                    queue_type="meta_confirm",
+                    doc_version_id=dvid,
+                    reason=f"demo 不支持的版本关系({rel.value}),转人工",
+                    evidence={"relation": rel.value, "targets": targets},
+                    status="open",
+                )
+            )
 
     return FileOutcome(
         fn, status.value, doc_version_id=dvid, logical_id=logical_id,

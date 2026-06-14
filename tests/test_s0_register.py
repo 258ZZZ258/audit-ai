@@ -13,7 +13,13 @@ from ulid import ULID
 from pipeline.config import load_config
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import Document, DocVersion, ImportBatch, PipelineEvent
+from pipeline.index.pg_models import (
+    Document,
+    DocVersion,
+    ImportBatch,
+    PipelineEvent,
+    ReviewQueue,
+)
 from pipeline.stage_base import StageContext
 from pipeline.stages.s0_register import REQUIRED_COLUMNS, register_batch
 
@@ -39,6 +45,7 @@ def reg(pg, tmp_path):
         dvids = [dv.doc_version_id for dv in dvs]
         lids = {dv.logical_id for dv in dvs}
         if dvids:
+            s.execute(delete(ReviewQueue).where(ReviewQueue.doc_version_id.in_(dvids)))
             s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id.in_(dvids)))
             s.execute(delete(DocVersion).where(DocVersion.doc_version_id.in_(dvids)))
         if lids:
@@ -209,3 +216,65 @@ def test_supersede_inherits_logical(reg):
     dv2 = ctx.db.get(DocVersion, out2.doc_version_id)
     assert dv2.supersedes_version_id == out1.doc_version_id
     assert dv2.version_relation == "revise_replace"
+
+
+def _queue(ctx, dvid):
+    with ctx.db.session() as s:
+        return list(s.scalars(select(ReviewQueue).where(ReviewQueue.doc_version_id == dvid)))
+
+
+def test_supersede_abolish_only_new_logical(reg):
+    ctx, base, batches = reg
+    bid1 = _bid()
+    batches.append(bid1)
+    d1, mp1 = _make_batch(base, bid1, [_row("v1.docx", doc_number="令1")], {"v1.docx": _docx("v1")})
+    out1 = register_batch(ctx, bid1, d1, mp1).outcomes[0]
+    bid2 = _bid()
+    batches.append(bid2)
+    r2 = [_row("notice.docx", doc_number="令2", supersedes="abolish:v1.docx")]
+    d2, mp2 = _make_batch(base, bid2, r2, {"notice.docx": _docx("废止公告")})
+    out2 = register_batch(ctx, bid2, d2, mp2).outcomes[0]
+    assert out2.logical_id != out1.logical_id  # abolish_only 不继承 logical(独立文书)
+    dv2 = ctx.db.get(DocVersion, out2.doc_version_id)
+    assert dv2.version_relation == "abolish_only"
+    assert dv2.supersedes_version_id == out1.doc_version_id  # 记被废止版
+
+
+def test_supersede_merge_enqueues_meta_confirm(reg):
+    ctx, base, batches = reg
+    bid1 = _bid()
+    batches.append(bid1)
+    rows1 = [_row("a.docx", doc_number="令A"), _row("b.docx", doc_number="令B")]
+    d1, mp1 = _make_batch(base, bid1, rows1, {"a.docx": _docx("aaa"), "b.docx": _docx("bbb")})
+    register_batch(ctx, bid1, d1, mp1)
+    bid2 = _bid()
+    batches.append(bid2)
+    r2 = [_row("merged.docx", doc_number="令M", supersedes="a.docx;b.docx")]
+    d2, mp2 = _make_batch(base, bid2, r2, {"merged.docx": _docx("merged")})
+    out2 = register_batch(ctx, bid2, d2, mp2).outcomes[0]
+    assert ctx.db.get(DocVersion, out2.doc_version_id).version_relation is None  # 不自动建模
+    qs = _queue(ctx, out2.doc_version_id)
+    assert len(qs) == 1 and qs[0].queue_type == "meta_confirm"
+    assert qs[0].evidence["relation"] == "merge"
+
+
+def test_supersede_split_enqueues_meta_confirm(reg):
+    ctx, base, batches = reg
+    bid1 = _bid()
+    batches.append(bid1)
+    d1, mp1 = _make_batch(
+        base, bid1, [_row("orig.docx", doc_number="令O")], {"orig.docx": _docx("orig")}
+    )
+    register_batch(ctx, bid1, d1, mp1)
+    bid2 = _bid()  # 同批两新件都 supersede orig → split
+    batches.append(bid2)
+    r2 = [
+        _row("p1.docx", doc_number="令P1", supersedes="orig.docx"),
+        _row("p2.docx", doc_number="令P2", supersedes="orig.docx"),
+    ]
+    d2, mp2 = _make_batch(base, bid2, r2, {"p1.docx": _docx("p1"), "p2.docx": _docx("p2")})
+    outs = register_batch(ctx, bid2, d2, mp2).outcomes
+    for o in outs:
+        assert ctx.db.get(DocVersion, o.doc_version_id).version_relation is None
+        qs = _queue(ctx, o.doc_version_id)
+        assert len(qs) == 1 and qs[0].evidence["relation"] == "split_replace"
