@@ -44,6 +44,10 @@ extend-exclude = ["alembic/versions"]  # autogenerate 出的迁移不纳入 lint
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.flake8-bugbear]
+# typer 的 CLI 参数默认值本就是 Argument()/Option() 调用,非 B008 针对的可变默认值。
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
