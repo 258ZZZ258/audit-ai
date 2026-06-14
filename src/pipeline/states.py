@@ -38,12 +38,12 @@ ALLOWED_TRANSITIONS: dict[PipelineState, frozenset[PipelineState]] = {
     _PS.PARSING: frozenset({_PS.QC_PENDING, _PS.PARSE_FAILED, _PS.QUARANTINED}),
     _PS.PARSE_FAILED: frozenset({_PS.QC_PENDING, _PS.REJECTED}),  # queue fix(补 IR 重入)/ reject
     _PS.QC_PENDING: frozenset({_PS.STRUCTURING, _PS.QC_FAILED}),
-    # QC_FAILED 三处置:fix 重入 / degrade 降级 / reject 退回
-    _PS.QC_FAILED: frozenset({_PS.QC_PENDING, _PS.DEGRADED_INDEXED, _PS.REJECTED}),
+    # QC_FAILED:fix→QC_PENDING / degrade→STRUCTURING(置 degraded)/ reject(直达 DEGRADED 边保留备用)
+    _PS.QC_FAILED: frozenset({_PS.QC_PENDING, _PS.STRUCTURING, _PS.DEGRADED_INDEXED, _PS.REJECTED}),
     _PS.STRUCTURING: frozenset({_PS.META_REVIEW}),  # s3+s4 自动推进
     _PS.META_REVIEW: frozenset({_PS.EMBEDDING, _PS.REJECTED}),  # CLI approve / reject
     _PS.EMBEDDING: frozenset({_PS.INDEXING}),
-    _PS.INDEXING: frozenset({_PS.INDEXED}),
+    _PS.INDEXING: frozenset({_PS.INDEXED, _PS.DEGRADED_INDEXED}),  # degraded → DEGRADED_INDEXED
     _PS.INDEXED: frozenset(),
     _PS.DEGRADED_INDEXED: frozenset(),
     _PS.REJECTED: frozenset(),

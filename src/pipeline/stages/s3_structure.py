@@ -9,19 +9,21 @@ s5;``chunk_status`` 默认 staging(INDEXED 前对检索不可见)。状态机出
 from __future__ import annotations
 
 from pipeline.chunking.chunker import ChunkSpec, build_chunks
-from pipeline.index.pg_models import Chunk
+from pipeline.index.pg_models import Chunk, DocVersion
 from pipeline.stage_base import StageContext, StageResult
 from pipeline.states import PipelineState
 
 
 def run(ctx: StageContext, doc_version_id: str) -> StageResult:
     ir = ctx.object_store.load_ir(doc_version_id)
+    dv = ctx.db.get(DocVersion, doc_version_id)
+    degraded = bool(dv and dv.degraded)  # 降级件(degrade 处置重入)→ chunk 标 degraded
     specs = build_chunks(ir, ctx.config.chunk)
-    ctx.db.replace_chunks(doc_version_id, [_to_row(s) for s in specs])
+    ctx.db.replace_chunks(doc_version_id, [_to_row(s, degraded) for s in specs])
     return StageResult(next_state=PipelineState.META_REVIEW)
 
 
-def _to_row(spec: ChunkSpec) -> Chunk:
+def _to_row(spec: ChunkSpec, degraded: bool) -> Chunk:
     return Chunk(
         chunk_id=spec.chunk_id,
         doc_version_id=spec.doc_version_id,
@@ -35,5 +37,6 @@ def _to_row(spec: ChunkSpec) -> Chunk:
         token_count=spec.token_count,
         is_parent=spec.is_parent,
         is_table=spec.is_table,
-        degraded=False,  # 降级件不走 s3(见 B6);chunk_status 用模型默认 staging
+        oversize=spec.oversize,  # 单段超长字符硬切的质量信号
+        degraded=degraded,  # 取自 dv.degraded;chunk_status 用模型默认 staging
     )

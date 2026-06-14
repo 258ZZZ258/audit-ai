@@ -92,6 +92,8 @@ class DocVersion(AuditMixin, Base):
     version_relation: Mapped[str | None] = mapped_column(String(32))  # revise_replace|abolish_only
     supersedes_version_id: Mapped[str | None] = mapped_column(String(26), index=True)  # 应用层引用
     qc_marginal: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 降级件:走索引但 chunk 标 degraded。server_default 使 add-only 迁移对已有行安全。
+    degraded: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     last_error_code: Mapped[str | None] = mapped_column(String(16))
 
 
@@ -112,6 +114,8 @@ class Chunk(AuditMixin, Base):
     token_count: Mapped[int | None] = mapped_column(Integer)
     is_parent: Mapped[bool] = mapped_column(Boolean, default=False)  # 父块(节级)仅 PG
     is_table: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 单段超长无语义边界被字符硬切(质量信号)。server_default 使 add-only 迁移对已有行安全。
+    oversize: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     degraded: Mapped[bool] = mapped_column(Boolean, default=False)
     # chunk_status: staging | effective | superseded(staging 对检索不可见)
     chunk_status: Mapped[str] = mapped_column(String(16), default="staging")

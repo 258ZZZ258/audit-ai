@@ -130,12 +130,15 @@ def test_status_lists_doc(sandbox):
 
 
 def test_queue_degrade_via_cli(sandbox):
+    # degrade 现在重入 STRUCTURING + 置 degraded(走索引终于 DEGRADED_INDEXED);seeded 件无 IR,
+    # 韧性推进在 s3 处中止(不崩命令),doc 停 STRUCTURING、degraded 已置位。
     pg, bids = sandbox
     dvid, qid = _seed_qc_failed(pg, bids)
     r = runner.invoke(app, ["queue", "degrade", qid])
     assert r.exit_code == 0
-    assert "DEGRADED_INDEXED" in r.output
-    assert pg.get(DocVersion, dvid).pipeline_status == "DEGRADED_INDEXED"
+    assert "STRUCTURING" in r.output
+    dv = pg.get(DocVersion, dvid)
+    assert dv.degraded is True
     assert pg.get(ReviewQueue, qid).status == "closed"
 
 

@@ -23,7 +23,7 @@ _PS = PipelineState
 #: 处置 → 目标态(state 级合法性最终由 pg_io.transition 的 can_transition 把关)。
 DISPOSITION_TARGET: dict[str, PipelineState] = {
     "fix": _PS.QC_PENDING,  # 补录 IR 后重入质检
-    "degrade": _PS.DEGRADED_INDEXED,  # 降级入库(终态)
+    "degrade": _PS.STRUCTURING,  # 置 degraded 重入结构化,走索引终于 DEGRADED_INDEXED
     "reject": _PS.REJECTED,  # 退回(终态)
     "release": _PS.PARSING,  # 隔离裁决后重入解析
     "approve": _PS.EMBEDDING,  # META_REVIEW 关卡放行
@@ -73,7 +73,10 @@ def dispose(
             )
 
         dvid = q.doc_version_id
-        before = s.get(DocVersion, dvid).pipeline_status  # 迁移前态(transition 会就地改)
+        dv = s.get(DocVersion, dvid)
+        before = dv.pipeline_status  # 迁移前态(transition 会就地改)
+        if disposition == "degrade":  # 降级标记:s3 据此标 chunk,finalize 终于 DEGRADED_INDEXED
+            dv.degraded = True
         # 迁移 + events(加入本事务):非法迁移在此抛 ValueError → 整事务回滚
         pg.transition(
             dvid,

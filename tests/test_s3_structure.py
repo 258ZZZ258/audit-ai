@@ -141,8 +141,25 @@ def test_s3_mapping_fidelity(env):
         assert (c.page_start, c.page_end, c.token_count) == (
             sp.page_start, sp.page_end, sp.token_count,
         )
-        assert (c.is_parent, c.is_table) == (sp.is_parent, sp.is_table)
+        assert (c.is_parent, c.is_table, c.oversize) == (sp.is_parent, sp.is_table, sp.oversize)
         assert c.text == sp.text and c.breadcrumb == sp.breadcrumb
+
+
+def test_s3_persists_oversize_flag(env):
+    # tiny 上限 + 单段无语义边界长文本 → 字符硬切 → oversize=True,须落库(此前被丢弃)
+    ctx, bids = env
+    cfg = load_config()
+    cfg.chunk.target_token_max = 10
+    cfg.chunk.target_token_min = 1
+    small = StageContext(config=cfg, object_store=ctx.object_store, db=ctx.db)
+    dvid = str(ULID())
+    ir = IRDocument(
+        doc_version_id=dvid, source_format=SourceFormat.DOCX,
+        blocks=[Block(index=0, type=BlockType.PARAGRAPH, text="第一条 " + "甲" * 80, page=1)],
+    )
+    bids.append(_seed(small, ir))
+    s3.run(small, dvid)
+    assert any(c.oversize for c in _chunks(small, dvid))  # oversize 落库
 
 
 def test_s3_idempotent_rerun(env):

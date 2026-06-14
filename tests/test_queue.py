@@ -92,12 +92,15 @@ def test_fix_reenters_qc(sandbox):
     assert rr[0].operator == "alice" and rr[0].reason == "补了条号"
 
 
-def test_degrade_to_terminal(sandbox):
+def test_degrade_reenters_structuring_marks_degraded(sandbox):
+    # degrade 不再直达终态:置 dv.degraded 重入 STRUCTURING,后由 s5 finalize 终于 DEGRADED_INDEXED
     pg, bids = sandbox
     dvid, qid = _seed(pg, bids, PS.QC_FAILED, "qc_fix")
     out = dispose(pg, qid, "degrade", operator="bob")
-    assert out.after_state == "DEGRADED_INDEXED"
-    assert pg.get(DocVersion, dvid).pipeline_status == "DEGRADED_INDEXED"
+    assert out.after_state == "STRUCTURING"
+    dv = pg.get(DocVersion, dvid)
+    assert dv.pipeline_status == "STRUCTURING"
+    assert dv.degraded is True  # 降级标记置位(同事务)
 
 
 def test_reject_to_terminal(sandbox):

@@ -33,8 +33,9 @@ def test_happy_path_transitions_allowed():
 
 
 def test_remediation_transitions():
-    assert can_transition(PS.QC_FAILED, PS.QC_PENDING)  # fix 重入
-    assert can_transition(PS.QC_FAILED, PS.DEGRADED_INDEXED)  # degrade
+    assert can_transition(PS.QC_FAILED, PS.QC_PENDING)  # fix 重入质检
+    assert can_transition(PS.QC_FAILED, PS.STRUCTURING)  # degrade 重入结构化(置 degraded)
+    assert can_transition(PS.INDEXING, PS.DEGRADED_INDEXED)  # 降级件 finalize 终态
     assert can_transition(PS.QC_FAILED, PS.REJECTED)  # reject
     assert can_transition(PS.QUARANTINED, PS.PARSING)  # release 重入
     assert can_transition(PS.PARSE_FAILED, PS.QC_PENDING)  # 补 IR 重入
@@ -45,7 +46,7 @@ def test_illegal_transitions_rejected():
     assert not can_transition(PS.QC_PENDING, PS.INDEXED)
     assert not can_transition(PS.META_REVIEW, PS.INDEXED)
     assert not can_transition(PS.INDEXED, PS.PARSING)
-    assert not can_transition(PS.QC_FAILED, PS.STRUCTURING)
+    assert not can_transition(PS.QC_FAILED, PS.EMBEDDING)  # degrade 只到 STRUCTURING,不跳级
 
 
 def test_reprocess_reset():

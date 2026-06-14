@@ -39,6 +39,8 @@ class StageContext:
     config: Settings
     object_store: Any = None  # ObjectStore(A6)
     db: Any = None  # PgIO(A7)
+    embedding: Any = None  # EmbeddingClient(C4),s5 嵌入用
+    milvus: Any = None  # MilvusIO(C5,已 connect),s5 索引用
     user: str = "system"  # 操作者(写 pipeline_events.actor)
 
 

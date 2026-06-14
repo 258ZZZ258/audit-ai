@@ -15,6 +15,7 @@ from sqlalchemy import select
 from ulid import ULID
 
 from pipeline.config import load_config
+from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
@@ -22,7 +23,7 @@ from pipeline.index.pg_models import DocVersion, ReviewQueue
 from pipeline.orchestrator import Orchestrator, Stage
 from pipeline.queue import dispose
 from pipeline.stage_base import StageContext, StageResult
-from pipeline.stages import s1_parse, s2_qc, s3_structure, s4_meta
+from pipeline.stages import s1_parse, s2_qc, s3_structure, s4_meta, s5_embed_index
 from pipeline.stages.s0_register import register_batch
 from pipeline.states import PipelineState
 
@@ -95,22 +96,51 @@ def _build_stages() -> dict[PipelineState, Stage]:
         PipelineState.PARSING: s1_parse.run,
         PipelineState.QC_PENDING: s2_qc.run,
         PipelineState.STRUCTURING: _structuring,
+        PipelineState.EMBEDDING: s5_embed_index.embed,
+        PipelineState.INDEXING: s5_embed_index.index,
     }
 
 
 def _context(cfg=None) -> tuple[PgIO, StageContext]:
+    """轻上下文(无 embedding/milvus):status / queue list/show 等不推进 worker 的命令用。"""
     cfg = cfg or load_config()
     pg = PgIO.from_config(cfg)
     return pg, StageContext(config=cfg, object_store=ObjectStore.from_config(cfg), db=pg)
 
 
+def _worker_context(cfg=None) -> tuple[PgIO, StageContext]:
+    """全上下文(含 embedding + 已连接 milvus):推进 META_REVIEW→EMBEDDING→INDEXED 的命令用。
+
+    仅 C7 的 ``meta confirm`` 需要(它放行人工闸后跑到 s5);ingest 与 queue 处置至多到 META_REVIEW
+    人工闸即停,用轻 ``_context`` 即可。
+    """
+    cfg = cfg or load_config()
+    pg = PgIO.from_config(cfg)
+    mio = MilvusIO(cfg)
+    mio.connect()
+    ctx = StageContext(
+        config=cfg, object_store=ObjectStore.from_config(cfg), db=pg,
+        embedding=EmbeddingClient.from_config(cfg), milvus=mio,
+    )
+    return pg, ctx
+
+
 def _advance_one(pg: PgIO, ctx: StageContext, dvid: str, *, max_steps: int = 20) -> tuple[int, str]:
-    """只推进本文档(逐步取自身当前态调对应 stage)直至无 stage 可推进;不触碰其他文档。"""
+    """只推进本文档至无 stage 可推进,不触碰其他文档。
+
+    处置已落库,推进尽力而为:某 stage 抛错(如缺 IR)则报告后停,不崩命令。
+    """
     orch = Orchestrator(pg, ctx, _build_stages())
     steps = 0
     while steps < max_steps:
         dv = pg.get(DocVersion, dvid)
-        if dv is None or not orch.step(dv):  # 当前态无 stage → 停
+        if dv is None:
+            break
+        try:
+            if not orch.step(dv):  # 当前态无 stage → 停
+                break
+        except Exception as e:  # 推进中某 stage 失败(如缺 IR):不崩命令,报告后停
+            typer.echo(f"  推进在 {dv.pipeline_status} 中止: {e}")
             break
         steps += 1
     final = pg.get(DocVersion, dvid)
@@ -131,9 +161,9 @@ def ingest(
         None, "--manifest", "-m", help="manifest.xlsx(默认 <dir>/manifest.xlsx)"
     ),
 ) -> None:
-    """S0 登记整批 → 跑 worker 推进至各自停态(QC_PENDING 前的链路)。"""
+    """S0 登记整批 → 跑 worker 推进至各自停态(过 QC 件切块+元数据后停 META_REVIEW 待人工确认)。"""
     cfg = load_config()
-    pg, ctx = _context(cfg)
+    pg, ctx = _context(cfg)  # 至多推进到 META_REVIEW(人工闸),不触 s5,无需 embedding/milvus
     mpath = manifest or (directory / "manifest.xlsx")
     batch_id = str(ULID())
     report = register_batch(ctx, batch_id, directory, mpath)
@@ -238,7 +268,7 @@ def queue_show(queue_id: str) -> None:
 
 def _do_dispose(queue_id: str, disposition: str, operator: str) -> None:
     cfg = load_config()
-    pg, ctx = _context(cfg)
+    pg, ctx = _context(cfg)  # fix/degrade/release 至多推进到 META_REVIEW 人工闸,不触 s5
     try:
         outcome = dispose(pg, queue_id, disposition, operator=operator)
     except (KeyError, ValueError) as e:
