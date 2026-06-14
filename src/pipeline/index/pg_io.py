@@ -76,36 +76,56 @@ class PgIO:
         error_code: str | None = None,
         detail: dict | None = None,
         queue_row: ReviewQueue | None = None,
+        session: Session | None = None,
     ) -> None:
         """原子迁移:校验合法性 → 更新 pipeline_status → 写 pipeline_events(可选同事务入队)。
 
         ``queue_row`` 非空时与迁移共用同一事务:守卫失败(非法迁移)或任何 DB 错误都会
         一并回滚,不会遗留"有 open 队列项却没进对应等待态"的孤儿行(入队与迁移要么全成、
         要么全滚)。
+
+        ``session`` 非空时**加入调用方事务**(不自开、不提交/回滚,由调用方 with 块统一管理),
+        供 queue.py 把"迁移 + remediation + 关单"凑成一个原子单元;为 None 时自开自管(默认)。
+        迁移 + events 仍是本层唯一真相源(SPEC 边界)——调用方只提供事务,不旁路这段逻辑。
         """
         to = PipelineState(to_state)
+        if session is not None:
+            self._do_transition(session, doc_version_id, to, actor, error_code, detail, queue_row)
+            return
         with self.session() as s:
-            dv = s.get(DocVersion, doc_version_id)
-            if dv is None:
-                raise KeyError(doc_version_id)
-            frm = PipelineState(dv.pipeline_status)
-            if not can_transition(frm, to):
-                raise ValueError(f"非法迁移 {frm} -> {to}")
-            dv.pipeline_status = to.value
-            if error_code is not None:
-                dv.last_error_code = error_code
-            s.add(
-                PipelineEvent(
-                    doc_version_id=doc_version_id,
-                    from_state=frm.value,
-                    to_state=to.value,
-                    error_code=error_code,
-                    actor=actor,
-                    detail=detail,
-                )
+            self._do_transition(s, doc_version_id, to, actor, error_code, detail, queue_row)
+
+    def _do_transition(
+        self,
+        s: Session,
+        doc_version_id: str,
+        to: PipelineState,
+        actor: str,
+        error_code: str | None,
+        detail: dict | None,
+        queue_row: ReviewQueue | None,
+    ) -> None:
+        dv = s.get(DocVersion, doc_version_id)
+        if dv is None:
+            raise KeyError(doc_version_id)
+        frm = PipelineState(dv.pipeline_status)
+        if not can_transition(frm, to):
+            raise ValueError(f"非法迁移 {frm} -> {to}")
+        dv.pipeline_status = to.value
+        if error_code is not None:
+            dv.last_error_code = error_code
+        s.add(
+            PipelineEvent(
+                doc_version_id=doc_version_id,
+                from_state=frm.value,
+                to_state=to.value,
+                error_code=error_code,
+                actor=actor,
+                detail=detail,
             )
-            if queue_row is not None:
-                s.add(queue_row)
+        )
+        if queue_row is not None:
+            s.add(queue_row)
 
     # ── chunks ────────────────────────────────────────────────
     def bulk_insert_chunks(self, chunks: list[Chunk]) -> None:
