@@ -183,6 +183,15 @@ def test_sha_dedup_second_is_duplicate(reg):
     d2, mp2 = _make_batch(base, bid2, [_row("a.docx")], {"a.docx": data})
     o = register_batch(ctx, bid2, d2, mp2).outcomes[0]
     assert o.status == "DUPLICATE"
+    # 重复登记在既有 doc 留审计事件(report 未持久化,否则去重关联 DB 无痕)
+    with ctx.db.session() as s:
+        evs = list(
+            s.scalars(select(PipelineEvent).where(PipelineEvent.doc_version_id == o.doc_version_id))
+        )
+    dup = [e for e in evs if e.detail and "duplicate_ingest" in e.detail]
+    assert len(dup) == 1
+    assert dup[0].detail["duplicate_ingest"] == {"batch_id": bid2, "filename": "a.docx"}
+    assert dup[0].from_state == dup[0].to_state  # 非迁移审计记录
 
 
 def test_reingest_same_batch_id_is_idempotent(reg):

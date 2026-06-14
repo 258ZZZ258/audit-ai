@@ -107,10 +107,27 @@ def _read_manifest(path: Path) -> tuple[list, list[dict]]:
     return header, rows
 
 
-def _find_by_hash(ctx: StageContext, sha: str) -> str | None:
+def _find_by_hash(ctx: StageContext, sha: str) -> DocVersion | None:
     with ctx.db.session() as s:
-        dv = s.scalars(select(DocVersion).where(DocVersion.source_hash == sha)).first()
-        return dv.doc_version_id if dv else None
+        return s.scalars(select(DocVersion).where(DocVersion.source_hash == sha)).first()
+
+
+def _record_duplicate(ctx: StageContext, dup: DocVersion, batch_id: str, fn: str) -> None:
+    """重复登记审计:在既有 doc 的事件流写一条非迁移记录(from==to==当前态)。
+
+    SHA-256 精确重复不新建 doc_version,但仍在 pipeline_events 留痕——否则去重关联在 DB 中无痕迹
+    (report 未持久化),溯源断链。
+    """
+    with ctx.db.session() as s:
+        s.add(
+            PipelineEvent(
+                doc_version_id=dup.doc_version_id,
+                from_state=dup.pipeline_status,
+                to_state=dup.pipeline_status,
+                actor=ctx.user,
+                detail={"duplicate_ingest": {"batch_id": batch_id, "filename": fn}},
+            )
+        )
 
 
 def _suspect_duplicate(ctx: StageContext, title: str, doc_number: str) -> bool:
@@ -220,9 +237,12 @@ def _register_one(
         report.warnings.append(f"{fn}: issue_date 无法解析({row.get('issue_date')!r}),置空(仅告警)")
 
     dup = _find_by_hash(ctx, sha)
-    if dup is not None:  # 精确去重:不重复登记,标注关联
-        report.warnings.append(f"{fn}: SHA-256 精确重复,关联 {dup}")
-        return FileOutcome(fn, "DUPLICATE", doc_version_id=dup, reason="SHA-256 精确重复")
+    if dup is not None:  # 精确去重:不重复登记,既有 doc 留审计事件 + 标注关联
+        _record_duplicate(ctx, dup, batch_id, fn)
+        report.warnings.append(f"{fn}: SHA-256 精确重复,关联 {dup.doc_version_id}")
+        return FileOutcome(
+            fn, "DUPLICATE", doc_version_id=dup.doc_version_id, reason="SHA-256 精确重复"
+        )
 
     # 隔离判定
     reason, ecode = None, None

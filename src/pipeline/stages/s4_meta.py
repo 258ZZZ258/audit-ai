@@ -1,8 +1,10 @@
-"""S4 元数据:L1 规则抽取 + 与 manifest 交叉校验。均 → META_REVIEW;冲突另入 meta_confirm 队列。
+"""S4 元数据:L1 规则抽取 + 与 manifest 交叉校验。均 → META_REVIEW + meta_confirm 队列(统一人工闸)。
 
-L2(LLM 辅助)默认关(``toggles.l2_enabled``,C2 不调 LLM)。L1 值不持久化——仅交叉校验,manifest
-仍为权威;冲突详情入 meta_confirm 队列 evidence 供人审。STRUCTURING → META_REVIEW 是状态机唯一出边,
-故无冲突件也停 META_REVIEW(经 CLI meta confirm 放行,C7)。
+L2(LLM 辅助)默认关(``toggles.l2_enabled``,C2 不调 LLM)。L1 值不持久化:仅交叉校验,manifest 为权威。
+
+**META_REVIEW 是所有件的强制人工闸**(状态机唯一出边,每件需人工 confirm 才走 EMBEDDING),故**每件都入
+meta_confirm 队列**——review_queue 是所有人工动作的唯一入口(CLAUDE.md)。冲突件 evidence 带 conflicts
+供重点审,无冲突件为常规确认(conflicts 空)。``demo meta confirm``(C7)对该队列项做 approve 处置放行。
 """
 
 from __future__ import annotations
@@ -28,14 +30,12 @@ def run(ctx: StageContext, doc_version_id: str) -> StageResult:
         issuer_code=l1_rules.resolve_issuer(dv.issuer, issuers),
         title=dv.title,
     )
-    if not conflicts:
-        return StageResult(next_state=PipelineState.META_REVIEW)
-
+    # META_REVIEW 是全件强制人工闸 → 每件都入 meta_confirm 队列(统一队列是人工动作唯一入口);
+    # 冲突件 evidence 带 conflicts 供重点审,无冲突件为常规确认(conflicts 空)。
     evidence = {"conflicts": [asdict(c) for c in conflicts]}
+    reason = "L1/manifest 元数据冲突" if conflicts else "元数据待人工确认(无冲突)"
     return StageResult(
         next_state=PipelineState.META_REVIEW,
         evidence=evidence,
-        queue=QueueItem(
-            QueueType.META_CONFIRM, doc_version_id, "L1/manifest 元数据冲突", evidence
-        ),
+        queue=QueueItem(QueueType.META_CONFIRM, doc_version_id, reason, evidence),
     )

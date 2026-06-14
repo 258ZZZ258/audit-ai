@@ -75,20 +75,16 @@ def _seed(ctx, bids, *, doc_number, issue_date, title) -> str:
     return dvid
 
 
-def _queue(ctx, dvid):
-    with ctx.db.session() as s:
-        return list(s.scalars(select(ReviewQueue).where(ReviewQueue.doc_version_id == dvid)))
-
-
-def test_consistent_meta_no_queue(env):
+def test_consistent_meta_enqueues_routine_confirm(env):
+    # 无冲突件也入 meta_confirm 队列(META_REVIEW 全件强制人工闸 → 统一队列唯一入口)
     ctx, bids = env
     dvid = _seed(
         ctx, bids, doc_number="京证监〔2024〕5号", issue_date=date(2024, 1, 1), title="某办法"
     )
     res = s4.run(ctx, dvid)
     assert res.next_state is PS.META_REVIEW
-    assert res.queue is None  # 无冲突不入队
-    assert _queue(ctx, dvid) == []
+    assert res.queue is not None and res.queue.queue_type == "meta_confirm"
+    assert res.queue.evidence["conflicts"] == []  # 无冲突:常规确认
 
 
 def test_conflict_enqueues_meta_confirm(env):
