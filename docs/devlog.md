@@ -100,7 +100,7 @@ git **直接提交 main**(本地单人 demo)。沟通用中文。
   手动 e2e:clean+跳号 docx → clean 落 STRUCTURING(过全 7 项)、跳号落 QC_FAILED+队列,show 打"第2条后缺第3条
   (第1页)"。注:过 QC 件停 STRUCTURING(C 段前无 s3 stage),非检查点 B 措辞里的 QC_PENDING。
 
-### 阶段 C — 结构化 / 元数据 / 向量化(进行中)
+### 阶段 C — 结构化 / 元数据 / 向量化(C1–C6 完成,C7 待做)
 - **C1 s3_structure**:STRUCTURING 阶段薄装配——载 IR → `chunker.build_chunks`(L3 已做树+六规则+确定性
   chunk_id)→ ChunkSpec 映射 Chunk 行 → `pg_io.replace_chunks`(同事务删旧插新,确定性 id 使重跑幂等)→
   META_REVIEW。chunk_status=staging;父块/表格块入 PG(Milvus 排除留 s5);degraded=False;oversize 无列不持久化。
@@ -113,14 +113,32 @@ git **直接提交 main**(本地单人 demo)。沟通用中文。
   /`abolish:`abolish_only/多文件 merge;split=批次内 ≥2 新件指向同一旧件)。s0 `_resolve_logical`→`_resolve_version`:
   revise 继承 logical、abolish 新 logical+记被废止版、merge/split 登记 + meta_confirm 队列"demo 不支持"(s0 首次写
   队列)。原子切换留 D1。**发现未修**(超范围):s0 隔离件不写 review_queue → `queue list` 不可见,待补。
+- **C4 EmbeddingClient**:`index/embedding_client.py` ABC + 本地 BGEM3(FlagEmbedding,懒加载,一次 encode 出
+  dense+sparse,batch/max_length/retries 从 config,指数退避)+ endpoint 桩。**环境坑**:hf-mirror 在此网络 308
+  跳回 HF、直连慢 → 用 **modelscope** 拉 bge-m3,经 `PIPELINE_EMBEDDING_MODEL`(config 新增 env 覆盖)指本地目录 +
+  `HF_HUB_OFFLINE=1` 加载;真模型测试 gate 在该 env(未设秒 skip,绝不联网下载)。
+- **C5 milvus_io**:upsert(`upsert_batch`/批,不自动 flush)+ flush + count/delete + 混合查(dense+sparse +
+  RRFRanker,默认 status==effective 过滤;hybrid 失败/空 sparse → dense-only + `retrieval_mode` 兜底)+ 冷备
+  serialize(dense float32 / sparse JSON)。search/count 用 Strong 一致性。**SP2 风险退**(hybrid 真命中)。
+- **C6 s5_embed_index**:embed(嵌入非-parent + 冷备写 PG + Milvus upsert staging)→ index(flush + count== 校验 +
+  从冷备重 upsert effective + flush + 翻 chunk_status → 终态)。写序 PG→upsert→flush→INDEXED;parent 仅 PG。
+  踩坑:**stage 只返回 next_state 不写 status**(orchestrator 应用),s5 测试须经 orchestrator 驱动;且 ingest/queue
+  处置至多到 META_REVIEW 人工闸即停、**到不了 s5**,故用轻 ctx(`_worker_context` 留 C7 meta confirm)。
+- **C6 并入 degrade 修复**(B6 遗留):degrade 不再直达空终态——`DocVersion.degraded`(迁移 0003)+ states
+  (QC_FAILED→STRUCTURING、INDEXING→DEGRADED_INDEXED)+ dispose 置 degraded 重入 STRUCTURING + s3 chunk 标 degraded
+  + s5.index 按 degraded 选终态。降级件走完整索引。
+- **审查修复**:s4 META_REVIEW 全件入 meta_confirm(统一队列唯一入口,无冲突件 conflicts=[]);s0 SHA 去重在既有
+  doc 写 `duplicate_ingest` pipeline_event(非迁移审计,report 未持久化否则无痕);chunker `oversize` 落库
+  (Chunk 加列,迁移 0004,s3 映射,此前被丢弃)。
 
 ## 已建链路与下一步
 
-链路:`demo ingest`(s0 登记 + 版本关系)→ s1(渲染+解析+对齐)→ s2(七指标质检)→ STRUCTURING 复合(s3 切块 +
-s4 元数据交叉校验)→ META_REVIEW;失败件入统一队列(qc_fix / quarantine / meta_confirm),`dispose` 处置。
-**检查点 B 达成**;C1–C3 完成(过 QC 件现切块 + 元数据校验后停 META_REVIEW)。
-下一步:**C4 EmbeddingClient BGEM3**(需 SP2 + 装 torch/FlagEmbedding ~2GB + 模型下载 ~2GB)→ C5 milvus
-upsert/冷备/混合查 → C6 s5_embed_index → C7 search/meta CLI → 检查点 C(V1 主干);之后阶段 D(原子切换/幂等/报告)。
+全链路:`demo ingest`(s0 登记+版本关系+去重审计)→ s1(渲染+解析+对齐)→ s2(七指标质检)→ STRUCTURING 复合
+(s3 切块 + s4 元数据校验)→ META_REVIEW(全件入 meta_confirm 人工闸)→ [C7 meta confirm] → EMBEDDING(s5 嵌入+冷备)
+→ INDEXING(Milvus 索引 + 翻 effective)→ INDEXED;degrade 重入索引终于 DEGRADED_INDEXED。失败件入统一队列、`dispose` 处置。
+**检查点 B 达成;C1–C6 完成**(s5 经 test_s5 直接驱动验证到 INDEXED)。
+下一步:**C7 search/meta CLI**(`demo search` 四级引用 + `meta list/confirm` 放行人工闸跑到 INDEXED)→ 检查点 C
+(V1 主干,届时 ingest+meta confirm 端到端到 INDEXED);之后阶段 D(原子切换/幂等/报告)。
 
 ## 测试与运行约定
 
