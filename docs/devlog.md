@@ -63,7 +63,7 @@ git **直接提交 main**(本地单人 demo)。沟通用中文。
 - **SP1 rendition**:soffice 渲染 + pdfplumber 逐页(按 y 剥页眉页脚带)+ 端到端对齐。踩坑:soffice 未装 →
   brew --cask libreoffice(SPEC #5 已批);`soffice_bin()` 支持 env/PATH/.app 定位。真实 docx 命中率 100%。
 
-### 阶段 B — 接入到质检(进行中)
+### 阶段 B — 接入到质检(B1–B7 完成,检查点 B 达成)
 - **B1 orchestrator**:stage 注入式轮询(见 CLAUDE.md「Orchestration」)。
 - **B2 s0_register**:manifest 9 列(整批拒收)、SHA-256 去重、magic number 探测、ULID 双 ID + 替代 logical 继承
   (按 source_filename,新增列走迁移 0002)、隔离路由、原件写一次。踩坑:SQLAlchemy 无 relationship 不自动排
@@ -74,11 +74,39 @@ git **直接提交 main**(本地单人 demo)。沟通用中文。
 - **B5 s2_qc**:7 指标 + gate + evidence;QC_FAILED(E301)。踩坑:边缘带对"阈值=100%"(页码锚点)和
   "阈值<ε"(文本质量)退化会误标完美文档 → 这俩关边缘带。
 
+#### B 段审查修复(`bfe2cb7`,逐项查 B1–B5,各带回归测试)
+- **状态缺口**:s1 加 `start()` 薄 stage 补 `REGISTERED→PARSING`——状态机无 `REGISTERED→QC_PENDING`,
+  而 s1.run 建模的是 `PARSING→QC_PENDING`,原先没 stage 推进登记态;PARSING 由此成落库的"解析中"态(崩溃可重入)。
+- **入队/迁移原子性**:orchestrator 原本先单独入队再单独迁移,两事务;迁移守卫失败会留孤儿 open 队列行。
+  → `pg_io.transition` 加 `queue_row` 参数,入队与迁移同事务,要么全成要么全滚。
+- **批次幂等**:s0 `ImportBatch` 改 get-or-create——同 batch_id 重跑不撞主键,SHA 去重得以跳过已登记件
+  (保住 doc_version_id → chunk_id 幂等根);中途崩溃可拿同 batch_id 续跑。
+- **manifest 精确列校验**:SPEC §S0「缺列/多列整批拒收」——原先只查缺列,多列漏网 → 改列集合精确匹配。
+- **issue_date 漏写**:manifest 的 issue_date 归一为 `date`(openpyxl 日期格给 datetime,文本格走 fromisoformat)
+  写入 `DocVersion.issue_date`;解析失败按"仅告警"置空入报告。
+- **测试加固**:soffice "二进制找得到 ≠ 能渲染"——`tests/conftest.py` 加 session 级探测 fixture,用同一
+  `render_pdf` 真渲一次,present-but-broken → skip 而非 flaky fail(环境噪声与代码回归分离)。
+- **隐式依赖**:Pillow 此前靠 pdfplumber 传递引入 → 显式声明进 dev extra。
+
+- **B6 review_queue 处置流(`queue.py` `dispose()`)**:5 处置(fix/degrade/reject/release/approve)各为三写
+  原子单元(迁移+events / remediation_records / 关单)。两层校验:queue_type↔disposition 相容(本层)+
+  `can_transition`(state 级,非法→ValueError 整事务回滚)。原子性需 **`transition` session 注入**(`session=`
+  加入调用方事务)——即 turn 2 选 A 时搁置的「选项 B」,B6 是其真用武之地。degrade→DEGRADED_INDEXED 按状态机
+  是直达终态(SPEC:58),"降级件真出 degraded chunk"留到检查点 D(已标记,B6 不解)。
+- **B7 CLI(`cli.py`:ingest/status/queue)**:装配根 `_build_stages()` 接真 stage(REGISTERED→s1.start、
+  PARSING→s1.run、QC_PENDING→s2.run;s0 非轮询)。`ingest`=register_batch + run_until_idle;queue 处置调
+  `dispose()` 后 `_advance_one` **只推进本件**(不扫全库);`queue show` 渲染失败指标 + `hint`(条号+页码定位)
+  + IR 路径。踩坑:typer 的 `Argument()/Option()` 默认值被 ruff B008 误判 → 配 `extend-immutable-calls`。
+  手动 e2e:clean+跳号 docx → clean 落 STRUCTURING(过全 7 项)、跳号落 QC_FAILED+队列,show 打"第2条后缺第3条
+  (第1页)"。注:过 QC 件停 STRUCTURING(C 段前无 s3 stage),非检查点 B 措辞里的 QC_PENDING。
+
 ## 已建链路与下一步
 
-链路:`demo ingest`(s0 登记)→ s1(渲染+解析+对齐,出带页码 IR)→ s2(七指标质检)。
-下一步:**B6** review_queue 处置流 → B7 CLI(ingest/status/queue)→ 检查点 B(V2 前半)。
-之后阶段 C(s3 切块 / s4 元数据+版本链 / s5 嵌入索引 / search)、阶段 D(原子切换 / 幂等 / 报告)。
+链路:`demo ingest`(s0 登记)→ s1(渲染+解析+对齐,出带页码 IR)→ s2(七指标质检)→ queue 处置(人工裁决)。
+过 QC 件停在 STRUCTURING(待 C 段 s3),失败件落 QC_FAILED/QUARANTINED 入统一队列。**检查点 B(V2 前半)达成**
+(自动 CLI 测试 + 手动 e2e;完整 ingest e2e 与 `queue fix` 重入为手动 `[需 demo up]` 门)。
+下一步:**阶段 C**(C1 s3_structure 装配 clause_tree+chunker / C2 s4_meta L1 规则+manifest 交叉校验+版本链 /
+s5 嵌入索引 / search)、之后阶段 D(原子切换 / 幂等 / 报告)。
 
 ## 测试与运行约定
 
