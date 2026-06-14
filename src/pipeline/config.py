@@ -111,6 +111,8 @@ def _apply_env(raw: dict) -> None:
     emb = raw["embedding"]
     if "PIPELINE_EMBEDDING_MODE" in env:
         emb["mode"] = env["PIPELINE_EMBEDDING_MODE"]
+    if "PIPELINE_EMBEDDING_MODEL" in env:  # 指向本地模型目录(离线/镜像下载场景,如信创目标)
+        emb["model_name"] = env["PIPELINE_EMBEDDING_MODEL"]
     if "OPENAI_BASE_URL" in env:
         emb["endpoint_base_url"] = env["OPENAI_BASE_URL"]
     if "OPENAI_API_KEY" in env:
