@@ -9,7 +9,7 @@ from sqlalchemy import delete, select, text
 from typer.testing import CliRunner
 from ulid import ULID
 
-from pipeline.cli import _build_stages, app
+from pipeline.cli import _build_stages, _structuring, app
 from pipeline.config import load_config
 from pipeline.index.pg_io import PgIO
 from pipeline.index.pg_models import (
@@ -88,12 +88,13 @@ def _seed_qc_failed(pg, bids, *, filename="跳号.docx") -> tuple[str, str]:
     return dvid, qid
 
 
-def test_build_stages_wires_s1_s2():
-    # 编排装配根:REGISTERED→s1.start、PARSING→s1.run、QC_PENDING→s2.run(s0 非轮询 stage)
+def test_build_stages_wiring():
+    # 编排装配根:REGISTERED→s1.start、PARSING→s1.run、QC_PENDING→s2.run、STRUCTURING→s3+s4 复合
     st = _build_stages()
     assert st[PS.REGISTERED] is s1_parse.start
     assert st[PS.PARSING] is s1_parse.run
     assert st[PS.QC_PENDING] is s2_qc.run
+    assert st[PS.STRUCTURING] is _structuring
 
 
 def test_queue_list_shows_open(sandbox):

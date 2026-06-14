@@ -21,8 +21,8 @@ from pipeline.index.pg_io import PgIO
 from pipeline.index.pg_models import DocVersion, ReviewQueue
 from pipeline.orchestrator import Orchestrator, Stage
 from pipeline.queue import dispose
-from pipeline.stage_base import StageContext
-from pipeline.stages import s1_parse, s2_qc
+from pipeline.stage_base import StageContext, StageResult
+from pipeline.stages import s1_parse, s2_qc, s3_structure, s4_meta
 from pipeline.stages.s0_register import register_batch
 from pipeline.states import PipelineState
 
@@ -73,16 +73,28 @@ def down(
 
 
 # ── 编排器组装根(composition root)──────────────────────────────
-def _build_stages() -> dict[PipelineState, Stage]:
-    """state → stage 纯函数(add-only,C 段加 s3/s4/s5)。s0 为 ingest 入口,非轮询 stage。
+def _structuring(ctx: StageContext, doc_version_id: str) -> StageResult:
+    """STRUCTURING 复合(在装配层组合,守 CLAUDE.md「stage 之间不得互相 import」约束):
 
-    REGISTERED→PARSING(s1.start 薄认领)→QC_PENDING(s1.run 解析)→STRUCTURING/QC_FAILED(s2.run)。
-    过 QC 的件停在 STRUCTURING(C 段前无 s3 stage,该态不被轮询)。
+    先 s3 切块(副作用写 chunks,其 StageResult 弃用)→ 再 s4 元数据交叉校验(决定 META_REVIEW
+    + 冲突时 meta_confirm 队列)。s3/s4 仍互不依赖、各自可测;最终态由 s4 决定。
+    """
+    s3_structure.run(ctx, doc_version_id)
+    return s4_meta.run(ctx, doc_version_id)
+
+
+def _build_stages() -> dict[PipelineState, Stage]:
+    """state → stage 纯函数(add-only,C 段续加 s5)。s0 为 ingest 入口,非轮询 stage。
+
+    REGISTERED→PARSING(s1.start 薄认领)→QC_PENDING(s1.run 解析)→STRUCTURING/QC_FAILED(s2.run)
+    →META_REVIEW(_structuring = s3 切块 + s4 元数据)。过 QC 的件切块 + 校验后停 META_REVIEW
+    (人工等待态,不被轮询),经 CLI meta confirm 放行(C7)。
     """
     return {
         PipelineState.REGISTERED: s1_parse.start,
         PipelineState.PARSING: s1_parse.run,
         PipelineState.QC_PENDING: s2_qc.run,
+        PipelineState.STRUCTURING: _structuring,
     }
 
 

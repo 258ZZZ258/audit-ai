@@ -1,0 +1,104 @@
+"""s4_meta 集成测试(连真 PG + tmp ObjectStore;PG 不可达 skip)。
+
+无冲突 → META_REVIEW 无队列;manifest 与 IR 元数据冲突 → META_REVIEW + meta_confirm 队列带 evidence。
+"""
+
+from datetime import date
+
+import pytest
+from sqlalchemy import delete, select, text
+from ulid import ULID
+
+from pipeline.config import load_config
+from pipeline.index.object_store import ObjectStore
+from pipeline.index.pg_io import PgIO
+from pipeline.index.pg_models import Document, DocVersion, ImportBatch, PipelineEvent, ReviewQueue
+from pipeline.ir import Block, BlockType, IRDocument, SourceFormat
+from pipeline.stage_base import StageContext
+from pipeline.stages import s4_meta as s4
+from pipeline.states import PipelineState as PS
+
+
+@pytest.fixture
+def pg():
+    io = PgIO.from_config(load_config())
+    try:
+        with io.session() as s:
+            s.execute(text("select 1"))
+    except Exception:
+        pytest.skip("PG 不可达(demo up 未起)")
+    return io
+
+
+@pytest.fixture
+def env(pg, tmp_path):
+    ctx = StageContext(config=load_config(), object_store=ObjectStore(tmp_path / "obj"), db=pg)
+    bids: list[str] = []
+    yield ctx, bids
+    with pg.session() as s:
+        flt = DocVersion.batch_id.in_(bids or [""])
+        dvids = list(s.scalars(select(DocVersion.doc_version_id).where(flt)))
+        lids = list(s.scalars(select(DocVersion.logical_id).where(flt)))
+        if dvids:
+            s.execute(delete(ReviewQueue).where(ReviewQueue.doc_version_id.in_(dvids)))
+            s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id.in_(dvids)))
+            s.execute(delete(DocVersion).where(DocVersion.doc_version_id.in_(dvids)))
+        if lids:
+            s.execute(delete(Document).where(Document.logical_id.in_(lids)))
+        if bids:
+            s.execute(delete(ImportBatch).where(ImportBatch.batch_id.in_(bids)))
+
+
+def _seed(ctx, bids, *, doc_number, issue_date, title) -> str:
+    """落 doc(STRUCTURING,带 manifest 字段)+ put_ir(版头含 京证监〔2024〕5号 / 2024年1月1日)。"""
+    bid, lid, dvid = "s4_" + str(ULID()), str(ULID()), str(ULID())
+    bids.append(bid)
+    p = BlockType.PARAGRAPH
+    ir = IRDocument(
+        doc_version_id=dvid, source_format=SourceFormat.DOCX, title=title,
+        blocks=[
+            Block(index=0, type=p, text="京证监〔2024〕5号", page=1),
+            Block(index=1, type=p, text="2024年1月1日", page=1),
+            Block(index=2, type=p, text="第一条 略。", page=1),
+        ],
+    )
+    ctx.db.add(ImportBatch(batch_id=bid, source_dir="x"))
+    ctx.db.add(Document(logical_id=lid, corpus_type="P-INT"))
+    ctx.db.add(
+        DocVersion(
+            doc_version_id=dvid, logical_id=lid, batch_id=bid, source_format="docx",
+            source_hash="h" + dvid[:8], raw_object_key="k", pipeline_status=PS.STRUCTURING.value,
+            doc_number=doc_number, issue_date=issue_date, title=title,
+        )
+    )
+    ctx.object_store.put_ir(ir)
+    return dvid
+
+
+def _queue(ctx, dvid):
+    with ctx.db.session() as s:
+        return list(s.scalars(select(ReviewQueue).where(ReviewQueue.doc_version_id == dvid)))
+
+
+def test_consistent_meta_no_queue(env):
+    ctx, bids = env
+    dvid = _seed(
+        ctx, bids, doc_number="京证监〔2024〕5号", issue_date=date(2024, 1, 1), title="某办法"
+    )
+    res = s4.run(ctx, dvid)
+    assert res.next_state is PS.META_REVIEW
+    assert res.queue is None  # 无冲突不入队
+    assert _queue(ctx, dvid) == []
+
+
+def test_conflict_enqueues_meta_confirm(env):
+    ctx, bids = env
+    # manifest 文号与 IR(京证监〔2024〕5号)不符 → 冲突
+    dvid = _seed(
+        ctx, bids, doc_number="京证监〔2024〕9号", issue_date=date(2024, 1, 1), title="某办法"
+    )
+    res = s4.run(ctx, dvid)
+    assert res.next_state is PS.META_REVIEW  # 仍过闸,另入队
+    assert res.queue is not None and res.queue.queue_type == "meta_confirm"
+    fields = [c["field"] for c in res.queue.evidence["conflicts"]]
+    assert "doc_number" in fields

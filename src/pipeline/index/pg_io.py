@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from pipeline.config import Settings
@@ -132,6 +132,16 @@ class PgIO:
         with self.session() as s:
             s.add_all(chunks)
 
+    def replace_chunks(self, doc_version_id: str, chunks: list[Chunk]) -> None:
+        """同事务替换某文档全部 chunk:先删旧再插新。
+
+        确定性 chunk_id 使 s3 可重跑(reprocess/重入):同输入产出同 id 集,旧行被整体替换、
+        不撞 PK。删 + 插共用一个事务,失败回滚不留半套。
+        """
+        with self.session() as s:
+            s.execute(delete(Chunk).where(Chunk.doc_version_id == doc_version_id))
+            s.add_all(chunks)
+
     def get_chunks(self, doc_version_id: str) -> list[Chunk]:
         with self.session() as s:
             return list(
@@ -139,6 +149,11 @@ class PgIO:
                     select(Chunk).where(Chunk.doc_version_id == doc_version_id).order_by(Chunk.seq)
                 )
             )
+
+    def get_issuers(self) -> list[DictIssuer]:
+        """发文机关字典(供 s4 L1 机构匹配)。"""
+        with self.session() as s:
+            return list(s.scalars(select(DictIssuer)))
 
     # ── 字典 seed ─────────────────────────────────────────────
     def seed_dicts(self, seeds_dir: str | Path) -> tuple[int, int]:
