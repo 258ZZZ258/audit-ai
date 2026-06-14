@@ -100,13 +100,27 @@ git **直接提交 main**(本地单人 demo)。沟通用中文。
   手动 e2e:clean+跳号 docx → clean 落 STRUCTURING(过全 7 项)、跳号落 QC_FAILED+队列,show 打"第2条后缺第3条
   (第1页)"。注:过 QC 件停 STRUCTURING(C 段前无 s3 stage),非检查点 B 措辞里的 QC_PENDING。
 
+### 阶段 C — 结构化 / 元数据 / 向量化(进行中)
+- **C1 s3_structure**:STRUCTURING 阶段薄装配——载 IR → `chunker.build_chunks`(L3 已做树+六规则+确定性
+  chunk_id)→ ChunkSpec 映射 Chunk 行 → `pg_io.replace_chunks`(同事务删旧插新,确定性 id 使重跑幂等)→
+  META_REVIEW。chunk_status=staging;父块/表格块入 PG(Milvus 排除留 s5);degraded=False;oversize 无列不持久化。
+- **C2 s4_meta + l1_rules**:`meta/l1_rules.py`(纯)抽 发文字号/日期/机构(字典)/标题 + 交叉校验
+  (冲突=L1 候选非空且 manifest 非空值不在候选中;日期成员判定;文号统一括号变体)。s4 均 → META_REVIEW,
+  冲突另入 meta_confirm 队列。踩坑:文号/日期须**逐块**匹配——拼接后 `strip_ws` 粘连标题,文号正则贪婪前缀
+  会吃进标题。STRUCTURING 接**复合** `cli._structuring`(s3 副作用 + s4 决定终态),在装配根组合以守
+  "stage 互不 import"。`pg_io.get_issuers` 加。L2 默认关。
+- **C3 version_chain**:`meta/version_chain.py`(纯)解析 supersedes → 关系(demo 编码:空/单文件 revise_replace
+  /`abolish:`abolish_only/多文件 merge;split=批次内 ≥2 新件指向同一旧件)。s0 `_resolve_logical`→`_resolve_version`:
+  revise 继承 logical、abolish 新 logical+记被废止版、merge/split 登记 + meta_confirm 队列"demo 不支持"(s0 首次写
+  队列)。原子切换留 D1。**发现未修**(超范围):s0 隔离件不写 review_queue → `queue list` 不可见,待补。
+
 ## 已建链路与下一步
 
-链路:`demo ingest`(s0 登记)→ s1(渲染+解析+对齐,出带页码 IR)→ s2(七指标质检)→ queue 处置(人工裁决)。
-过 QC 件停在 STRUCTURING(待 C 段 s3),失败件落 QC_FAILED/QUARANTINED 入统一队列。**检查点 B(V2 前半)达成**
-(自动 CLI 测试 + 手动 e2e;完整 ingest e2e 与 `queue fix` 重入为手动 `[需 demo up]` 门)。
-下一步:**阶段 C**(C1 s3_structure 装配 clause_tree+chunker / C2 s4_meta L1 规则+manifest 交叉校验+版本链 /
-s5 嵌入索引 / search)、之后阶段 D(原子切换 / 幂等 / 报告)。
+链路:`demo ingest`(s0 登记 + 版本关系)→ s1(渲染+解析+对齐)→ s2(七指标质检)→ STRUCTURING 复合(s3 切块 +
+s4 元数据交叉校验)→ META_REVIEW;失败件入统一队列(qc_fix / quarantine / meta_confirm),`dispose` 处置。
+**检查点 B 达成**;C1–C3 完成(过 QC 件现切块 + 元数据校验后停 META_REVIEW)。
+下一步:**C4 EmbeddingClient BGEM3**(需 SP2 + 装 torch/FlagEmbedding ~2GB + 模型下载 ~2GB)→ C5 milvus
+upsert/冷备/混合查 → C6 s5_embed_index → C7 search/meta CLI → 检查点 C(V1 主干);之后阶段 D(原子切换/幂等/报告)。
 
 ## 测试与运行约定
 
