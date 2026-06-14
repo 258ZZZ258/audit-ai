@@ -4,7 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-**Implementation in progress** (M1). Specs: `SPEC.md` (M1 scope, contracts), `PLAN.md` (4-phase plan), `TASKS.md` (per-task acceptance), upstream `文档处理管线_本地Demo_开发文档_v0.1.md` (V0.1). **The full build narrative — every module, decision, and pitfall — is in `docs/devlog.md`; read it to understand why things are the way they are.** Phase A done (checkpoint A passed); Phase B in progress (s0→s2 chain built). Read the spec before changing contracts — it encodes deliberate cut decisions ("裁机制不裁契约": cut mechanisms, never cut contracts).
+**Implementation in progress** (M1). Specs: `SPEC.md` (M1 scope, contracts), `PLAN.md` (4-phase plan), `TASKS.md` (per-task acceptance), upstream `文档处理管线_本地Demo_开发文档_v0.1.md` (V0.1). **The full build narrative — every module, decision, and pitfall — is in `docs/devlog.md`; read it to understand why things are the way they are.** Read the spec before changing contracts — it encodes deliberate cut decisions ("裁机制不裁契约": cut mechanisms, never cut contracts).
+
+### 开发进展 (structured per-phase summary; 细节见 `docs/devlog.md`)
+
+| 阶段 | 状态 | 内容 |
+|---|---|---|
+| **A 底座** | ✅ 检查点 A | config(⚠ 收口)/ ir(契约)/ states(状态机+迁移表)/ pg_models+alembic(add-only)/ compose+`demo up` / ObjectStore / pg_io / milvus_io(audit_corpus schema) |
+| **L/P/SP 并行流** | ✅ | L: normalize·clause_tree·chunker(确定性 chunk_id)·page_align;P: fixtures(`build_fixtures.py`);SP1: rendition(soffice→pdf 对齐) |
+| **B 接入→质检** | ✅ 检查点 B | s0 登记(manifest 校验/SHA 去重/版本关系)· s1 解析+渲染+页码对齐 · s2 七指标质检 · orchestrator(stage 注入轮询)· review_queue 处置流(dispose)· CLI `ingest`/`status`/`queue` |
+| **C 结构化→向量化** | C1–C6 ✅,**C7 待做** | s3 切块装配 · s4 元数据 L1+交叉校验 · version_chain · EmbeddingClient(本地 BGEM3)· milvus_io 混合查+冷备 · s5 嵌入索引(staging→effective)。**C7**: `search` 四级引用 + `meta list/confirm` 放行人工闸 → 检查点 C |
+| **D** | 待做 | 原子切换 / 幂等 / 报告 |
+
+**当前链路**:`ingest`→s1→s2→STRUCTURING(s3+s4)→META_REVIEW(全件 meta_confirm 人工闸)→[C7 `meta confirm`]→EMBEDDING→INDEXING→INDEXED;degrade 重入索引终于 DEGRADED_INDEXED。**待修小项**:s0 隔离件不写 review_queue(`queue list` 不可见)。
+
+**真模型/向量化运行前提**:BGE-M3 经 modelscope 拉到本地(hf-mirror 在该网络 308 跳回 HF、直连慢),设 `PIPELINE_EMBEDDING_MODEL=<本地目录>` + `HF_HUB_OFFLINE=1`;未设时 embed/s5 集成测试自动 skip(绝不联网下载)。
 
 Run tests/tools via the project venv: `.venv/bin/python -m pytest -q`, `.venv/bin/ruff check .`, `.venv/bin/demo up`. The stack (pg16 + milvus2.4) comes up via `demo up`; integration tests skip when it's down.
 

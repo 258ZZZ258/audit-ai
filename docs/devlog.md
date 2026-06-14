@@ -140,6 +140,11 @@ git **直接提交 main**(本地单人 demo)。沟通用中文。
 下一步:**C7 search/meta CLI**(`demo search` 四级引用 + `meta list/confirm` 放行人工闸跑到 INDEXED)→ 检查点 C
 (V1 主干,届时 ingest+meta confirm 端到端到 INDEXED);之后阶段 D(原子切换/幂等/报告)。
 
+**状态快照(截至阶段 C1–C6)**:全套 193 passed(带 `PIPELINE_EMBEDDING_MODEL` 时 s5/embed/milvus 全跑;不带时 4 个
+模型门控测试 skip)· `ruff check .` 全绿 · 迁移至 0004 无漂移 · 检查点 A/B 达成。提交锚点:A 段早期 / B 段
+(B6 c1f1bd7·B7 9e9e737)/ C1–C3(601ba3c·fffee03)/ C4 e457f37 · C5 7d3b1e0 · C6 6b98bf0 · 审查修复 cb460f4。
+**待修小项**:s0 隔离件(格式/密级)只置 QUARANTINED 不写 review_queue → `queue list` 不可见(B2 缺口,待补)。
+
 ## 测试与运行约定
 
 - venv:`.venv/bin/python -m pytest -q`、`.venv/bin/ruff check .`。
