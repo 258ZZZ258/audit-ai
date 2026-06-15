@@ -42,3 +42,10 @@ parse_timeout_sec = 300         # ⚠ 单文档解析超时 5min(E203)
 target_token_min = 300          # ⚠ 切块目标下界
 target_token_max = 600          # ⚠ 切块目标上界
 parent_block_token_max = 2000   # ⚠ 父块(节级)上限,仅 PG
+
+[verify]
+# M2 验证组件阈值(T2 冒烟 / T4 锚点回放),全 ⚠;合成启发式默认值(V0.1 §21.2)
+t2_synthetic_query_head_chars = 30   # ⚠ T2 合成查询:标题 + 首条款前 N 字
+t2_hit_at = 50                       # ⚠ T2 命中判定 hit@N
+t4_page_window = 1                   # ⚠ T4 取页窗口:page_start/page_end 各 ±N 页
+t4_fuzzy_threshold = 92              # ⚠ T4 精确未中的 rapidfuzz partial_ratio 阈值(0-100)

@@ -22,6 +22,11 @@ def test_load_config_defaults():
     # profiles 抽检率字段保留(不消费)
     assert "P-INT" in c.profiles and "P-EXT" in c.profiles
     assert c.profiles["P-INT"].sampling_rate == 1.0
+    # M2 验证组件阈值(T2/T4)
+    assert c.verify.t2_synthetic_query_head_chars == 30
+    assert c.verify.t2_hit_at == 50
+    assert c.verify.t4_page_window == 1
+    assert 0 < c.verify.t4_fuzzy_threshold <= 100
 
 
 def test_env_override(monkeypatch):

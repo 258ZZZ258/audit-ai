@@ -175,6 +175,11 @@ class PgIO:
             for c in s.scalars(select(Chunk).where(Chunk.doc_version_id == old_dvid)):
                 c.chunk_status = "superseded"
 
+    def chunk_doc_version_ids(self) -> list[str]:
+        """有 chunk 的全部 doc_version_id(去重)——供 rebuild 遍历全量重灌。"""
+        with self.session() as s:
+            return list(s.scalars(select(Chunk.doc_version_id).distinct()))
+
     def get_chunks(self, doc_version_id: str) -> list[Chunk]:
         with self.session() as s:
             return list(

@@ -33,9 +33,13 @@ def build_rows(
     dvid: str,
     chunks: list[Chunk],
     vectors: list[tuple[list[float], dict]],
-    status: str,
+    status: str | None,
 ) -> list[CorpusRow]:
-    """chunk + (dense, sparse) + 文档元数据 → CorpusRow(status:staging/effective/superseded)。"""
+    """chunk + (dense, sparse) + 文档元数据 → CorpusRow。
+
+    ``status`` 指定则全行用之(staging/effective/superseded);**为 None 则按各 chunk 存储的
+    ``chunk_status`` 还原**(reconcile/rebuild 重灌须保各块原状态,不强制单值)。
+    """
     dv = db.get(DocVersion, dvid)
     doc = db.get(Document, dv.logical_id)
     corpus = (doc.corpus_type if doc else "") or ""  # corpus_type 在 Document(逻辑文档)
@@ -43,7 +47,8 @@ def build_rows(
     return [
         CorpusRow(
             chunk_id=c.chunk_id, dense=dense, sparse=sparse,
-            doc_version_id=dvid, corpus_type=corpus, status=status,
+            doc_version_id=dvid, corpus_type=corpus,
+            status=(status if status is not None else c.chunk_status),
             perm_tag=dv.perm_tag or "", biz_domain=dv.biz_domain or "",
             issuer_level=issuer_level, clause_path=c.clause_path or "",
             page_start=c.page_start or 0, degraded=bool(c.degraded),
@@ -52,10 +57,11 @@ def build_rows(
     ]
 
 
-def rows_from_cold(db: PgIO, dvid: str, status: str) -> list[CorpusRow]:
-    """从 PG 冷备(dense_vec_cold / sparse_vec_cold)重建 CorpusRow(指定 status)——零重编码。
+def rows_from_cold(db: PgIO, dvid: str, status: str | None = None) -> list[CorpusRow]:
+    """从 PG 冷备(dense_vec_cold / sparse_vec_cold)重建 CorpusRow——零重编码。
 
-    服务 s5 index(staging→effective)与 finalize(effective→superseded)的"改标量重 upsert"。
+    ``status`` 指定:s5 index(→effective)/ finalize(→superseded)的"改标量重 upsert";
+    ``status=None``(默认):按各 chunk 存储的 chunk_status 还原——reconcile/rebuild 重灌用。
     """
     chunks = indexable_chunks(db, dvid)
     vectors = [

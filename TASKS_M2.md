@@ -5,30 +5,30 @@
 
 ## M2-0 · config(先行)
 
-- [ ] **M2-0 验证组件 ⚠ 配置**
+- [x] **M2-0 验证组件 ⚠ 配置** ✅
   - Acceptance:`settings.toml` 新增 `[verify]` 段 + `config.py` `VerifyConfig`,暴露 `t2_synthetic_query_head_chars=30`、`t2_hit_at=50`、`t4_page_window=1`、`t4_fuzzy_threshold=92`;`Settings.verify` 可读
-  - Verify:`pytest tests/test_config.py -q`(断言四字段默认值)
+  - Verify:`pytest tests/test_config.py` ✅
   - Files:`config/settings.toml`、`src/pipeline/config.py`、`tests/test_config.py`
 
 ## M2-A · 四验证组件(M2-0 后,彼此并行)
 
-- [ ] **A1 · T2 冒烟 `verify/smoke.py`**
+- [x] **A1 · T2 冒烟 `verify/smoke.py`**
   - Acceptance:`run_smoke(ctx, dvids) -> SmokeResult(passed, per_doc[{dvid,hit,rank,has_status_filter,error_code}], pass_rate)`;合成查询 = 标题 + 首条款前 `head_chars` 字 → `search(topk=hit_at)`;断言 dvid 命中(hit@N)+ status=effective 过滤位在(失败 E801/E802);**不阻断终态**
   - 决策点:status 过滤位断言 = `MilvusIO.search` 在 `SearchResult` 回带所用 `expr`,smoke 校验含 `status == "effective"`(顺带证明 staging/superseded 被滤)
   - Verify:`tests/test_smoke.py`(模型门控:编码合成查询;seed 或复用已索引件,断言命中 + 过滤位 + E802 负例)
   - Files:`src/pipeline/verify/smoke.py`、`src/pipeline/index/milvus_io.py`(SearchResult 加 expr)、`tests/test_smoke.py`
 
-- [ ] **A2 · T4 锚点回放 `verify/anchor_replay.py`**
+- [x] **A2 · T4 锚点回放 `verify/anchor_replay.py`**
   - Acceptance:`run_replay(ctx, dvids) -> ReplayResult(passed, fails[], exempt[], pass_rate)`;逐非 parent chunk:窗 `[page_start-1 .. page_end+1]` 取页文本(docx 用 `rendition.page_texts(rendition)`,pdf 用 raw)→ 剥面包屑得 body → 归一精确子串,未中走 rapidfuzz `partial_ratio≥t4_fuzzy_threshold`;**is_table / degraded 豁免**(计入 exempt 不计 fail);demo 集 pass_rate=100%
   - Verify:`tests/test_anchor_replay.py`(**免模型**,连栈/读 object store;断言 demo 件 100% + 表格块入 exempt + 一条人造错位 chunk 被判 fail)
   - Files:`src/pipeline/verify/anchor_replay.py`、`tests/test_anchor_replay.py`
 
-- [ ] **A3 · 对账 `verify/reconcile.py`**
+- [x] **A3 · 对账 `verify/reconcile.py`**
   - Acceptance:`run_reconcile(ctx, dvids) -> ReconcileResult(per_doc[{dvid,pg_count,milvus_count,reconciled}])`;逐 doc 比 PG 非 parent chunk 数 vs **`MilvusIO.count(dvid)`**(非 num_entities);不平 → E701 + `corpus_rows.rows_from_cold` 重灌(按各 chunk 存储 status)+ flush + 复检
   - Verify:`tests/test_reconcile.py`(**免模型**:seed 已索引件 → `milvus.delete` 删部分 → reconcile 检出不平 + 重灌 + 复检平)
   - Files:`src/pipeline/verify/reconcile.py`、`tests/test_reconcile.py`
 
-- [ ] **A4 · rebuild `verify/rebuild.py`**
+- [x] **A4 · rebuild `verify/rebuild.py`**
   - Acceptance:`run_rebuild(ctx) -> RebuildResult(before, after)`;`create_collection(drop_existing=True)` → 遍历所有有 chunk 的 doc_version,`rows_from_cold(db, dvid, <该件 chunk_status>)` 重灌(**零编码**,纯 insert)+ flush;断言总 count 恢复 + 固定 query top10(chunk_id 序)一致
   - 决策点:`rows_from_cold` 加「按各 chunk 存储 status」模式(effective/superseded 混存正确还原)
   - Verify:`tests/test_rebuild.py`(**免模型**,合成 query 向量比对 rebuild 前后 top10)

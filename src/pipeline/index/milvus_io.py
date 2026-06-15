@@ -61,6 +61,7 @@ class CorpusRow:
 class SearchResult:
     hits: list[dict]  # 每条:chunk_id/score + 四级引用字段
     retrieval_mode: str  # hybrid | dense_only
+    expr: str | None = None  # 实际过滤表达式(供 T2 冒烟断言 status 过滤位在)
 
 
 # ── 冷备 serialize(dense float32 / sparse JSON → PG bytea;rebuild 零重编码反序列化)──
@@ -269,10 +270,10 @@ class MilvusIO:
                 reqs, RRFRanker(), limit=topk,
                 output_fields=_OUTPUT_FIELDS, consistency_level="Strong",
             )
-            return SearchResult(_hits(res), "hybrid")
+            return SearchResult(_hits(res), "hybrid", expr)
         except Exception:  # hybrid 受阻(R2 兜底,不静默)→ dense-only
             res = col.search(
                 [dense], "dense_vec", {"metric_type": "COSINE", "params": {}},
                 limit=topk, expr=expr, output_fields=_OUTPUT_FIELDS, consistency_level="Strong",
             )
-            return SearchResult(_hits(res), "dense_only")
+            return SearchResult(_hits(res), "dense_only", expr)

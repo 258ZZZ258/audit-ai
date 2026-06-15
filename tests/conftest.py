@@ -15,8 +15,14 @@ from pathlib import Path
 import pytest
 from docx import Document as Docx
 from openpyxl import Workbook, load_workbook
+from ulid import ULID
 
 from pipeline.parsing.rendition import render_pdf, soffice_bin
+
+_MANIFEST_COLS = [
+    "filename", "title", "doc_number", "issuer", "perm_tag",
+    "corpus_type", "biz_domain", "issue_date", "supersedes",
+]
 
 
 @pytest.fixture(scope="session")
@@ -94,5 +100,37 @@ def ingest_index():
         for dvid in dvids:
             cli._approve_doc(pg, ctx, dvid, "test")
         return bid, dvids
+
+    return _make
+
+
+@pytest.fixture
+def unique_docx():
+    """生成**唯一**内规 docx(嵌 ULID 保 SHA 不与库内既有件撞)+ 1 行 manifest。
+
+    返回 ``make(tmp_path) -> (batch_dir, manifest)``。供需「自造可 ingest 件」的集成测试(T2/T4)避开
+    走查/既有数据的 SHA 去重。条款含实质文本以稳过 QC 到 META_REVIEW。
+    """
+
+    def _make(tmp_path: Path) -> tuple[Path, Path]:
+        tag = str(ULID())
+        d = tmp_path / ("u_" + tag[:8])
+        d.mkdir()
+        fn = "uniq.docx"
+        doc = Docx()
+        doc.add_paragraph("第一章 总则")
+        doc.add_paragraph(
+            f"第一条 为加强本单位合同管理规范合同签订与履行流程根据有关规定制定本办法编号{tag}。"
+        )
+        doc.add_paragraph("第二条 本办法适用于本单位各部门及全体人员的合同签订与履行活动。")
+        doc.add_paragraph("第三条 合同应当经法务审查并由授权人签署后方可对外签订生效。")
+        doc.save(d / fn)
+        wb = Workbook()
+        wb.active.append(_MANIFEST_COLS)
+        wb.active.append([fn, "合同管理办法", f"测试第{tag[:6]}号", "INTERNAL",
+                          "内部", "P-INT", "LEGAL", None, None])
+        mp = d / "manifest.xlsx"
+        wb.save(mp)
+        return d, mp
 
     return _make

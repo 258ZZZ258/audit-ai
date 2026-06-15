@@ -83,6 +83,15 @@ class QcThresholds(BaseModel):
     edge_band_epsilon: float  # 边缘通过带 ε
 
 
+class VerifyConfig(BaseModel):
+    """M2 验证组件阈值(T2 冒烟 / T4 锚点回放),全部 ⚠。"""
+
+    t2_synthetic_query_head_chars: int  # ⚠ T2 合成查询:标题 + 首条款前 N 字
+    t2_hit_at: int  # ⚠ T2 命中判定 hit@N
+    t4_page_window: int  # ⚠ T4 取页窗口:page_start/page_end 各 ±N 页
+    t4_fuzzy_threshold: int  # ⚠ T4 精确未中的 rapidfuzz partial_ratio 阈值(0-100)
+
+
 class ProfileConfig(BaseModel):
     sampling_rate: float  # 抽检率:M1 保留字段,不消费
 
@@ -97,6 +106,7 @@ class Settings(BaseModel):
     parse: ParseConfig
     chunk: ChunkConfig
     qc: QcThresholds
+    verify: VerifyConfig
     profiles: dict[str, ProfileConfig]
     config_dir: Path
 
@@ -146,6 +156,7 @@ def load_config(config_dir: str | os.PathLike | None = None) -> Settings:
         parse=ParseConfig(**settings_raw["parse"]),
         chunk=ChunkConfig(**settings_raw["chunk"]),
         qc=QcThresholds(**qc_raw),
+        verify=VerifyConfig(**settings_raw["verify"]),
         profiles={k: ProfileConfig(**v) for k, v in profiles_raw.items()},
         config_dir=cdir,
     )
