@@ -1,0 +1,52 @@
+[
+  {
+    "type": "章",
+    "number": "1",
+    "clause_path_norm": "1"
+  },
+  {
+    "type": "条",
+    "number": "1",
+    "clause_path_norm": "1/1"
+  },
+  {
+    "type": "条",
+    "number": "2",
+    "clause_path_norm": "1/2"
+  },
+  {
+    "type": "章",
+    "number": "2",
+    "clause_path_norm": "2"
+  },
+  {
+    "type": "节",
+    "number": "1",
+    "clause_path_norm": "2/1"
+  },
+  {
+    "type": "条",
+    "number": "3",
+    "clause_path_norm": "2/1/3"
+  },
+  {
+    "type": "节",
+    "number": "2",
+    "clause_path_norm": "2/2"
+  },
+  {
+    "type": "条",
+    "number": "4",
+    "clause_path_norm": "2/2/4"
+  },
+  {
+    "type": "章",
+    "number": "3",
+    "clause_path_norm": "3"
+  },
+  {
+    "type": "条",
+    "number": "5",
+    "clause_path_norm": "3/5"
+  }
+]

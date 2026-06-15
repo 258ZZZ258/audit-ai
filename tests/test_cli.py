@@ -218,12 +218,5 @@ def test_search_invalid_corpus_exits_1():
     assert "internal|external" in r.output
 
 
-# ── D5 · M2 占位(打印非 M1 范围 + 非零退出;禁伪造断言)──────────
-@pytest.mark.parametrize(
-    "cmd", [["verify", "smoke"], ["verify", "replay"], ["verify", "reconcile"], ["rebuild"]]
-)
-def test_m2_placeholders_nonzero_exit(cmd):
-    # M2 组件 M1 不实现:非零退出 + 明示「非 M1 范围」,不伪造任何 pass(无需 demo up)
-    r = runner.invoke(app, cmd)
-    assert r.exit_code != 0
-    assert "M2" in r.output and "非 M1 范围" in r.output
+# 注:M2 起 `verify smoke|replay|reconcile`、`rebuild` 已是真实组件(替换 D5 占位),
+# 其行为由 test_smoke/test_anchor_replay/test_reconcile/test_rebuild(连真栈)覆盖。

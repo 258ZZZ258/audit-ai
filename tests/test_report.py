@@ -105,7 +105,24 @@ def test_build_report_metrics(batch):
     assert rep["anchor_fill_rate"] == pytest.approx(2 / 3, abs=1e-4)
     assert rep["status_counts"] == {"INDEXED": 2, "PARSE_FAILED": 1, "QUARANTINED": 1}
     assert rep["retrieval_mode"] is None  # milvus=None
-    assert "t2_pass_rate" not in rep and "t4_pass_rate" not in rep  # M1 不留半成品键
+    # M2:t2/t4 键已加;无 verify 留痕 → None(键有值或 None,不缺键)
+    assert rep["t2_pass_rate"] is None and rep["t4_pass_rate"] is None
+
+
+def test_report_aggregates_verify_events(batch):
+    pg, bid, doc = batch
+    a = doc("INDEXED", to_states=["PARSING", "QC_PENDING", "STRUCTURING"], pages=[1])
+    b = doc("INDEXED", to_states=["PARSING", "QC_PENDING", "STRUCTURING"], pages=[1])
+    # finalize 留痕:a 命中、b 未命中;两者 T4 均通过
+    with pg.session() as s:
+        for dvid, hit in ((a, True), (b, False)):
+            s.add(PipelineEvent(
+                doc_version_id=dvid, from_state="INDEXED", to_state="INDEXED", actor="finalize",
+                detail={"verify": {"t2_hit": hit, "t4_pass": True, "t4_rate": 1.0}},
+            ))
+    rep = build_report(StageContext(config=load_config(), db=pg, milvus=None), bid)
+    assert rep["t2_pass_rate"] == 0.5  # a 命中 / (a,b)
+    assert rep["t4_pass_rate"] == 1.0  # 两者 T4 通过
 
 
 def test_report_cli_persists(batch):
@@ -125,7 +142,7 @@ def test_report_cli_persists(batch):
     r = runner.invoke(cli.app, ["report", bid])
     assert r.exit_code == 0, r.output
     assert "解析成功率" in r.output and "retrieval_mode" in r.output
-    assert "t2_pass_rate" not in r.output  # 无半成品键
+    assert "T2 冒烟" in r.output and "t2_pass_rate" in r.output  # M2:T2/T4 键已接入
     snap = pg.get(ImportBatch, bid).report  # 快照落库
     assert snap is not None and snap["batch_id"] == bid
     assert snap["retrieval_mode"] in ("hybrid", "dense_only")

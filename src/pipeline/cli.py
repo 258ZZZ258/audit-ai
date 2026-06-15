@@ -22,15 +22,25 @@ from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import DocVersion, ImportBatch, RemediationRecord, ReviewQueue
+from pipeline.index.pg_models import (
+    Chunk,
+    DocVersion,
+    ImportBatch,
+    RemediationRecord,
+    ReviewQueue,
+)
 from pipeline.orchestrator import Orchestrator, Stage
 from pipeline.queue import dispose
 from pipeline.stage_base import StageContext, StageResult
 from pipeline.stages import finalize, s1_parse, s2_qc, s3_structure, s4_meta, s5_embed_index
 from pipeline.stages.s0_register import register_batch
 from pipeline.states import REPROCESS_RESET_FROM, PipelineState
+from pipeline.verify.anchor_replay import run_replay
 from pipeline.verify.idempotency import check_idempotency
+from pipeline.verify.rebuild import run_rebuild
+from pipeline.verify.reconcile import run_reconcile
 from pipeline.verify.report import build_report
+from pipeline.verify.smoke import run_smoke
 
 #: 推进到此类终态(且带 supersedes)即自动版本切换(D1)。
 _INDEXED_STATES = frozenset({PipelineState.INDEXED.value, PipelineState.DEGRADED_INDEXED.value})
@@ -153,14 +163,9 @@ def _advance_one(pg: PgIO, ctx: StageContext, dvid: str, *, max_steps: int = 20)
         steps += 1
     final = pg.get(DocVersion, dvid)
     final_state = final.pipeline_status if final else "?"
-    # D1:推进到 INDEXED 且带 supersedes → 自动版本原子切换(旧版置 superseded)。
-    # 仅 worker ctx(含 milvus)才可能到 INDEXED;轻 ctx 至多停 META_REVIEW,故 milvus 必非空。
-    if (
-        final is not None
-        and final_state in _INDEXED_STATES
-        and final.supersedes_version_id
-        and ctx.milvus is not None
-    ):
+    # 推进到 INDEXED 即 finalize:① 带 supersedes 则版本原子切换 ② T2/T4 评测留痕(§9,M2)。
+    # 仅 worker ctx(含 milvus)才可能到 INDEXED;轻 ctx 至多停 META_REVIEW,故此处 milvus 必非空。
+    if final is not None and final_state in _INDEXED_STATES and ctx.milvus is not None:
         result = finalize.run(ctx, dvid)
         if result.switched:
             typer.echo(f"  版本切换:旧版 {result.old_dvid} → superseded")
@@ -582,7 +587,9 @@ def reprocess(
 
 
 # ── verify(M1:idempotency;smoke/replay/reconcile 属 M2,D5 占位)──
-verify_app = typer.Typer(help="验证组件(M1 仅 idempotency=V5)", no_args_is_help=True)
+verify_app = typer.Typer(
+    help="验证组件:idempotency(V5)/ smoke(T2,V7)/ replay(T4,V3)/ reconcile", no_args_is_help=True
+)
 app.add_typer(verify_app, name="verify")
 
 
@@ -601,34 +608,93 @@ def verify_idempotency(
         raise typer.Exit(1)
 
 
-# ── M2 占位(SPEC:禁伪造断言;M1 打印「非 M1 范围」+ 非零退出)──
-def _not_m1(name: str) -> None:
-    typer.echo(f"✗ {name} 属 M2,非 M1 范围(未实现;按 SPEC 禁止伪造断言)。")
-    raise typer.Exit(2)
+# ── M2 验证组件(T2 冒烟 / T4 锚点回放 / 对账 / rebuild)──────────
+_BATCH_OPT = typer.Argument(None, help="批次 id(省略=全部已索引件)")
+
+
+def _indexed_dvids(pg: PgIO, batch: str | None, *, effective_only: bool = False) -> list[str]:
+    """INDEXED / DEGRADED_INDEXED 的 doc_version_id(可按批次过滤)。
+
+    ``effective_only`` 时排除 version_status=superseded 的旧版——T2 冒烟用(superseded 默认检索不可见,
+    测它必 E801 误报);T4 回放不排除(旧版锚点不变,仍应可回放)。
+    """
+    with pg.session() as s:
+        q = select(DocVersion.doc_version_id).where(
+            DocVersion.pipeline_status.in_(list(_INDEXED_STATES))
+        )
+        if effective_only:
+            q = q.where(DocVersion.version_status == "effective")
+        if batch:
+            q = q.where(DocVersion.batch_id == batch)
+        return list(s.scalars(q))
 
 
 @verify_app.command("smoke")
-def verify_smoke() -> None:
-    """[M2 占位] T2 冒烟检索——非 M1 范围,非零退出。"""
-    _not_m1("verify smoke(T2 冒烟)")
+def verify_smoke(batch: str | None = _BATCH_OPT) -> None:
+    """T2 批次冒烟(V7):每件合成查询命中 + 携带 status 过滤位;通过率 100% 即过,有失败非零退出。"""
+    pg, ctx = _worker_context()  # 需 embedding 编码合成查询 + milvus 检索
+    dvids = _indexed_dvids(pg, batch, effective_only=True)  # superseded 默认不可见,排除
+    if not dvids:
+        typer.echo("(无已索引文档)")
+        return
+    r = run_smoke(ctx, dvids)
+    for d in r.per_doc:
+        if d["error_code"]:
+            typer.echo(f"  ✗ {d['dvid']}  {d['error_code']}  hit={d['hit']}")
+    ok = sum(1 for d in r.per_doc if not d["error_code"])
+    typer.echo(f"T2 冒烟:{_pct(r.pass_rate)}  ({ok}/{len(r.per_doc)})")
+    if not r.passed:
+        raise typer.Exit(1)
 
 
 @verify_app.command("replay")
-def verify_replay() -> None:
-    """[M2 占位] T4 锚点回放——非 M1 范围,非零退出。"""
-    _not_m1("verify replay(T4 锚点回放)")
+def verify_replay(batch: str | None = _BATCH_OPT) -> None:
+    """T4 锚点回放(V3):逐 chunk 在原件页定位;表格/降级豁免;100% 即过,有未匹配非零退出。"""
+    pg, ctx = _worker_context()  # replay 免模型(embedding 客户端构造不加载);需 object_store
+    dvids = _indexed_dvids(pg, batch)
+    if not dvids:
+        typer.echo("(无已索引文档)")
+        return
+    r = run_replay(ctx, dvids)
+    for f in r.fails:
+        typer.echo(f"  ✗ {f['clause_path']}  chunk={f['chunk_id'][:8]}..")
+    typer.echo(f"T4 锚点回放:{_pct(r.pass_rate)}  ({r.matched}/{r.total},豁免 {r.exempt})")
+    if not r.passed:
+        raise typer.Exit(1)
 
 
 @verify_app.command("reconcile")
-def verify_reconcile() -> None:
-    """[M2 占位] PG/Milvus 对账——非 M1 范围,非零退出。"""
-    _not_m1("verify reconcile(PG/Milvus 对账)")
+def verify_reconcile(batch: str | None = _BATCH_OPT) -> None:
+    """对账:逐 doc PG 块数 vs Milvus,不平以 PG 重灌;全部一致即过,否则非零退出。"""
+    pg, ctx = _worker_context()
+    with pg.session() as s:
+        q = select(Chunk.doc_version_id).distinct()
+        if batch:
+            q = q.join(DocVersion, DocVersion.doc_version_id == Chunk.doc_version_id).where(
+                DocVersion.batch_id == batch
+            )
+        dvids = list(s.scalars(q))
+    if not dvids:
+        typer.echo("(无 chunk 文档)")
+        return
+    r = run_reconcile(ctx, dvids)
+    for d in r.per_doc:
+        if d["reconciled"]:
+            typer.echo(f"  ⚠ {d['dvid']}  PG {d['pg']} != Milvus {d['milvus']} → 重灌 {d['after']}")
+    typer.echo("对账:" + ("一致 ✓" if r.consistent else "重灌后仍不平 ✗"))
+    if not r.consistent:
+        raise typer.Exit(1)
 
 
 @app.command()
 def rebuild() -> None:
-    """[M2 占位] 删集合 + 从 PG/冷备重建——非 M1 范围,非零退出。"""
-    _not_m1("rebuild(Milvus 重建)")
+    """V6:drop Milvus collection → 从 PG chunks + bytea 冷备零编码全量重灌。"""
+    pg, ctx = _worker_context()
+    r = run_rebuild(ctx)
+    typer.echo(
+        f"✓ rebuild:{r.docs} 件 {r.chunks_reloaded} 块从冷备零编码回灌;"
+        f"num_entities {r.before_count} → {r.after_count}"
+    )
 
 
 # ── report(批次指标快照)──────────────────────────────────────
@@ -658,7 +724,10 @@ def report(batch: str = typer.Argument(..., help="批次 id")) -> None:
         f"QC 一次通过率 {_pct(rep['qc_first_pass_rate'])}  "
         f"锚点填充率 {_pct(rep['anchor_fill_rate'])}"
     )
-    typer.echo(f"retrieval_mode {rep['retrieval_mode']}")
+    typer.echo(
+        f"T2 冒烟 {_pct(rep['t2_pass_rate'])}  T4 锚点回放 {_pct(rep['t4_pass_rate'])}  "
+        f"retrieval_mode {rep['retrieval_mode']}"
+    )
     typer.echo(json.dumps(rep, ensure_ascii=False, indent=2))
 
 

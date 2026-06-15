@@ -154,9 +154,9 @@ def test_verify_idempotency_stable(pgmilvus, tmp_path):
             s.execute(delete(ImportBatch).where(ImportBatch.source_dir == str(d)))
 
 
-def test_reprocess_deterministic(model_stack, tmp_path, mini_batch, ingest_index):
+def test_reprocess_deterministic(model_stack, soffice, tmp_path, unique_docx, ingest_index):
     pg, mio, ctx = model_stack
-    d, m = mini_batch(tmp_path, "batch01", "ext_xxpl_182.pdf")
+    d, m = unique_docx(tmp_path)  # 自造唯一 docx:隔离健壮,避开既有数据 SHA 去重(需 soffice 渲染)
     bid, dvids = ingest_index(pg, ctx, d, m)
     (dvid,) = dvids
     try:

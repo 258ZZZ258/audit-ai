@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-**Implementation in progress** (M1). Specs: `SPEC.md` (M1 scope, contracts), `PLAN.md` (4-phase plan), `TASKS.md` (per-task acceptance), upstream `文档处理管线_本地Demo_开发文档_v0.1.md` (V0.1). **The full build narrative — every module, decision, and pitfall — is in `docs/devlog.md`; read it to understand why things are the way they are.** Read the spec before changing contracts — it encodes deliberate cut decisions ("裁机制不裁契约": cut mechanisms, never cut contracts).
+**M1 完成(检查点 D,V1/V2/V4/V5)+ M2 验证套件完成(检查点 M2,V3/V6/V7)。** Specs: `SPEC.md`(M1)/ `SPEC_M2.md`(M2,验证套件主体、DeepDoc 降可选)、`PLAN*.md`、`TASKS*.md`(per-task 验收),upstream `文档处理管线_本地Demo_开发文档_v0.1.md` (V0.1)。**The full build narrative — every module, decision, and pitfall — is in `docs/devlog.md`; read it to understand why things are the way they are.** Read the spec before changing contracts — it encodes deliberate cut decisions ("裁机制不裁契约": cut mechanisms, never cut contracts). DeepDoc(M2 可选)留独立轮:走查证明真实 PDF 解析痛点在 `clause_tree`(IR 边界下游),与换不换解析器无关。
 
 ### 开发进展 (structured per-phase summary; 细节见 `docs/devlog.md`)
 
@@ -14,7 +14,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **L/P/SP 并行流** | ✅ | L: normalize·clause_tree·chunker(确定性 chunk_id)·page_align;P: fixtures(`build_fixtures.py`);SP1: rendition(soffice→pdf 对齐) |
 | **B 接入→质检** | ✅ 检查点 B | s0 登记(manifest 校验/SHA 去重/版本关系)· s1 解析+渲染+页码对齐 · s2 七指标质检 · orchestrator(stage 注入轮询)· review_queue 处置流(dispose)· CLI `ingest`/`status`/`queue` |
 | **C 结构化→向量化** | ✅ 检查点 C | s3 切块装配 · s4 元数据 L1+交叉校验 · version_chain · EmbeddingClient(本地 BGEM3)· milvus_io 混合查+冷备 · s5 嵌入索引(staging→effective)· C7 `search` 四级引用 + `meta list/confirm` 放行人工闸(覆盖 V1 主干) |
-| **D 切换/幂等/报告** | ✅ D1–D5(检查点 D 自动化部分) | **D1**: finalize 版本原子切换(自动触发)· corpus_rows 共享层。**D2**: batch02 真实修订对 182→226 端到端(**V4**)。**D3**: `verify idempotency`(**V5**)+ `reprocess`(全量重跑+清孤儿,确定性 chunk_id 幂等)。**D4**: `report <batch>`(四指标+retrieval_mode,无 t2/t4 键,落库)。**D5**: `verify smoke/replay/reconcile`+`rebuild` M2 占位(非零退出,禁伪造)。**余**:演示脚本 1–9 步手动走查 = 检查点 D 终验 |
+| **D 切换/幂等/报告** | ✅ 检查点 D(V1/V2/V4/V5) | **D1**: finalize 版本原子切换(自动触发)· corpus_rows 共享层。**D2**: batch02 真实修订对 182→226(**V4**)。**D3**: `verify idempotency`(**V5**)+ `reprocess`。**D4**: `report <batch>`。**D5**(M2 起为真实现)。演示脚本 1–10 步真栈走查通过 |
+| **M2 验证套件** | ✅ 检查点 M2(V3/V6/V7) | **T2 冒烟**(`verify/smoke.py`,V7)·**T4 锚点回放**(`anchor_replay.py`,V3,page_end 窗+rapidfuzz+表格/降级豁免)·**对账**(`reconcile.py`,逐 doc count)·**rebuild**(`rebuild.py`,冷备零编码回灌,V6)· mini golden set(`tests/golden/`,**F1=1.0**)· report 加 t2/t4_pass_rate · finalize 自动跑 T2/T4 留痕。**DeepDoc 降可选/留独立轮**(走查证明真实 PDF 痛点在 clause_tree,与解析器无关) |
 
 **当前链路**:`ingest`→s1→s2→STRUCTURING(s3+s4)→META_REVIEW(全件 meta_confirm 人工闸)→`meta confirm`(approve)→EMBEDDING→INDEXING→INDEXED→**finalize**(带 supersedes 时自动把旧版置 superseded:PG `supersede_version` 原子事务 + Milvus 从冷备改标量不删);`search` 混合查(默认 effective,`--include-superseded` 见旧版/`--corpus`/`--topk`)出四级引用;degrade 重入索引终于 DEGRADED_INDEXED。**待修小项**:s0 隔离件不写 review_queue(`queue list` 不可见)。
 

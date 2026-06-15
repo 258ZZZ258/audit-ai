@@ -36,37 +36,37 @@
 
 ## M2-B · mini golden set(与 M2-A 并行,独立)
 
-- [ ] **B1 · golden set fixtures + F1 测试**
+- [x] **B1 · golden set fixtures + F1 测试**
   - Acceptance:`fixtures/golden/<doc>.json` ×5–8(batch01 内规 docx 子集 + `第X条之一` + 无章通知/虚拟根),ground truth = `build_tree` 输出 JSON 镜像(节点类型/编号/层级),**人工校订**;`test_golden_set.py` 对每件 parse(light docx→IR blocks)→ `build_tree` → 与 ground truth 比对,断言条款树结构 **F1 = 1.0**
   - Verify:`pytest tests/test_golden_set.py -q`(**免模型/免 soffice**:build_tree 只用 IR blocks 文本)
   - Files:`tools/build_fixtures.py`(可加 `--gen-golden` 导初稿)、`fixtures/golden/*.json`、`tests/test_golden_set.py`
 
 ## M2-C · 装配(M2-A 后)
 
-- [ ] **C1 · report 加 t2/t4_pass_rate**
+- [x] **C1 · report 加 t2/t4_pass_rate**
   - Acceptance:`build_report` 增 `t2_pass_rate`/`t4_pass_rate` 键(M1 决策1 预留);T4 现场跑 replay(免模型)得率,T2 跑 smoke 得率(无模型则 `t2_pass_rate=None` 优雅缺省,与 retrieval_mode 同范式)
   - 决策点:t2/t4 来源 = report 现场计算(本任务采此,简单且与 build_report 纯计算一致);若日后 finalize 存档可改读
   - Verify:`tests/test_report.py`(断言新键存在;有/无模型分别验 t2 率/None)
   - Files:`src/pipeline/verify/report.py`、`tests/test_report.py`
 
-- [ ] **C2 · finalize 自动触发 T2/T4**
+- [x] **C2 · finalize 自动触发 T2/T4**
   - Acceptance:文档到 INDEXED 后 `finalize.run` 顺带跑 T2+T4(复用 D1 已有触发点),结果记日志/报告;**异常吞掉不阻断终态**(评测组件无阻断权)
   - Verify:`tests/test_atomic_switch.py` 或新测(模型门控:INDEXED 件 finalize 产出 T2/T4 结果且不改 pipeline_status)
   - Files:`src/pipeline/stages/finalize.py`、对应测试
 
-- [ ] **C3 · CLI 替换 D5 占位为真实现**
+- [x] **C3 · CLI 替换 D5 占位为真实现**
   - Acceptance:`demo verify smoke|replay|reconcile`、`demo rebuild` 调真实组件、打印报告;退出码非零**当且仅当**有真实失败(E801/E802/E701/不平/top10 不一致);移除对应 `_not_m1` 占位
   - Verify:`tests/test_cli.py`(更新 D5 占位测试为真实退出码语义;`demo verify replay` 免模型可跑)
   - Files:`src/pipeline/cli.py`、`tests/test_cli.py`
 
 ## M2-D · 端到端验收
 
-- [ ] **D1 · 演示脚本走查 + V1–V7 验收**
+- [x] **D1 · 演示脚本走查 + V1–V7 验收**
   - Acceptance:重跑演示脚本 1–10 步(真栈 + 本地 BGE-M3),据本会话实跑微调脚本措辞;**V3**(replay 100%)、**V6**(rebuild top10 一致)、**V7**(smoke 100% 含过滤位)+ report 显 T2/T4=100%;V1/V2/V4/V5 仍过
   - Verify:`[需 demo up + 模型]` 手动走查 + 全套 `pytest`/`ruff check .` 全绿
   - Files:`docs/`(演示脚本/devlog)、必要时 `tests/test_version_demo.py` 延伸
 
-- [ ] **✅ 检查点 M2(硬门)**:V1–V7 全过;演示脚本 1–10 步端到端;mini golden set F1=1.0;`pytest` + `ruff check .` 全绿;迁移无漂移(M2 预期**无新迁移**——纯验证组件,不动 schema)。
+- [x] **✅ 检查点 M2(硬门)**:V1–V7 全过;演示脚本 1–10 步端到端;mini golden set F1=1.0;`pytest` + `ruff check .` 全绿;迁移无漂移(M2 预期**无新迁移**——纯验证组件,不动 schema)。
 
 ## 依赖图
 

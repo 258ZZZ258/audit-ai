@@ -236,22 +236,46 @@ status → search → report → verify idempotency → batch02 切换 + 两条 
 - **发现 3(次要,已记)**:`queue degrade` 单独只到 META_REVIEW(重结构化),需再 meta confirm 才到 DEGRADED_INDEXED
   (两步);Milvus `num_entities`(108)> PG 块数是 upsert churn 未压实计数语义(V5 稳定性不受影响,M2 reconcile 处理)。
 
+### 阶段 M2 — 验证套件(检查点 M2 达成,V3/V6/V7)
+spec-driven 再走一轮(`SPEC_M2`/`PLAN_M2`/`TASKS_M2`,各停下评审)。**立项反转**:据 M1 走查证据,**DeepDoc 降可选/留独立轮**
+(真实 PDF 痛点在 clause_tree 下游,与解析器无关),M2 主体 = 验证套件 + golden set。
+- **M2-0 config**:`[verify]` 段 + `VerifyConfig`(t2_head=30/hit@50/t4_window=1/fuzzy=92,⚠)。
+- **A2 T4 锚点回放(V3)**`verify/anchor_replay.py`:逐非 parent chunk 在原件页 `[page_start-W..page_end+W]`(复用
+  `rendition.page_texts` 同 page_align)精确子串 / rapidfuzz≥阈值定位;**is_table/degraded 豁免**。口径由 Plan 阶段实测探针
+  定死(批 01:非表格 602/620 精确,18 近似全 fuzz≥92 救回,表格豁免→100%)。
+- **A3 对账**`reconcile.py`:逐 doc PG 块数 vs `MilvusIO.count(dvid)`(query-by-PK 准确,**非**虚高 num_entities);不平 E701 +
+  冷备重灌。**A4 rebuild(V6)**`rebuild.py`:`create_collection(drop_existing)` → 遍历全 doc 从冷备零编码回灌(纯 insert,
+  count 干净)。两者复用 `corpus_rows.rows_from_cold(status=None)`(按各 chunk 存储 status 还原)。
+- **A1 T2 冒烟(V7)**`smoke.py`:合成查询=标题+首条款前 N 字 → search(topk=hit_at);断言 hit@N + `SearchResult.expr` 含
+  `status=="effective"` 过滤位(E801/E802)。
+- **B1 golden set**:`tests/golden/*.json` ×5(build_tree 镜像,人工核对)覆盖多级章节条/插入条 4-1/虚拟根;`test_golden_set`
+  断言 F1=1.0(免模型/免 soffice,只用 docx IR blocks)。
+- **C1 report + C2 finalize(设计转折)**:初版让 report 现场跑 smoke → 无模型时触发模型加载/联网卡住。改为 **finalize 在
+  INDEXED 时跑 T2/T4 并留痕 `pipeline_events.detail['verify']`(§9),report 只聚合读取**(不在 report 加载模型)。cli
+  `_advance_one` 钩子改为**所有** INDEXED 件都调 finalize(原仅 supersedes 件)。**C3** `demo verify smoke/replay/reconcile` +
+  `rebuild` 替换 D5 占位为真实现(退出码非零当且仅当真失败)。
+- **M2-D 真栈走查**:`demo verify replay` 100%(620/620 含 143 页 ext_sse,豁免 11)· reconcile 一致 · `rebuild` 631 块零编码
+  回灌 count 631→631 干净 · `verify smoke` 100%(9/9)。**走查发现:smoke 须排除 superseded 件**(182 被 226 替代后默认检索
+  不可见,测它必 E801)→ `_indexed_dvids(effective_only=True)`;replay 不排除(旧版锚点不变仍可回放)。
+- 验证:A2/A3/A4/B1 免模型连真栈过;A1 + C1/C2 e2e(finalize 留痕→report 聚合 t2/t4=1.0)本地 BGE-M3 真跑过。
+
 ## 已建链路与下一步
 
 全链路:`demo ingest`(s0 登记+版本关系+去重审计)→ s1(渲染+解析+对齐)→ s2(七指标质检)→ STRUCTURING 复合
 (s3 切块 + s4 元数据校验)→ META_REVIEW(全件入 meta_confirm 人工闸)→ `meta confirm`(approve)→ EMBEDDING(s5 嵌入+冷备)
 → INDEXING(Milvus 索引 + 翻 effective)→ INDEXED → **finalize**(带 supersedes 自动把旧版置 superseded);`search` 混合查出
 四级引用(默认 effective,`--include-superseded` 见旧版);degrade 重入索引终于 DEGRADED_INDEXED。失败件入统一队列、`dispose`
-处置。**检查点 B/C 达成;C1–C7 + D1–D5 完成**(V1 主干 + V2 + V4 版本切换 + V5 幂等 + report;M2 占位)。
-**检查点 D 余项**:演示脚本第 1–9 步端到端手动走查(V1 全 12 件终态无悬挂 / V2 完整闭环含 degrade 的整批演示)——
-自动化测试已覆盖 V4/V5 全程 + V1/V2 关键分支,整批 demo 走查是终验人工门。
+处置。INDEXED 后 finalize 跑 T2/T4 留痕;`demo verify smoke/replay/reconcile`、`rebuild`、`report` 出验证指标。
+**检查点 B/C/D/M2 达成;M1(V1/V2/V4/V5)+ M2 验证套件(V3/V6/V7)完成。**
+注:模型门控集成测试假定**干净栈**(SHA 去重);手动 demo 走查残留数据须 `demo down -v` 或清库后再跑测试
+(本会话曾因走查残留致 test_version_demo/reprocess SHA 撞车,清库后通过;test_reprocess 已改 unique_docx 自隔离)。
 
-**状态快照(截至检查点 D 走查 + 发现1/2 修复 + 做全小数规则)**:全套 215 passed / 9 skipped(不带
-`PIPELINE_EMBEDDING_MODEL`:9 个模型门控测试 skip;带时全跑)· `ruff check .` 全绿(含 alembic/versions)· 迁移至 0004
-无漂移 · 检查点 A/B/C 达成、D 自动化部分全绿。**检查点 D 走查**:V2/V4/V5 真栈端到端跑通;3 项发现的 1、2 均已修
-(指标3 插入条误报 + clause_tree 跨法引用过滤 + 小数编号做全[目录剥离/全小数排序/小数引用过滤]),**真实 fixture 全部
-端到端入库:batch01 = 9 INDEXED + 1 DEGRADED_INDEXED + 1 QUARANTINED、QC_FAILED 清零,V1 干净达成**。提交锚点:A 段早期 / B 段
-(B6 c1f1bd7·B7 9e9e737)/ C1–C3(601ba3c·fffee03)/ C4 e457f37 · C5 7d3b1e0 · C6 6b98bf0 · 审查修复 cb460f4。
+**状态快照(截至 M2 验证套件,检查点 M2)**:全套 224 passed / 11 skipped(不带 `PIPELINE_EMBEDDING_MODEL`:11 个
+模型门控测试 skip;带时全跑)· `ruff check .` 全绿(含 alembic/versions)· 迁移至 0004 无漂移(M2 无新迁移)·
+检查点 A/B/C/D/M2 达成。**M2 验证套件真栈跑通**:`verify replay` 100%(620/620 含 143 页 ext_sse)· reconcile 一致 ·
+`rebuild` 631 块零编码回灌 count 干净 · `verify smoke` 100%(9/9 排除 superseded)· golden F1=1.0 · finalize 留痕→report
+聚合 t2/t4=1.0。提交锚点:M1 见前;M2 = M2-A(0e9333b)+ M2-B/C/D(本批)。
+(检查点 D 走查发现已修:指标3 插入条误报 + clause_tree 跨法引用过滤 + 小数编号做全;batch01 走查 9 INDEXED+1 DEGRADED+1 QUARANTINED。)
 **待修小项**:s0 隔离件(格式/密级)只置 QUARANTINED 不写 review_queue → `queue list` 不可见(B2 缺口,待补)。
 
 ## 测试与运行约定

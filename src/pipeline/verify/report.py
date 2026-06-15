@@ -31,7 +31,11 @@ def build_report(ctx: StageContext, batch_id: str) -> dict:
         docs = list(s.scalars(select(DocVersion).where(DocVersion.batch_id == batch_id)))
         dvids = [d.doc_version_id for d in docs]
         events = list(
-            s.scalars(select(PipelineEvent).where(PipelineEvent.doc_version_id.in_(dvids or [""])))
+            s.scalars(
+                select(PipelineEvent)
+                .where(PipelineEvent.doc_version_id.in_(dvids or [""]))
+                .order_by(PipelineEvent.id)  # 末写覆盖:取每 doc 最新 verify 留痕
+            )
         )
         chunks = list(
             s.scalars(select(Chunk).where(Chunk.doc_version_id.in_(dvids or [""])))
@@ -54,6 +58,10 @@ def build_report(ctx: StageContext, batch_id: str) -> dict:
         except Exception:  # 探测失败不应使 report 崩(指标仍可用)
             retrieval_mode = None
 
+    # T2/T4 通过率(M2):由 finalize 在 INDEXED 时算好、留痕到 pipeline_events.detail["verify"]
+    # (§9);report 只**聚合读取**,不在此加载模型/重跑(避免 report 触发模型加载)。无留痕 → None。
+    t2_rate, t4_rate = _verify_rates(events)
+
     return {
         "batch_id": batch_id,
         "doc_count": len(docs),
@@ -62,5 +70,22 @@ def build_report(ctx: StageContext, batch_id: str) -> dict:
         "parse_success_rate": _rate(reached_qc, reached_parsing),
         "qc_first_pass_rate": _rate(qc_first_pass, reached_qc),
         "anchor_fill_rate": _rate(anchored, len(chunks)),
+        "t2_pass_rate": t2_rate,
+        "t4_pass_rate": t4_rate,
         "retrieval_mode": retrieval_mode,
     }
+
+
+def _verify_rates(events: list) -> tuple[float | None, float | None]:
+    """从 pipeline_events 的 verify 留痕聚合 T2/T4 通过率(events 已按 id 升序,末写覆盖)。"""
+    latest: dict[str, dict] = {}
+    for e in events:
+        v = (e.detail or {}).get("verify")
+        if v:
+            latest[e.doc_version_id] = v
+    t2 = [v["t2_hit"] for v in latest.values() if v.get("t2_hit") is not None]
+    t4 = [v["t4_pass"] for v in latest.values() if v.get("t4_pass") is not None]
+    t2_rate = (sum(1 for x in t2 if x) / len(t2)) if t2 else None
+    t4_rate = (sum(1 for x in t4 if x) / len(t4)) if t4 else None
+    return (round(t2_rate, 4) if t2_rate is not None else None,
+            round(t4_rate, 4) if t4_rate is not None else None)

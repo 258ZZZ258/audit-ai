@@ -24,6 +24,7 @@ from pipeline.index.pg_models import (
     ReviewQueue,
 )
 from pipeline.stage_base import StageContext
+from pipeline.verify.report import build_report
 from pipeline.verify.smoke import run_smoke
 
 
@@ -73,17 +74,47 @@ def test_smoke_hits_with_status_filter(stack, soffice, tmp_path, unique_docx, in
         assert rec["error_code"] is None
         assert r.passed and r.pass_rate == 1.0
     finally:
-        mio.delete(dvids[0] if dvids else "x")
-        mio.flush()
+        _cleanup(pg, mio, bid, dvids)
+
+
+def _cleanup(pg, mio, bid, dvids):
+    for d_ in dvids:
+        mio.delete(d_)
+    mio.flush()
+    with pg.session() as s:
+        for d_ in dvids:
+            s.execute(delete(RemediationRecord).where(RemediationRecord.doc_version_id == d_))
+            s.execute(delete(ReviewQueue).where(ReviewQueue.doc_version_id == d_))
+            s.execute(delete(Chunk).where(Chunk.doc_version_id == d_))
+            s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id == d_))
+        lids = [
+            x.logical_id
+            for x in s.scalars(select(DocVersion).where(DocVersion.batch_id == bid))
+        ]
+        s.execute(delete(DocVersion).where(DocVersion.batch_id == bid))
+        if lids:
+            s.execute(delete(Document).where(Document.logical_id.in_(lids)))
+        s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
+
+
+def test_finalize_stores_verify_then_report_aggregates(stack, soffice, tmp_path,
+                                                       unique_docx, ingest_index):
+    # C2 + C1 端到端:ingest→INDEXED→finalize 跑 T2/T4 留痕(C2)→ report 聚合 t2/t4(C1)
+    pg, mio, ctx = stack
+    d, m = unique_docx(tmp_path)
+    bid, dvids = ingest_index(pg, ctx, d, m)
+    try:
+        (dvid,) = dvids
         with pg.session() as s:
-            for d_ in dvids:
-                s.execute(delete(RemediationRecord).where(RemediationRecord.doc_version_id == d_))
-                s.execute(delete(ReviewQueue).where(ReviewQueue.doc_version_id == d_))
-                s.execute(delete(Chunk).where(Chunk.doc_version_id == d_))
-                s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id == d_))
-            lids = [x.logical_id for x in s.scalars(
-                select(DocVersion).where(DocVersion.batch_id == bid))]
-            s.execute(delete(DocVersion).where(DocVersion.batch_id == bid))
-            if lids:
-                s.execute(delete(Document).where(Document.logical_id.in_(lids)))
-            s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
+            verify_evs = [
+                e for e in s.scalars(
+                    select(PipelineEvent).where(PipelineEvent.doc_version_id == dvid))
+                if (e.detail or {}).get("verify")
+            ]
+        assert verify_evs, "finalize 未留 verify 痕(C2)"
+        v = verify_evs[-1].detail["verify"]
+        assert v["t2_hit"] is True and v["t4_pass"] is True  # 该件 T2 命中 + T4 回放过
+        rep = build_report(ctx, bid)  # C1:从留痕聚合
+        assert rep["t2_pass_rate"] == 1.0 and rep["t4_pass_rate"] == 1.0
+    finally:
+        _cleanup(pg, mio, bid, dvids)
