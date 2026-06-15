@@ -228,46 +228,46 @@
   - 验证:`[需 demo up]` 正常件→INDEXED;PG chunk 数 == Milvus
   - 文件:`src/pipeline/stages/s5_embed_index.py`、`tests/test_s5.py`
 
-- [ ] **C7 · CLI:search / meta**
+- [x] **C7 · CLI:search / meta**
   - 依赖:C5、C2、C6
   - 验收:`demo search` 混合检索 + 默认 `status=effective` 过滤、`--include-superseded`/`--corpus`/`--topk`;结果带四级引用(条款路径/文档+文号/页码/版本+状态);dense-only 兜底时输出 `retrieval_mode`;`demo meta list|confirm` 放行 META_REVIEW
-  - 验证:`[需 demo up]` search → 四级引用结果;`meta confirm --batch` 放行
-  - 文件:`src/pipeline/cli.py`
+  - 验证:`[需 demo up]` search → 四级引用结果;`meta confirm --batch` 放行 ✅(本地 BGE-M3 真跑:`meta confirm`→INDEXED、hybrid 检索四级引用渲染、`--corpus external→P-EXT` 过滤)
+  - 文件:`src/pipeline/cli.py`、`tests/test_cli.py`、`tests/test_search_meta.py`
 
-- [ ] **✅ 检查点 C(硬门)**:正常件全链路到 INDEXED;`demo search` 返回带四级引用;S3 单测(归一化/节点正则/chunk_id 确定性/超长续接)全绿。**覆盖 V1 主干。**
+- [x] **✅ 检查点 C(硬门)**:正常件全链路到 INDEXED;`demo search` 返回带四级引用;S3 单测(归一化/节点正则/chunk_id 确定性/超长续接)全绿。**覆盖 V1 主干。**
 
 ---
 
 ## 阶段 D — 版本切换、幂等、报告(T-B)
 
-- [ ] **D1 · version_chain 原子切换事务 + finalize**
+- [x] **D1 · version_chain 原子切换事务 + finalize**
   - 依赖:C3、C6
-  - 验收:INDEXED 后原子切换三步(PG 新旧 status 互换事务 → Milvus 旧版 chunk status 标量批量改 `superseded` 不删 → `doc_versions` 写关系);前置校验新版已 INDEXED;下游通知打日志占位
-  - 验证:`pytest -k atomic_switch`;切换可重放安全(PG 侧原子)
-  - 文件:`src/pipeline/meta/version_chain.py`、`src/pipeline/stages/finalize.py`、`tests/test_atomic_switch.py`
+  - 验收:INDEXED 后原子切换三步(PG `pg_io.supersede_version` 单事务:旧版 version_status+chunks chunk_status→superseded、新版 effective → Milvus 旧版 chunk 标量改 `superseded` 不删[从冷备重建 upsert,零重编码] → 下游通知日志占位);前置校验到 INDEXED + 带 supersedes;自动触发(`_advance_one` 到 INDEXED 即跑)
+  - 验证:`pytest -k atomic_switch` ✅(连 PG+Milvus,免模型;切换可重放、no-op 守卫、默认检索排除旧版 + `--include-superseded` 可见)
+  - 文件:`src/pipeline/stages/finalize.py`、`src/pipeline/index/corpus_rows.py`(抽出 s5/finalize 共用的块→CorpusRow 映射)、`src/pipeline/index/pg_io.py`(supersede_version)、`src/pipeline/cli.py`、`tests/test_atomic_switch.py`
 
-- [ ] **D2 · batch02 联调 + 版本可见性**
+- [x] **D2 · batch02 联调 + 版本可见性**
   - 依赖:D1、C7、P4
   - 验收:batch02 入库后默认 search 不见旧版;`--include-superseded` 见旧版且标 `superseded`
-  - 验证:`[需 demo up]` 两条 search 命令对比(**V4**)
+  - 验证:`[需 demo up]` 两条 search 命令对比(**V4**)✅ 本地 BGE-M3 真跑:真实修订对 182→226 走 ingest→meta confirm→自动 finalize,s0 真实解析 supersedes + 继承 logical,默认 search 仅见 226、`--include-superseded` 见 182(`tests/test_version_demo.py`,模型门控)
   - 文件:`tests/test_version_demo.py`
 
-- [ ] **D3 · verify idempotency + reprocess**
+- [x] **D3 · verify idempotency + reprocess**
   - 依赖:C6、D1
-  - 验收:`reprocess` = 全量重跑 + 按 doc_version_id 清孤儿;`verify idempotency` 断言 chunk_id 集合不变、Milvus `num_entities` 不变、第二次运行有 `pipeline_events` 记录
-  - 验证:`[需 demo up]` ingest batch01 两次 → `demo verify idempotency` 通过(**V5**)
-  - 文件:`src/pipeline/verify/idempotency.py`、`src/pipeline/cli.py`、`tests/test_idempotency.py`
+  - 验收:`reprocess` = 全量重跑(重置 REGISTERED + 清 Milvus 孤儿)+ 自动重确认到 INDEXED;`verify idempotency` 断言 chunk_id 集合不变、Milvus `num_entities` 不变、第二次运行有 `duplicate_ingest` 事件
+  - 验证:✅ 本地 BGE-M3 / 真栈跑:`reprocess` 182 重跑回 INDEXED 且 chunk_id 集合+Milvus 计数不变(确定性);`verify idempotency` 第二次 ingest SHA 去重、三项不变量通过(`tests/test_idempotency.py`;verify 免模型)
+  - 文件:`src/pipeline/verify/idempotency.py`、`src/pipeline/cli.py`、`tests/test_idempotency.py`、`tests/conftest.py`(mini_batch/ingest_index 共享 fixture)
 
-- [ ] **D4 · report CLI**
+- [x] **D4 · report CLI**
   - 依赖:C6
-  - 验收:`demo report <batch>` 输出 JSON + 控制台:解析成功率、QC 一次通过率、各终态计数、锚点填充率、`retrieval_mode`;**不含** `t2_pass_rate`/`t4_pass_rate` 键
-  - 验证:`[需 demo up]` `demo report batch01` → 四项指标、无 t2/t4 键
-  - 文件:`src/pipeline/verify/report.py`、`src/pipeline/cli.py`
+  - 验收:`demo report <batch>` 输出 JSON + 控制台:解析成功率、QC 一次通过率、各状态计数、锚点填充率、`retrieval_mode`;**不含** `t2_pass_rate`/`t4_pass_rate` 键;快照落库 `import_batches.report`
+  - 验证:✅ 真栈跑:CLI 输出四项指标 + retrieval_mode(Milvus 探测)、无 t2/t4 键、快照持久化(`tests/test_report.py`;指标数学免模型/免 Milvus 单测)
+  - 文件:`src/pipeline/verify/report.py`、`src/pipeline/index/milvus_io.py`(probe_retrieval_mode)、`src/pipeline/cli.py`、`tests/test_report.py`
 
-- [ ] **D5 · M2 占位 CLI**
+- [x] **D5 · M2 占位 CLI**
   - 依赖:A5
   - 验收:`demo verify smoke|replay|reconcile`、`demo rebuild` 打印"非 M1 范围"并非零退出(**禁止伪造断言**)
-  - 验证:`demo verify smoke` → 非零退出 + 提示
+  - 验证:✅ 四命令均 exit=2 + 明示「非 M1 范围(M2)」,零伪造(`tests/test_cli.py` 参数化,无需 demo up)
   - 文件:`src/pipeline/cli.py`
 
 - [ ] **✅ 检查点 D(总验收 · 硬门)**:V1(全终态无悬挂)、V2(完整闭环 + degrade)、V4(版本切换)、V5(幂等)全过;演示脚本第 1–9 步端到端跑通;`pytest` + `ruff check .` 全绿。

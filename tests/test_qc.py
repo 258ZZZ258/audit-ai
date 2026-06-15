@@ -66,6 +66,37 @@ def test_page_null_fails_on_indicator_4():
     assert r.failed and 4 in {i.index for i in r.failures()}
 
 
+def _inserted():
+    return [
+        ("第一章 总则", 1),
+        ("第三条 甲类事项的处理要求内容充实完整规范", 1),
+        ("第四条 乙类事项的处理要求内容充实完整规范", 1),
+        ("第四条之一 新增插入条的处理要求内容充实完整规范", 1),  # 合法插入条 → 归一 "4-1"
+        ("第五条 丙类事项的处理要求内容充实完整规范", 1),
+    ]
+
+
+def test_inserted_clause_not_flagged_by_hierarchy():
+    # 发现1 回归:第四条之一((4,1))不应被层级合法性误判为非递增(其 base 与第四条相等)
+    r = evaluate(_ir(_inserted()), load_config().qc)
+    ind3 = next(i for i in r.indicators if i.index == 3)
+    assert ind3.evidence["violations"] == [] and ind3.passed
+    assert not r.failed  # 含插入条的件整体通过 QC
+
+
+def test_hierarchy_catches_duplicate_clause():
+    # 确保修复未关掉检查:真重复条号(两个第四条 → (4,0)<=(4,0))仍被层级合法性抓住
+    dup = [
+        ("第一章 总则", 1),
+        ("第三条 甲类内容充实完整规范明确", 1),
+        ("第四条 乙类内容充实完整规范明确", 1),
+        ("第四条 丙类内容重复条号充实完整规范", 1),  # 重复第四条
+        ("第五条 丁类内容充实完整规范明确", 1),
+    ]
+    r = evaluate(_ir(dup), load_config().qc)
+    assert 3 in {i.index for i in r.failures()}
+
+
 def test_marginal_band_with_tight_threshold():
     th = QcThresholds(
         clause_coverage_min=0.99, clause_continuity_max_gap=0, hierarchy_illegal_max=0,

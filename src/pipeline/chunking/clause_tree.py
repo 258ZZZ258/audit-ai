@@ -21,6 +21,9 @@ _NUM = r"[〇零一二三四五六七八九十百千两\d]+"
 # 条号(可含插入条西文/小数写法:21bis、21.1b);最终交 normalize_clause_no 归一与校验
 _ART_NUM = rf"(?:{_NUM}(?:bis|ter|quater|quinquies)?|\d+\.\d+[a-zA-Z]?)"
 _CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫"
+#: 紧跟「第X条」之后的枚举/引用标点 → 是跨法引用列举(如「…第一百九十六条、依照《证券法》…」)
+#: 而非条标题。真条标题后必跟正文字或行尾(去空白后),不会是这些标点。
+_REF_PUNCT = frozenset("、，,;；")
 
 
 class NodeType(StrEnum):
@@ -56,10 +59,17 @@ class InternalRef(NamedTuple):
     raw: str
 
 
+#: 目录条目的点引导符(如「第一章 总则 …… 5」);≥4 连续点/省略号 → 目录行,非真标题。
+_TOC_LEADER = re.compile(r"[.．·…]{4,}")
+
+
 def classify_heading(text: str) -> Heading | None:
     """识别一行是否为某类节点标题;否则 None(正文段)。"""
-    s = strip_ws(to_halfwidth(text))
+    half = to_halfwidth(text)
+    s = strip_ws(half)
     if not s:
+        return None
+    if _TOC_LEADER.search(half):  # 目录条目(点引导符)→ 非结构标题(避免目录章节与正文重复)
         return None
     for nt, suffix in (
         (NodeType.CHAPTER, "章"),
@@ -71,12 +81,19 @@ def classify_heading(text: str) -> Heading | None:
             return Heading(nt, normalize_clause_no(m.group(1)), m.group(0))
     # 条(插入条:中文之N / 西文 bis / 小数式 21.1b)
     m = re.match(rf"^第({_ART_NUM})条(?:之({_NUM}))?", s)
-    if m:
+    if m and s[m.end() : m.end() + 1] not in _REF_PUNCT:  # 紧跟、，; → 跨法引用列举,非条标题
         raw = m.group(1) + ("之" + m.group(2) if m.group(2) else "")
         try:
             return Heading(NodeType.ARTICLE, normalize_clause_no(raw), m.group(0))
         except ValueError:
             pass  # 第…条 但号非法 → 落到项/目(通常不命中)
+    # 小数编号条(交易所规则体例:"2.17 内容" / "3.1.2 内容",章[.节].条)。号后**强制空白**
+    # (用未去空白的 half)避开 "2.17%" / "1.5亿元";号后 `(?!条)` 排除 "10.1.3 条或者…" 这种
+    # 「第N.M.K条」引用碎片(第+前段在上一块,本块以「N.M.K 条…」起,非真条标题)。
+    # 号取**全小数**(如 "10.1.3"):保全章/节/条序,使 _key 元组比较跨节正确排序(节点未识别也不误判)。
+    m = re.match(r"^\s*(\d+(?:\.\d+){1,2})\s+(?!条)\S", half)
+    if m:
+        return Heading(NodeType.ARTICLE, m.group(1), m.group(1))
     # 项:(一) / （一） / 一、
     m = re.match(rf"^[（(]({_NUM})[）)]", s) or re.match(rf"^({_NUM})、", s)
     if m:

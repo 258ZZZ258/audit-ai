@@ -157,6 +157,24 @@ class PgIO:
             for c in s.scalars(select(Chunk).where(Chunk.doc_version_id == doc_version_id)):
                 c.chunk_status = status
 
+    def supersede_version(self, old_dvid: str, *, new_dvid: str) -> None:
+        """版本原子切换(PG 侧,D1):单事务内把旧版及其全部 chunk 置 superseded、新版置 effective。
+
+        - 旧版 ``DocVersion.version_status`` → superseded;其 ``chunks.chunk_status`` → superseded
+          (与 Milvus 标量一致,且 rebuild 从 PG 重建时不会把旧版误标回 effective)。
+        - 新版 ``version_status`` → effective(幂等;新版 INDEXED 时已是 effective)。
+        单事务使切换在 PG 侧原子、可重放安全(旧版已 superseded 时重跑等价无副作用)。
+        """
+        with self.session() as s:
+            old = s.get(DocVersion, old_dvid)
+            if old is not None:
+                old.version_status = "superseded"
+            new = s.get(DocVersion, new_dvid)
+            if new is not None:
+                new.version_status = "effective"
+            for c in s.scalars(select(Chunk).where(Chunk.doc_version_id == old_dvid)):
+                c.chunk_status = "superseded"
+
     def get_chunks(self, doc_version_id: str) -> list[Chunk]:
         with self.session() as s:
             return list(

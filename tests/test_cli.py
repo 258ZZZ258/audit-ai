@@ -154,3 +154,76 @@ def test_queue_degrade_missing_id_exits_1(sandbox):
     pg, _ = sandbox
     r = runner.invoke(app, ["queue", "degrade", "no_such_id"])
     assert r.exit_code == 1
+
+
+# ── C7 · meta(META_REVIEW 闸)/ search 参数校验 ───────────────────
+def _seed_meta_review(pg, bids, *, conflicts: list[dict] | None = None) -> tuple[str, str, str]:
+    """造 1 个 META_REVIEW 的 doc + 1 条 meta_confirm 队列行,返回 (batch_id, dvid, qid)。"""
+    bid, lid, dvid, qid = "cli_" + str(ULID()), str(ULID()), str(ULID()), str(ULID())
+    bids.append(bid)
+    evidence = {"conflicts": conflicts or []}
+    with pg.session() as s:
+        s.add(ImportBatch(batch_id=bid, source_dir="x"))
+        s.add(Document(logical_id=lid, corpus_type="P-INT", title="测试办法"))
+        s.flush()
+        s.add(
+            DocVersion(
+                doc_version_id=dvid, logical_id=lid, batch_id=bid, source_format="docx",
+                source_hash="h" + dvid[:8], raw_object_key="k", title="测试办法",
+                pipeline_status=PS.META_REVIEW.value,
+            )
+        )
+        s.flush()
+        s.add(
+            ReviewQueue(
+                queue_id=qid, queue_type="meta_confirm", doc_version_id=dvid,
+                reason="元数据待人工确认" if not conflicts else "L1/manifest 元数据冲突",
+                evidence=evidence, status="open",
+            )
+        )
+    return bid, dvid, qid
+
+
+def test_meta_list_shows_open_with_conflicts(sandbox):
+    pg, bids = sandbox
+    conflicts = [{"field": "doc_number", "manifest": "证监会令第182号", "extracted": "第180号"}]
+    _, dvid, qid = _seed_meta_review(pg, bids, conflicts=conflicts)
+    r = runner.invoke(app, ["meta", "list"])
+    assert r.exit_code == 0
+    assert qid in r.output and "⚠冲突×1" in r.output
+    assert "doc_number" in r.output and "证监会令第182号" in r.output  # 冲突明细
+
+
+def test_meta_list_marks_no_conflict(sandbox):
+    pg, bids = sandbox
+    _, _, qid = _seed_meta_review(pg, bids)  # conflicts=[]
+    r = runner.invoke(app, ["meta", "list"])
+    assert r.exit_code == 0
+    assert qid in r.output and "无冲突" in r.output
+
+
+def test_meta_confirm_requires_exactly_one_arg():
+    # 既不给 queue_id 也不给 --batch → 退 1(参数校验先于触栈,无需 demo up)
+    r = runner.invoke(app, ["meta", "confirm"])
+    assert r.exit_code == 1
+    # 同时给两者 → 互斥退 1
+    r = runner.invoke(app, ["meta", "confirm", "some_id", "--batch", "b1"])
+    assert r.exit_code == 1
+
+
+def test_search_invalid_corpus_exits_1():
+    # --corpus 仅 internal|external;非法值在触 embedding/milvus 前即退 1(无需 demo up)
+    r = runner.invoke(app, ["search", "信息披露", "--corpus", "bogus"])
+    assert r.exit_code == 1
+    assert "internal|external" in r.output
+
+
+# ── D5 · M2 占位(打印非 M1 范围 + 非零退出;禁伪造断言)──────────
+@pytest.mark.parametrize(
+    "cmd", [["verify", "smoke"], ["verify", "replay"], ["verify", "reconcile"], ["rebuild"]]
+)
+def test_m2_placeholders_nonzero_exit(cmd):
+    # M2 组件 M1 不实现:非零退出 + 明示「非 M1 范围」,不伪造任何 pass(无需 demo up)
+    r = runner.invoke(app, cmd)
+    assert r.exit_code != 0
+    assert "M2" in r.output and "非 M1 范围" in r.output

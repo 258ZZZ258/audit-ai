@@ -213,6 +213,16 @@ class MilvusIO:
         """按 doc_version_id 删该文档全部块(reprocess / reconcile reload)。"""
         self._collection().delete(f'doc_version_id == "{doc_version_id}"')
 
+    def probe_retrieval_mode(self) -> str:
+        """探测当前可用检索模式(hybrid / dense_only),不依赖真实查询向量(供 report)。
+
+        用合成向量发一次 topk=1 查询:hybrid_search 成功 → "hybrid",受阻退化 → "dense_only"
+        (复用 search 的兜底逻辑)。命中与否不影响判定。
+        """
+        probe_dense = [0.0] * DENSE_DIM
+        probe_dense[0] = 1.0  # 非零向量(COSINE 需 norm≠0)
+        return self.search(probe_dense, {"0": 1.0}, topk=1).retrieval_mode
+
     def search(
         self,
         dense: list[float],
@@ -224,16 +234,23 @@ class MilvusIO:
     ) -> SearchResult:
         """混合查(dense+sparse + RRFRanker);hybrid 失败或 sparse 空 → dense-only 兜底 + 标记。
 
-        默认按 status==effective 过滤(staging/superseded 不可见);include_superseded 去该过滤;
-        corpus 加 corpus_type 过滤。hit 带四级引用字段(clause_path/doc_version_id/page_start)。
+        默认按 status==effective 过滤;include_superseded 额外放出 superseded 旧版(V4 路径,
+        status in [effective, superseded])。**staging(INDEXED 前半成品)在任何情况下都不可见**
+        ——这是硬契约(写序 PG→upsert→flush→INDEXED,翻 effective 前不暴露),故 include_superseded
+        只放宽到 superseded、绝不去掉 status 过滤。corpus 加 corpus_type 过滤。
+        hit 带四级引用字段(clause_path/doc_version_id/page_start)。
         """
         col = self._collection()
-        clauses = []
-        if not include_superseded:
-            clauses.append('status == "effective"')
+        # staging 永不可见(硬契约);include_superseded 仅把可见集放宽到含 superseded
+        status_clause = (
+            'status in ["effective", "superseded"]'
+            if include_superseded
+            else 'status == "effective"'
+        )
+        clauses = [status_clause]
         if corpus:
             clauses.append(f'corpus_type == "{corpus}"')
-        expr = " and ".join(clauses) or None
+        expr = " and ".join(clauses)
 
         try:
             if not sparse:

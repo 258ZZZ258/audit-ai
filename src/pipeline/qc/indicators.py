@@ -45,7 +45,20 @@ def _le(value: float, threshold: float, eps: float) -> tuple[bool, bool]:
 
 
 def _base(num: str) -> int:
-    return int(num.split("-")[0])
+    """条号首段整数:``"17"``→17、插入条 ``"4-1"``→4、小数体例 ``"10.1.3"``→10(章级)。
+
+    用于条号连续性:第X条 体例按条号查缺口;小数体例首段=章号,退化为「章是否齐全」。
+    """
+    return int(num.replace("-", ".").split(".")[0])
+
+
+def _key(num: str) -> tuple[int, ...]:
+    """条号排序键(变长整数元组):``"17"``→(17,)、插入条 ``"4-1"``→(4,1)、小数 ``"10.1.3"``→(10,1,3)。
+
+    用于层级合法性的严格递增判定。元组比较天然处理:插入条 (4,1)>(4,) 不误判;小数跨节
+    (10,2,5)>(10,1,3) 正确(即便节点未被识别为父级);真重复/逆序((4,)<=(4,) / (3,)<=(5,))仍被抓。
+    """
+    return tuple(int(x) for x in num.replace("-", ".").split("."))
 
 
 def clause_coverage(ir: IRDocument, th: QcThresholds) -> IndicatorResult:
@@ -85,10 +98,10 @@ def hierarchy_legality(ir: IRDocument, th: QcThresholds) -> IndicatorResult:
         last: dict = {}
         for c in node.children:
             if c.type in structural and c.number:
-                b = _base(c.number)
-                if c.type in last and b <= last[c.type]:
+                k = _key(c.number)  # (base, sub):插入条 (N,1) > 前条 (N,0),不误判
+                if c.type in last and k <= last[c.type]:
                     violations.append(c.raw_label)
-                last[c.type] = b
+                last[c.type] = k
             walk(c)
 
     walk(root)

@@ -13,10 +13,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **A 底座** | ✅ 检查点 A | config(⚠ 收口)/ ir(契约)/ states(状态机+迁移表)/ pg_models+alembic(add-only)/ compose+`demo up` / ObjectStore / pg_io / milvus_io(audit_corpus schema) |
 | **L/P/SP 并行流** | ✅ | L: normalize·clause_tree·chunker(确定性 chunk_id)·page_align;P: fixtures(`build_fixtures.py`);SP1: rendition(soffice→pdf 对齐) |
 | **B 接入→质检** | ✅ 检查点 B | s0 登记(manifest 校验/SHA 去重/版本关系)· s1 解析+渲染+页码对齐 · s2 七指标质检 · orchestrator(stage 注入轮询)· review_queue 处置流(dispose)· CLI `ingest`/`status`/`queue` |
-| **C 结构化→向量化** | C1–C6 ✅,**C7 待做** | s3 切块装配 · s4 元数据 L1+交叉校验 · version_chain · EmbeddingClient(本地 BGEM3)· milvus_io 混合查+冷备 · s5 嵌入索引(staging→effective)。**C7**: `search` 四级引用 + `meta list/confirm` 放行人工闸 → 检查点 C |
-| **D** | 待做 | 原子切换 / 幂等 / 报告 |
+| **C 结构化→向量化** | ✅ 检查点 C | s3 切块装配 · s4 元数据 L1+交叉校验 · version_chain · EmbeddingClient(本地 BGEM3)· milvus_io 混合查+冷备 · s5 嵌入索引(staging→effective)· C7 `search` 四级引用 + `meta list/confirm` 放行人工闸(覆盖 V1 主干) |
+| **D 切换/幂等/报告** | ✅ D1–D5(检查点 D 自动化部分) | **D1**: finalize 版本原子切换(自动触发)· corpus_rows 共享层。**D2**: batch02 真实修订对 182→226 端到端(**V4**)。**D3**: `verify idempotency`(**V5**)+ `reprocess`(全量重跑+清孤儿,确定性 chunk_id 幂等)。**D4**: `report <batch>`(四指标+retrieval_mode,无 t2/t4 键,落库)。**D5**: `verify smoke/replay/reconcile`+`rebuild` M2 占位(非零退出,禁伪造)。**余**:演示脚本 1–9 步手动走查 = 检查点 D 终验 |
 
-**当前链路**:`ingest`→s1→s2→STRUCTURING(s3+s4)→META_REVIEW(全件 meta_confirm 人工闸)→[C7 `meta confirm`]→EMBEDDING→INDEXING→INDEXED;degrade 重入索引终于 DEGRADED_INDEXED。**待修小项**:s0 隔离件不写 review_queue(`queue list` 不可见)。
+**当前链路**:`ingest`→s1→s2→STRUCTURING(s3+s4)→META_REVIEW(全件 meta_confirm 人工闸)→`meta confirm`(approve)→EMBEDDING→INDEXING→INDEXED→**finalize**(带 supersedes 时自动把旧版置 superseded:PG `supersede_version` 原子事务 + Milvus 从冷备改标量不删);`search` 混合查(默认 effective,`--include-superseded` 见旧版/`--corpus`/`--topk`)出四级引用;degrade 重入索引终于 DEGRADED_INDEXED。**待修小项**:s0 隔离件不写 review_queue(`queue list` 不可见)。
 
 **真模型/向量化运行前提**:BGE-M3 经 modelscope 拉到本地(hf-mirror 在该网络 308 跳回 HF、直连慢),设 `PIPELINE_EMBEDDING_MODEL=<本地目录>` + `HF_HUB_OFFLINE=1`;未设时 embed/s5 集成测试自动 skip(绝不联网下载)。
 
@@ -64,7 +64,7 @@ These are kept byte-identical to the production design so demo code evolves into
 - **PG field names / types / enums** match production §10, **add-only** evolution (enforced by Alembic migrations — never rename or drop). Tables not yet built are kept as commented DDL in the schema file.
 - **Milvus `audit_corpus` collection** uses the full production schema including scalar fields `perm_tag`, `biz_domain`, `issuer_level` and the partition key (HNSW params at defaults). Note: `perm_tag` is written through the whole chain but filtering logic is intentionally **not** implemented (field reserved, logic deferred).
 - **Write order & consistency**: PG first → Milvus upsert → flush → set `INDEXED`. Before `INDEXED`, chunk `status=staging` is invisible to search. This shields half-built state.
-- **Chunking six rules** and clause-tree regex (Chinese numeral normalization, `第X条之一` inserted clauses, virtual root node, breadcrumb prefix, page anchors) follow §6.1–6.2 exactly. The only deliberate demo difference: table blocks get a breadcrumb-only prefix, no LLM summary.
+- **Chunking six rules** and clause-tree regex (Chinese numeral normalization, `第X条之一` inserted clauses, virtual root node, breadcrumb prefix, page anchors) follow §6.1–6.2 exactly. The only deliberate demo difference: table blocks get a breadcrumb-only prefix, no LLM summary. `clause_tree` also supports **decimal numbering** (交易所规则体例 `2.17`/`3.1.2`, number kept as full decimal for `_key` tuple ordering), strips **TOC entries** (≥4 dotted-leader chars), and rejects **cross-reference fragments** (`第X条` followed by enumeration punctuation, or `N.M.K 条` decimal refs) so inline citations aren't mis-read as headings — these are clause_tree (IR-boundary downstream) concerns, independent of the parser.
 
 ## All tunable numbers live in config
 
@@ -142,4 +142,4 @@ If DeepDoc vendoring exceeds 1 day, M2 falls back to the light parser for the de
 - **QC marginal band degenerates** for indicators whose threshold sits at the achievable extreme (page-anchor =100%) or within ε of it (text-garbled 0.01<ε 0.02) — those two have the edge band disabled.
 - **chunker `token_count` measures content only** (excludes breadcrumb + 条头续接), so "≤ target_token_max" is a clean invariant. Single oversized paragraphs split at 项（N）/句末；。 boundaries, char-hard-split as last resort (marked `oversize`). `target_token_min` drives same-条 tail coalescing.
 - **Integration tests** connect to the live stack and `pytest.skip` when PG/Milvus/soffice are down; each cleans up its rows by `batch_id` in FK-safe order. **fixtures/ is git-ignored** (rebuilt by `tools/build_fixtures.py --all`).
-- **Migrations are add-only**, authored by `alembic revision --autogenerate` then verified with `alembic upgrade head` + `alembic check` (no drift).
+- **Migrations are add-only**, authored by `alembic revision --autogenerate` then verified with `alembic upgrade head` + `alembic check` (no drift). `alembic/versions` is in ruff's lint scope (no longer excluded), so after autogenerate run `ruff check --fix alembic/versions && ruff format alembic/versions` before commit — the template's import order + long `op.add_column` lines violate I001/E501 but are 100% auto-fixable, and the fixes are pure formatting (DDL unchanged).

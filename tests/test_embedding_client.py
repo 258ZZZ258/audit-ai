@@ -26,10 +26,39 @@ def test_empty_returns_empty():
     assert LocalBGEM3Client(load_config().embedding).embed([]) == []
 
 
-def test_endpoint_stub_raises():
+def test_endpoint_stub_fails_fast_at_construction():
+    # M1 未实现 endpoint:**构造即抛**(fail-fast),不留到 S5 嵌入才崩
     cfg = load_config().embedding
     with pytest.raises(NotImplementedError):
-        EndpointClient(cfg).embed(["x"])
+        EndpointClient(cfg)
+
+
+def test_from_config_endpoint_fails_fast():
+    # 部署切到 mode=endpoint:from_config 选到 EndpointClient 即清晰失败,而非埋到下游
+    settings = load_config().model_copy(deep=True)
+    settings.embedding.mode = "endpoint"
+    with pytest.raises(NotImplementedError):
+        EmbeddingClient.from_config(settings)
+
+
+def test_local_load_passes_cache_dir(monkeypatch):
+    # cache_dir(config:HF_HOME env 或 settings.toml)必须真传给模型加载器,否则离线缓存路径形同虚设。
+    # monkeypatch 模型类避免加载 2.3GB 真权重(只验参数透传)。
+    fa = pytest.importorskip("FlagEmbedding")
+    captured = {}
+
+    class _FakeModel:
+        def __init__(self, model_name_or_path, **kwargs):
+            captured["model"] = model_name_or_path
+            captured["cache_dir"] = kwargs.get("cache_dir")
+
+    monkeypatch.setattr(fa, "BGEM3FlagModel", _FakeModel)
+    cfg = load_config().embedding.model_copy(
+        update={"cache_dir": "/tmp/hf-offline-cache", "model_name": "BAAI/bge-m3"}
+    )
+    LocalBGEM3Client(cfg)._load()
+    assert captured["model"] == "BAAI/bge-m3"
+    assert captured["cache_dir"] == "/tmp/hf-offline-cache"  # 透传到加载器
 
 
 @pytest.fixture(scope="session")

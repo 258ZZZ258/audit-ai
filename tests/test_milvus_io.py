@@ -111,12 +111,22 @@ def test_hybrid_search_returns_upserted(milvus, dvid):
     assert hit["clause_path"] == "第一章/第一条" and hit["page_start"] == 1  # 四级引用字段
 
 
-def test_staging_invisible_until_effective(milvus, dvid):
+def test_staging_invisible_even_with_include_superseded(milvus, dvid):
+    # 硬契约:staging(INDEXED 前半成品)在任何情况下都不可见——include_superseded 也不放出。
     milvus.upsert([_row(dvid, "1", status="staging")])
     milvus.flush()
-    assert dvid not in _dvids(milvus.search(DENSE, SPARSE, topk=20))  # 默认过滤:staging 不可见
+    assert dvid not in _dvids(milvus.search(DENSE, SPARSE, topk=20))  # 默认:staging 不可见
     visible = milvus.search(DENSE, SPARSE, topk=20, include_superseded=True)
-    assert dvid in _dvids(visible)  # 去过滤后可见
+    assert dvid not in _dvids(visible)  # include_superseded 仅放 superseded,staging 仍不可见
+
+
+def test_superseded_visible_only_with_include_superseded(milvus, dvid):
+    # superseded 旧版:默认不可见(仅 effective),include_superseded 才可见(V4 路径)。
+    milvus.upsert([_row(dvid, "1", status="superseded")])
+    milvus.flush()
+    assert dvid not in _dvids(milvus.search(DENSE, SPARSE, topk=20))  # 默认仅 effective
+    visible = milvus.search(DENSE, SPARSE, topk=20, include_superseded=True)
+    assert dvid in _dvids(visible)  # 放出 superseded
 
 
 def test_dense_only_fallback_on_empty_sparse(milvus, dvid):

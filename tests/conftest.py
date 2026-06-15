@@ -9,9 +9,12 @@ soffice 探测:**二进制找得到 ≠ 能渲染**(profile 锁 / 缺字体库 /
 from __future__ import annotations
 
 import io
+import shutil
+from pathlib import Path
 
 import pytest
 from docx import Document as Docx
+from openpyxl import Workbook, load_workbook
 
 from pipeline.parsing.rendition import render_pdf, soffice_bin
 
@@ -35,3 +38,61 @@ def soffice(tmp_path_factory):
     except Exception as e:  # 二进制在但渲染崩:环境问题,跳过渲染相关测试(非代码缺陷)
         pytest.skip(f"soffice 存在但渲染失败(环境问题,非代码): {e}")
     return bin_
+
+
+@pytest.fixture
+def mini_batch():
+    """从 fixtures 抽**单件** → 临时批目录(原件 + 该件 manifest 行,9 列契约不破)。
+
+    返回 ``make(tmp_path, batch, filename) -> (batch_dir, manifest_path)``。聚焦单件(尤其两件
+    外规 PDF)避免整 batch01 12 件解析慢 + 免 docx soffice;D2/D3 集成测试共用。
+    """
+
+    def _make(tmp_path: Path, batch: str, filename: str) -> tuple[Path, Path]:
+        src_dir = Path("fixtures") / batch
+        ws = load_workbook(src_dir / "manifest.xlsx").active
+        rows = list(ws.iter_rows(values_only=True))
+        hdr = list(rows[0])
+        row = next(r for r in rows[1:] if r[hdr.index("filename")] == filename)
+        d = tmp_path / batch
+        d.mkdir()
+        shutil.copy(src_dir / filename, d / filename)
+        out = Workbook()
+        out.active.append(hdr)
+        out.active.append(list(row))
+        mpath = d / "manifest.xlsx"
+        out.save(mpath)
+        return d, mpath
+
+    return _make
+
+
+@pytest.fixture
+def ingest_index():
+    """真实接入→索引:register_batch → orchestrator 到 META_REVIEW → 逐件 ``cli._approve_doc``
+    (含自动 finalize)→ INDEXED。返回 ``make(pg, ctx, dir, manifest) -> (bid, dvids)``。
+
+    走真实 CLI 路径(D2/D3 集成测试共用),覆盖人工闸放行 + 自动版本切换。
+    """
+    from sqlalchemy import select
+    from ulid import ULID
+
+    from pipeline import cli
+    from pipeline.index.pg_models import DocVersion
+    from pipeline.orchestrator import Orchestrator
+    from pipeline.stages.s0_register import register_batch
+
+    def _make(pg, ctx, batch_dir: Path, manifest: Path) -> tuple[str, list[str]]:
+        bid = str(ULID())
+        register_batch(ctx, bid, batch_dir, manifest)
+        Orchestrator(pg, ctx, cli._build_stages()).run_until_idle()
+        with pg.session() as s:
+            dvids = [
+                d.doc_version_id
+                for d in s.scalars(select(DocVersion).where(DocVersion.batch_id == bid))
+            ]
+        for dvid in dvids:
+            cli._approve_doc(pg, ctx, dvid, "test")
+        return bid, dvids
+
+    return _make
