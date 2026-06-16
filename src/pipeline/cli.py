@@ -27,6 +27,7 @@ from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
 from pipeline.index.pg_models import (
     Chunk,
+    ClauseTag,
     DocVersion,
     ImportBatch,
     RemediationRecord,
@@ -387,8 +388,8 @@ def _wrap_title(t: str | None) -> str | None:
     return t if t.startswith("《") else f"《{t}》"
 
 
-def _print_hit(rank: int, h: dict, dv: DocVersion | None) -> None:
-    """渲染单条命中的四级引用:文档+文号 / 条款路径 / 页码 / 版本+状态。"""
+def _print_hit(rank: int, h: dict, dv: DocVersion | None, *, is_obligation: bool = False) -> None:
+    """渲染单条命中的四级引用:文档+文号 / 条款路径(义务条款标 [义务])/ 页码 / 版本+状态。"""
     title = _wrap_title(dv.title if dv else None) or h["doc_version_id"]
     doc_number = (dv.doc_number if dv else None) or ""
     corpus_type = h.get("corpus_type") or ""
@@ -404,13 +405,30 @@ def _print_hit(rank: int, h: dict, dv: DocVersion | None) -> None:
     if corpus_type:
         doc_line += f" ({corpus_type})"
     typer.echo(doc_line)
-    typer.echo(f"  条款  {h.get('clause_path') or '(根)'}")
+    clause_line = f"  条款  {h.get('clause_path') or '(根)'}"
+    if is_obligation:  # M3:E1 义务标(PG clause_tags 回查,不动 Milvus schema)
+        clause_line += "  [义务]"
+    typer.echo(clause_line)
     typer.echo(f"  页码  第 {page} 页" if page else "  页码  (未对齐)")
     status_line = f"  状态  {chunk_status}   version={version_status}"
     if h.get("degraded"):
         status_line += "  [degraded]"
     typer.echo(status_line)
     typer.echo(f"  ref   chunk={h['chunk_id'][:8]}..  dvid={h['doc_version_id'][:8]}..")
+
+
+def _obligation_chunk_ids(pg: PgIO, chunk_ids: list[str]) -> set[str]:
+    """回 PG 查这批 chunk 哪些标了 is_obligation(E1 富集投影注释 search;不动 Milvus schema)。"""
+    if not chunk_ids:
+        return set()
+    with pg.session() as s:
+        return set(
+            s.scalars(
+                select(ClauseTag.chunk_id).where(
+                    ClauseTag.chunk_id.in_(chunk_ids), ClauseTag.tag_type == "is_obligation"
+                )
+            )
+        )
 
 
 def _print_search(pg: PgIO, query: str, result) -> None:
@@ -424,8 +442,9 @@ def _print_search(pg: PgIO, query: str, result) -> None:
             d.doc_version_id: d
             for d in s.scalars(select(DocVersion).where(DocVersion.doc_version_id.in_(dvids)))
         }
+    oblig = _obligation_chunk_ids(pg, [h["chunk_id"] for h in result.hits])  # M3 义务标
     for rank, h in enumerate(result.hits, 1):
-        _print_hit(rank, h, docs.get(h["doc_version_id"]))
+        _print_hit(rank, h, docs.get(h["doc_version_id"]), is_obligation=h["chunk_id"] in oblig)
 
 
 @app.command()

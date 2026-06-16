@@ -9,10 +9,12 @@ from sqlalchemy import delete, select, text
 from typer.testing import CliRunner
 from ulid import ULID
 
-from pipeline.cli import _build_stages, _structuring, app
+from pipeline.cli import _build_stages, _obligation_chunk_ids, _print_hit, _structuring, app
 from pipeline.config import load_config
 from pipeline.index.pg_io import PgIO
 from pipeline.index.pg_models import (
+    Chunk,
+    ClauseTag,
     Document,
     DocVersion,
     ImportBatch,
@@ -86,6 +88,47 @@ def _seed_qc_failed(pg, bids, *, filename="跳号.docx") -> tuple[str, str]:
             )
         )
     return dvid, qid
+
+
+def test_print_hit_obligation_marker(capsys):
+    """M3 #1:义务 hit 渲染带 [义务] 标,非义务不带(免栈渲染单测)。"""
+    h = {"score": 0.5, "chunk_id": "c" * 24, "doc_version_id": "d" * 26,
+         "clause_path": "第一条", "status": "effective", "page_start": 1}
+    _print_hit(1, h, None, is_obligation=True)
+    assert "[义务]" in capsys.readouterr().out
+    _print_hit(1, h, None, is_obligation=False)
+    assert "[义务]" not in capsys.readouterr().out
+
+
+def test_obligation_chunk_ids(pg):
+    """M3 #1:_obligation_chunk_ids 回 PG 查 is_obligation 标的 chunk(连 PG 免模型)。"""
+    bid, lid, dvid = "cli_" + str(ULID()), str(ULID()), str(ULID())
+    cids = [("o" + dvid)[:24], ("n" + dvid)[:24]]  # o 标义务,n 不标
+    try:
+        with pg.session() as s:
+            s.add(ImportBatch(batch_id=bid, source_dir="x"))
+            s.add(Document(logical_id=lid, corpus_type="P-INT"))
+            s.flush()
+            s.add(DocVersion(
+                doc_version_id=dvid, logical_id=lid, batch_id=bid, source_format="docx",
+                source_hash="h" + dvid[:8], raw_object_key="k", pipeline_status="INDEXED"))
+            s.flush()
+            for i, cid in enumerate(cids):
+                s.add(Chunk(chunk_id=cid, doc_version_id=dvid, text="x", clause_path="1",
+                            clause_path_norm="1", seq=i, page_start=1, is_parent=False,
+                            is_table=False, chunk_status="effective"))
+            s.flush()
+            s.add(ClauseTag(
+                chunk_id=cids[0], tag_type="is_obligation", tag_value="true", evidence="应当"))
+        assert _obligation_chunk_ids(pg, cids) == {cids[0]}  # 只 o 标了义务
+        assert _obligation_chunk_ids(pg, []) == set()
+    finally:
+        with pg.session() as s:
+            s.execute(delete(ClauseTag).where(ClauseTag.chunk_id.in_(cids)))
+            s.execute(delete(Chunk).where(Chunk.doc_version_id == dvid))
+            s.execute(delete(DocVersion).where(DocVersion.doc_version_id == dvid))
+            s.execute(delete(Document).where(Document.logical_id == lid))
+            s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
 
 
 def test_build_stages_wiring():
