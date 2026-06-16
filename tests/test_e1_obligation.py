@@ -21,8 +21,11 @@ CFG = load_config().obligation
         ("第二条 有关部门应当在二十四小时内书面报告", True, "应当"),
         ("印章由专人保管,保管人不得擅自用印", True, "不得"),
         ("报销人应如实填写报销单", True, "应"),  # bare 应(句首,前缀不在排除表)
+        ("公司应披露重大事项", True, "应"),  # 应+动词=义务,evidence 退化为 应
         ("公司对相应债权未提取足额坏账准备", False, None),  # 相应 排除,无其他义务词
         ("适应市场变化调整经营策略", False, None),  # 适应 排除
+        ("对应当事人作出相应处理", False, None),  # 对应当:前缀排除作用于 应当 marker
+        ("履行相应程序后报本所", False, None),  # 相应程序:相 前缀排除
         ("本办法自发布之日起施行", False, None),  # 施行日期句:负例
         ("本办法所称重大事项,是指下列情形", False, None),  # 释义句:负例
         ("", False, None),
@@ -33,6 +36,15 @@ def test_match_obligation(s, expect, ev):
     assert ok is expect
     if expect:
         assert e == ev
+
+
+def test_prefix_exclusion_applies_to_marker():
+    # bare_ying 关时,应当 marker 仍受前缀排除:对应当事人 不误命中,门应当报告 命中
+    cfg = ObligationConfig(
+        markers=["应当"], bare_ying=False, exclusions=["对应"], accuracy_threshold=0.9
+    )
+    assert e1.match_obligation("对应当事人作出处理", cfg) == (False, None)
+    assert e1.match_obligation("有关部门应当报告", cfg)[0] is True
 
 
 def test_marker_priority():
