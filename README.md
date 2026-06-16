@@ -1,4 +1,4 @@
-# 文档处理管线 · 本地 Demo(M1)
+# 文档处理管线 · 本地 Demo(M1–M3 + Web 工作台)
 
 生产设计 S0–S5 主干的本地最小可运行实现。设计与决策见 `SPEC.md` / `PLAN.md` / `TASKS.md`,
 开发约定见 `CLAUDE.md`。本文件只讲怎么跑起来。
@@ -26,6 +26,27 @@ python3.11 -m venv .venv
 ```
 
 > 首次 `demo up` 会拉 Milvus/etcd/minio/pg 镜像(~1GB)并等 Milvus 启动(~90s)。
+
+## Web 工作台(`demo-web`)
+
+栈起来后,可用浏览器工作台代替 CLI 驱动整条管线(纯标准库 HTTP,无构建步骤):
+
+```bash
+.venv/bin/demo-web                         # 默认 127.0.0.1:8765
+.venv/bin/demo-web --host 0.0.0.0 --port 8800
+```
+
+打开 http://127.0.0.1:8765。它是管线域逻辑的**薄壳**(PG 为权威、Milvus 为投影,复用与 CLI 同一套
+状态机 / 统一队列 / 检索):
+
+- **上传入管线**:拖拽 docx/pdf(可附 `manifest.xlsx`)→ S0 登记 → 自动推进
+- **统一人工复核队列**:`qc_fix` / `quarantine` / `meta_confirm` 三类在一处处置(修复重试 / 降级 / 驳回 / 放行 / 确认)
+- **检索**:混合查出四级引用(文档+文号 / 条款路径 / 页码 / 版本+状态),义务条款标 `[义务]`
+- **批次 / 文档详情**:管线节点状态、产物(原件 / 渲染件 / IR / 分块 / Milvus)、事件流、分块
+- **验证 / 报告**:smoke / replay / reconcile + 批次报告
+
+> 需先 `demo up`。检索与 B 模式(`config/settings.toml` 的 `auto_confirm_meta_no_conflict`,无冲突件
+> 自动放行)自动入库需本地嵌入模型(见下「离线嵌入缓存」);其余功能免模型。
 
 ## 配置
 
