@@ -590,24 +590,39 @@ def reprocess(
     doc_version_id: str = typer.Argument(..., help="待重跑的 doc_version_id"),
     operator: str = _OPERATOR,
 ) -> None:
-    """全量重跑单件:清孤儿(Milvus 投影)→ 重置 REGISTERED → 重跑至 INDEXED(自动重确认)。
+    """全量重跑单件:重置 REGISTERED(移出干净终态)→ 清孤儿(Milvus 投影)→ 重跑至 INDEXED(自动重确认)。
 
-    确定性 chunk_id 使重跑安全(同 id 覆盖)。仅终态/失败态可重跑(REPROCESS_RESET_FROM)。
+    确定性 chunk_id 使重跑安全(同 id 覆盖)。仅终态/失败态可重跑(REPROCESS_RESET_FROM);
+    额外接受 REGISTERED 以**重入上次中途失败的 reprocess**(PG 已置位但投影未清完)。
     """
     pg, ctx = _worker_context()  # 重跑跑完 s5,需 embedding + milvus
     dv = pg.get(DocVersion, doc_version_id)
     if dv is None:
         typer.echo(f"✗ 文档不存在: {doc_version_id}")
         raise typer.Exit(1)
-    if PipelineState(dv.pipeline_status) not in REPROCESS_RESET_FROM:
+    state = PipelineState(dv.pipeline_status)
+    # 终态/失败态可重跑;REGISTERED 仅作"上次 reprocess 中途失败"的重入点(避免卡死、需手动改库)
+    resuming = state is PipelineState.REGISTERED
+    if state not in REPROCESS_RESET_FROM and not resuming:
         typer.echo(f"✗ 当前态 {dv.pipeline_status} 不可 reprocess(仅终态/失败态可)")
         raise typer.Exit(1)
 
-    ctx.milvus.delete(doc_version_id)  # 清孤儿:删旧投影(PG chunk 由 s3 replace_chunks 重跑覆盖)
-    ctx.milvus.flush()
-    pg.transition(
-        doc_version_id, PipelineState.REGISTERED, actor=operator, detail={"reprocess": True}
-    )
+    # PG-first(对齐"PG 先 → Milvus"硬契约):先把本件移出干净终态(REGISTERED=重跑中、投影不
+    # 再可信),**再**删 Milvus 投影。删投影前任何失败都停在原一致态(PG INDEXED + Milvus
+    # effective),而非旧序"PG 仍 INDEXED 但投影已空"的虚假可见。resuming 时已在 REGISTERED,跳过。
+    if not resuming:
+        pg.transition(
+            doc_version_id, PipelineState.REGISTERED, actor=operator, detail={"reprocess": True}
+        )
+    # 清孤儿:删旧投影(PG chunk 由 s3 replace_chunks 重跑覆盖)。删除幂等;失败时 PG 已在
+    # REGISTERED,`demo reprocess` 可安全重入(确定性 chunk_id 覆盖),不静默吞、给可执行提示。
+    try:
+        ctx.milvus.delete(doc_version_id)
+        ctx.milvus.flush()
+    except Exception as e:
+        typer.echo(f"✗ Milvus 投影清理失败(PG 已置 REGISTERED):{e}")
+        typer.echo(f"  重跑 `demo reprocess {doc_version_id}` 可安全重入(确定性 chunk_id 覆盖)")
+        raise typer.Exit(1) from e
     typer.echo(f"→ reprocess {doc_version_id}:已重置 REGISTERED + 清 Milvus 投影")
     steps, final, error = _advance_one(pg, ctx, doc_version_id)  # → META_REVIEW(人工闸停)
     if error is None and final == PipelineState.META_REVIEW.value:
