@@ -95,17 +95,19 @@ demo report <batch>
 
 The unified review queue (`review_queue` table) is the **single** entry point for all human actions — it carries three `queue_type`s (qc_fix / quarantine / meta_confirm) in one model. This consolidation (production implied 7 separate workbench UIs) is a core demo decision: production only adds a web shell over this domain model.
 
-## Verification components (the demo's point)
+## Verification components (the demo's point) — ✅ M2 实现(`verify/`)
 
-| Component | What it asserts | Trigger |
-|---|---|---|
-| T2 smoke | per-doc synthetic query hits @50 with `status=effective` filter present | finalize auto + `verify smoke` |
-| T4 anchor replay | each chunk's text exact-matches the source page (±1), breadcrumb stripped; degraded exempt | finalize auto + `verify replay` |
-| reconcile | PG chunk count vs Milvus count per doc_version; mismatch → reload from PG (PG wins) | `verify reconcile` |
-| rebuild | drop collection → reload from PG `chunks` + bytea cold vectors, zero re-encoding → same top-10 | `demo rebuild` |
-| idempotency | re-ingest → chunk_id set unchanged, Milvus `num_entities` unchanged | `verify idempotency` |
+| Component | What it asserts | Trigger | M2 as-built 细节 |
+|---|---|---|---|
+| T2 smoke (V7) | per-doc synthetic query hits @`t2_hit_at` with `status=effective` filter present | finalize auto + `verify smoke` | 合成查询=标题+首条款前 `t2_head_chars` 字;`SearchResult.expr` 断言过滤位(E801/E802);**排除 superseded 件**(默认检索不可见) |
+| T4 anchor replay (V3) | each chunk's text matches source page, breadcrumb stripped; degraded exempt | finalize auto + `verify replay` | 窗 `[page_start-W..page_end+W]`(复用 `rendition.page_texts`)精确子串/`rapidfuzz≥t4_fuzzy_threshold`;**is_table+degraded 豁免** |
+| reconcile | PG chunk count vs Milvus `count(dvid)`(非虚高 num_entities); mismatch → E701 + reload from PG | `verify reconcile` | 冷备 `rows_from_cold` 重灌 |
+| rebuild (V6) | drop collection → reload from PG `chunks` + bytea cold vectors, zero re-encoding → same top-10 | `demo rebuild` | 纯 insert,count 干净;`rows_from_cold(status=None)` 按存储 status 还原 |
+| idempotency (V5) | re-ingest → chunk_id set unchanged, Milvus `num_entities` unchanged | `verify idempotency` | s0 SHA 去重 + duplicate_ingest 留痕 |
 
-Verification components have **no blocking power** over terminal state — they write results to the batch report only (matches production §21.2).
+Verification components have **no blocking power** over terminal state — they write results to the batch report only (production §21.2). **finalize 在 INDEXED 时跑 T2/T4 并留痕 `pipeline_events.detail['verify']`(§9);`report` 只聚合读取**(不在 report 加载模型——否则无模型时卡住)。`verify` ⚠ 值在 `config [verify]`。
+
+**CLI 推进可靠性契约**:`meta confirm` / `reprocess` / `queue *` 推进中途 stage 异常**不静默 exit 0**——`_advance_one` 回带 error,未达预期终态(INDEXED/…)即非零退出(`_approve_doc` 返成功 bool;meta confirm 聚合)。
 
 ## Testing — mini golden set
 
@@ -119,9 +121,9 @@ Python 3.11 · typer · SQLAlchemy 2.x + Alembic · PostgreSQL 16 (Docker) · Mi
 
 ## Milestones
 
-- **M1 (~5d)**: skeleton + S0–S5 full chain on the light parser + state machine + queue CLI + demo script steps 1–9 → V1/V2/V4/V5 pass
-- **M2 (~3d)**: DeepDoc adapter + T2/T4/rebuild/reconcile + mini golden set → V1–V7 pass
-- **M3 (optional ~1d)**: E1 obligation tagging + report polish → V8
+- **M1 ✅**: skeleton + S0–S5 full chain on the light parser + state machine + queue CLI + demo steps 1–10 → V1/V2/V4/V5 pass(检查点 D)
+- **M2 ✅ 验证套件**(`SPEC_M2.md`): T2/T4/reconcile/rebuild + mini golden set(F1=1.0)→ V3/V6/V7 pass(检查点 M2)。**DeepDoc 降可选/留独立轮**——走查证明真实 PDF 痛点在 `clause_tree`(IR 边界下游),与解析器无关;接入时门=parser-swap 后 golden set 仍 F1=1.0
+- **M3 (optional)**: E1 obligation tagging + report polish → V8
 
 If DeepDoc vendoring exceeds 1 day, M2 falls back to the light parser for the demo — the IR boundary guarantees this fallback affects no other acceptance point.
 
@@ -144,3 +146,10 @@ If DeepDoc vendoring exceeds 1 day, M2 falls back to the light parser for the de
 - **chunker `token_count` measures content only** (excludes breadcrumb + 条头续接), so "≤ target_token_max" is a clean invariant. Single oversized paragraphs split at 项（N）/句末；。 boundaries, char-hard-split as last resort (marked `oversize`). `target_token_min` drives same-条 tail coalescing.
 - **Integration tests** connect to the live stack and `pytest.skip` when PG/Milvus/soffice are down; each cleans up its rows by `batch_id` in FK-safe order. **fixtures/ is git-ignored** (rebuilt by `tools/build_fixtures.py --all`).
 - **Migrations are add-only**, authored by `alembic revision --autogenerate` then verified with `alembic upgrade head` + `alembic check` (no drift). `alembic/versions` is in ruff's lint scope (no longer excluded), so after autogenerate run `ruff check --fix alembic/versions && ruff format alembic/versions` before commit — the template's import order + long `op.add_column` lines violate I001/E501 but are 100% auto-fixable, and the fixes are pure formatting (DDL unchanged).
+
+**M2 踩坑(易再踩):**
+- **提交前必跑模型门控套件**:无模型全量会 **skip** 它们(`test_search_meta`/`version_demo`/`reprocess`/`smoke`/`s5`),漏掉这类回归——本会话靠它抓到 2 个。命令:`PIPELINE_EMBEDDING_MODEL=<本地目录> HF_HUB_OFFLINE=1 .venv/bin/python -m pytest -q`(全套含模型 ~12min)。
+- **模型门控集成测试假定干净栈**:手动 demo 走查残留数据致 SHA 去重撞车(ingest 返回空 dvids → 解包失败)。跑测试前 `demo down -v` 或清库;自造可 ingest 件用 conftest `unique_docx`(嵌 ULID 保 SHA 唯一);需真实修订对的(`test_version_demo` 用 182/226)只能靠干净栈。
+- **report 别现场加载模型**:初版 report 现场跑 smoke → 无模型时触发 HF 下载/卡住。改为 finalize 留痕、report 聚合读取(见验证组件段)。
+- **T2 冒烟须排除 superseded 件**:旧版默认检索不可见,测它必 E801 误报 → `_indexed_dvids(effective_only=True)`;T4 回放不排除(旧版锚点不变)。
+- **clause_tree decimal/cross-ref 是 IR 边界下游**:小数编号(`2.17`/`3.1.2`,`_key` 变长元组排序)、跨法引用过滤(`第X条` 后跟枚举标点 / `N.M.K 条`)、目录剥离(≥4 点引导符)都在 clause_tree,**换 DeepDoc 不解决**。
