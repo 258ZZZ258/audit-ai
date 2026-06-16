@@ -1,7 +1,4 @@
-"""s4_meta 集成测试(连真 PG + tmp ObjectStore;PG 不可达 skip)。
-
-无冲突 → META_REVIEW 无队列;manifest 与 IR 元数据冲突 → META_REVIEW + meta_confirm 队列带 evidence。
-"""
+"""s4_meta 集成测试(连真 PG + tmp ObjectStore;PG 不可达 skip)。"""
 
 from datetime import date
 
@@ -49,8 +46,11 @@ def env(pg, tmp_path):
             s.execute(delete(ImportBatch).where(ImportBatch.batch_id.in_(bids)))
 
 
-def _seed(ctx, bids, *, doc_number, issue_date, title) -> str:
-    """落 doc(STRUCTURING,带 manifest 字段)+ put_ir(版头含 京证监〔2024〕5号 / 2024年1月1日)。"""
+def _seed(ctx, bids, *, doc_number, issue_date, title, supersedes=None) -> str:
+    """落 doc(STRUCTURING,带 manifest 字段)+ put_ir(版头含 京证监〔2024〕5号 / 2024年1月1日)。
+
+    ``supersedes``:置 supersedes_version_id(模拟修订件;B-严 据此把修订件挡回 META_REVIEW)。
+    """
     bid, lid, dvid = "s4_" + str(ULID()), str(ULID()), str(ULID())
     bids.append(bid)
     p = BlockType.PARAGRAPH
@@ -69,15 +69,26 @@ def _seed(ctx, bids, *, doc_number, issue_date, title) -> str:
             doc_version_id=dvid, logical_id=lid, batch_id=bid, source_format="docx",
             source_hash="h" + dvid[:8], raw_object_key="k", pipeline_status=PS.STRUCTURING.value,
             doc_number=doc_number, issue_date=issue_date, title=title,
+            supersedes_version_id=supersedes,
         )
     )
     ctx.object_store.put_ir(ir)
     return dvid
 
 
+def _ctx_with_toggle(ctx, *, auto_confirm: bool) -> StageContext:
+    toggles = ctx.config.toggles.model_copy(update={"auto_confirm_meta_no_conflict": auto_confirm})
+    return StageContext(
+        config=ctx.config.model_copy(update={"toggles": toggles}),
+        object_store=ctx.object_store,
+        db=ctx.db,
+    )
+
+
 def test_consistent_meta_enqueues_routine_confirm(env):
-    # 无冲突件也入 meta_confirm 队列(META_REVIEW 全件强制人工闸 → 统一队列唯一入口)
+    # A 模式(关自动放行):无冲突件也入 meta_confirm 队列(META_REVIEW 全件强制人工闸)。
     ctx, bids = env
+    ctx = _ctx_with_toggle(ctx, auto_confirm=False)
     dvid = _seed(
         ctx, bids, doc_number="京证监〔2024〕5号", issue_date=date(2024, 1, 1), title="某办法"
     )
@@ -85,6 +96,35 @@ def test_consistent_meta_enqueues_routine_confirm(env):
     assert res.next_state is PS.META_REVIEW
     assert res.queue is not None and res.queue.queue_type == "meta_confirm"
     assert res.queue.evidence["conflicts"] == []  # 无冲突:常规确认
+
+
+def test_consistent_meta_auto_confirms_when_enabled(env):
+    # B 模式:无冲突的**全新件**(无 supersedes)自动放行 → EMBEDDING。
+    ctx, bids = env
+    ctx = _ctx_with_toggle(ctx, auto_confirm=True)
+    dvid = _seed(
+        ctx, bids, doc_number="京证监〔2024〕5号", issue_date=date(2024, 1, 1), title="某办法"
+    )
+    res = s4.run(ctx, dvid)
+    assert res.next_state is PS.EMBEDDING
+    assert res.queue is None
+    assert res.evidence == {"conflicts": [], "auto_confirmed": True}
+
+
+def test_revision_stays_gated_even_when_auto_confirm_enabled(env):
+    # B-严:带 supersedes 的修订件即便无冲突、即便开关开,仍进 META_REVIEW
+    #(supersede 旧版是最有后果的权威变更,须有人点头)。
+    ctx, bids = env
+    ctx = _ctx_with_toggle(ctx, auto_confirm=True)
+    dvid = _seed(
+        ctx, bids, doc_number="京证监〔2024〕5号", issue_date=date(2024, 1, 1),
+        title="某办法", supersedes=str(ULID()),
+    )
+    res = s4.run(ctx, dvid)
+    assert res.next_state is PS.META_REVIEW
+    assert res.queue is not None and res.queue.queue_type == "meta_confirm"
+    assert res.queue.evidence["conflicts"] == []  # 无冲突,但因是修订件仍入闸
+    assert "修订" in res.queue.reason
 
 
 def test_conflict_enqueues_meta_confirm(env):

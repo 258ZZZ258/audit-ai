@@ -49,6 +49,12 @@ from pipeline.verify.smoke import run_smoke
 
 #: 推进到此类终态(且带 supersedes)即自动版本切换(D1)。
 _INDEXED_STATES = frozenset({PipelineState.INDEXED.value, PipelineState.DEGRADED_INDEXED.value})
+#: 过渡 worker 态(非合法停态):``_advance_one`` 干净停在此 = 无 s5 stage 可推进 = 搁浅,据实报错。
+_TRANSIENT_WORKER_STATES = frozenset(
+    {PipelineState.EMBEDDING.value, PipelineState.INDEXING.value}
+)
+#: 重入 worker 管线的处置(B 模式下会自动越过 META_REVIEW、需 s5 到终态);reject 是终态、无需推进。
+_REENTRANT_DISPOSITIONS = frozenset({"fix", "degrade", "release"})
 
 app = typer.Typer(help="文档处理管线 · 本地 Demo(M1)", no_args_is_help=True)
 
@@ -125,21 +131,27 @@ def _structuring(ctx: StageContext, doc_version_id: str) -> StageResult:
     return s4_meta.run(ctx, doc_version_id)
 
 
-def _build_stages() -> dict[PipelineState, Stage]:
+def _build_stages(*, include_s5: bool = False) -> dict[PipelineState, Stage]:
     """state → stage 纯函数(add-only,C 段续加 s5)。s0 为 ingest 入口,非轮询 stage。
 
     REGISTERED→PARSING(s1.start 薄认领)→QC_PENDING(s1.run 解析)→STRUCTURING/QC_FAILED(s2.run)
     →META_REVIEW(_structuring = s3 切块 + s4 元数据)。过 QC 的件切块 + 校验后停 META_REVIEW
     (人工等待态,不被轮询),经 CLI meta confirm 放行(C7)。
     """
-    return {
+    stages = {
         PipelineState.REGISTERED: s1_parse.start,
         PipelineState.PARSING: s1_parse.run,
         PipelineState.QC_PENDING: s2_qc.run,
         PipelineState.STRUCTURING: _structuring,
-        PipelineState.EMBEDDING: s5_embed_index.embed,
-        PipelineState.INDEXING: s5_embed_index.index,
     }
+    if include_s5:
+        stages[PipelineState.EMBEDDING] = s5_embed_index.embed
+        stages[PipelineState.INDEXING] = s5_embed_index.index
+    return stages
+
+
+def _can_run_s5(ctx: StageContext) -> bool:
+    return ctx.embedding is not None and ctx.milvus is not None
 
 
 def _context(cfg=None) -> tuple[PgIO, StageContext]:
@@ -177,6 +189,61 @@ def _worker_context(cfg=None) -> tuple[PgIO, StageContext]:
     return pg, replace(ctx, embedding=EmbeddingClient.from_config(ctx.config))
 
 
+def _drive_context(cfg) -> tuple[PgIO, StageContext]:
+    """**驱动**上下文(ingest / dispose 重入等会推进 worker 的路径共用)。**B 模式**
+    (``auto_confirm_meta_no_conflict`` 开)需 worker 上下文(embedding+milvus)——无冲突件会自动
+    越过 META_REVIEW、当场过 s5 到终态并 finalize;A 模式用轻上下文(至多到 META_REVIEW 人工闸)。
+    """
+    if cfg.toggles.auto_confirm_meta_no_conflict:
+        return _worker_context(cfg)
+    return _context(cfg)
+
+
+def _finalize_if_indexed(pg: PgIO, ctx: StageContext, dvid: str) -> str | None:
+    """文档到 INDEXED 即 finalize:① 带 supersedes 则版本原子切换 ② T2/T4 评测留痕(§9,M2)。
+
+    orchestrator **不调** finalize,故凡能让文档到达 INDEXED 的驱动(``_advance_one`` 单件、
+    ``_drive_batch`` B 模式整批)都须经此触发。未到 INDEXED / 无 milvus → no-op。
+    返回 error(冷备缺失等,可重试)或 None;边界层各自翻译,本函数不 Exit。
+    """
+    dv = pg.get(DocVersion, dvid)
+    if dv is None or dv.pipeline_status not in _INDEXED_STATES or not ctx.milvus:
+        return None
+    try:
+        result = finalize.run(ctx, dvid)
+        if result.switched:
+            typer.echo(f"  版本切换:旧版 {result.old_dvid} → superseded")
+    except ColdBackupIncomplete as e:  # 旧版冷备缺失:已 INDEXED 但切换未完成 → 回带 error
+        typer.echo(f"  ✗ 版本切换失败(旧版冷备缺失,可重试):{e}")
+        return str(e)
+    return None
+
+
+def _finalize_batch_indexed(pg: PgIO, ctx: StageContext, batch_id: str) -> None:
+    """B 模式 ingest 扫尾:对整批已到 INDEXED 的件逐一 finalize。run_until_idle 到 INDEXED 不会
+    自动切版本/留痕(orchestrator 不调 finalize)。B-严 下这些件均为无冲突新件(无 supersedes),
+    finalize 只跑 T2/T4 留痕、不触发版本切换。
+    """
+    with pg.session() as s:
+        dvids = [
+            d.doc_version_id
+            for d in s.scalars(select(DocVersion).where(DocVersion.batch_id == batch_id))
+            if d.pipeline_status in _INDEXED_STATES
+        ]
+    for dvid in dvids:
+        err = _finalize_if_indexed(pg, ctx, dvid)
+        if err:
+            typer.echo(f"  ⚠ finalize {dvid} 未完成(可重试):{err}")
+
+
+def _drive_batch(pg: PgIO, ctx: StageContext, batch_id: str) -> int:
+    """跑 worker 推进整批至各自停态;B 模式(worker ctx)无冲突新件直达 INDEXED → 扫尾 finalize。"""
+    steps = Orchestrator(pg, ctx, _build_stages(include_s5=_can_run_s5(ctx))).run_until_idle()
+    if _can_run_s5(ctx):  # = worker 上下文 = B 模式:补 orchestrator 不做的 finalize
+        _finalize_batch_indexed(pg, ctx, batch_id)
+    return steps
+
+
 def _advance_one(
     pg: PgIO, ctx: StageContext, dvid: str, *, max_steps: int = 20
 ) -> tuple[int, str, str | None]:
@@ -186,7 +253,7 @@ def _advance_one(
     真正到位、决定退出码,避免"卡在 EMBEDDING/INDEXING 却 exit 0"。``error=None`` 表示干净停
     (到人工等待态/终态);非 None 表示推进中途因异常中止。
     """
-    orch = Orchestrator(pg, ctx, _build_stages())
+    orch = Orchestrator(pg, ctx, _build_stages(include_s5=_can_run_s5(ctx)))
     steps = 0
     error: str | None = None
     while steps < max_steps:
@@ -203,16 +270,12 @@ def _advance_one(
         steps += 1
     final = pg.get(DocVersion, dvid)
     final_state = final.pipeline_status if final else "?"
-    # 推进到 INDEXED 即 finalize:① 带 supersedes 则版本原子切换 ② T2/T4 评测留痕(§9,M2)。
-    # 仅无中途异常、确到 INDEXED 才 finalize(否则不在终态);worker ctx 才可能到此,milvus 必非空。
-    if error is None and final is not None and final_state in _INDEXED_STATES and ctx.milvus:
-        try:
-            result = finalize.run(ctx, dvid)
-            if result.switched:
-                typer.echo(f"  版本切换:旧版 {result.old_dvid} → superseded")
-        except ColdBackupIncomplete as e:  # 旧版冷备缺失:本件已 INDEXED,版本切换未完成 → 失败可重试
-            typer.echo(f"✗ 版本切换失败(旧版冷备缺失):{e};修复冷备 / reprocess 旧版后重试")
-            raise typer.Exit(1) from e
+    if error is None and final_state in _TRANSIENT_WORKER_STATES:
+        # 干净停在过渡态 = 无 s5 stage 可推进(轻上下文却需 s5,如 B 模式自动放行后)→ 搁浅。
+        # 据实报错不静默成功——否则 dispose/ingest 返成功而文档卡在 EMBEDDING、永不可检索(B1 回归)。
+        error = f"推进搁浅在 {final_state}(无 s5 stage 可推进,需 worker 上下文)"
+    elif error is None:  # 到 INDEXED 即 finalize(版本切换 + T2/T4 留痕)
+        error = _finalize_if_indexed(pg, ctx, dvid)
     return steps, final_state, error
 
 
@@ -230,9 +293,14 @@ def ingest(
         None, "--manifest", "-m", help="manifest.xlsx(默认 <dir>/manifest.xlsx)"
     ),
 ) -> None:
-    """S0 登记整批 → 跑 worker 推进至各自停态(过 QC 件切块+元数据后停 META_REVIEW 待人工确认)。"""
+    """S0 登记整批 → 跑 worker 推进至各自停态。
+
+    A 模式(默认):过 QC 件切块+元数据后停 META_REVIEW 待人工确认。
+    B 模式(``auto_confirm_meta_no_conflict`` 开):无冲突新件当场过 s5 直达 INDEXED + finalize;
+    冲突件、修订件(B-严)仍停 META_REVIEW(需 worker 上下文,即 ingest 时即需模型)。
+    """
     cfg = load_config()
-    pg, ctx = _context(cfg)  # 至多推进到 META_REVIEW(人工闸),不触 s5,无需 embedding/milvus
+    pg, ctx = _drive_context(cfg)  # B 模式→worker(过 s5+finalize);否则轻上下文(至多 META_REVIEW)
     mpath = manifest or (directory / "manifest.xlsx")
     batch_id = str(ULID())
     report = register_batch(ctx, batch_id, directory, mpath)
@@ -243,7 +311,7 @@ def ingest(
     typer.echo(f"S0 登记 batch={batch_id}:" + "  ".join(f"{k}={v}" for k, v in counts.items()))
     for w in report.warnings:
         typer.echo(f"  ⚠ {w}")
-    steps = Orchestrator(pg, ctx, _build_stages()).run_until_idle()
+    steps = _drive_batch(pg, ctx, batch_id)
     typer.echo(f"→ worker 推进 {steps} 步")
     with pg.session() as s:
         docs = list(s.scalars(select(DocVersion).where(DocVersion.batch_id == batch_id)))
@@ -337,7 +405,9 @@ def queue_show(queue_id: str) -> None:
 
 def _do_dispose(queue_id: str, disposition: str, operator: str) -> None:
     cfg = load_config()
-    pg, ctx = _context(cfg)  # fix/degrade/release 至多推进到 META_REVIEW 人工闸,不触 s5
+    # B 模式下 fix/degrade/release 重入会自动越过 META_REVIEW、需 s5 到终态 → 驱动上下文(B→worker);
+    # reject 是终态无需推进,用轻上下文。_advance_one 过渡态守卫兜底:搁浅即非零退出,不静默成功。
+    pg, ctx = _drive_context(cfg) if disposition in _REENTRANT_DISPOSITIONS else _context(cfg)
     try:
         outcome = dispose(pg, queue_id, disposition, operator=operator)
     except (KeyError, ValueError) as e:
@@ -629,6 +699,41 @@ def meta_confirm(
 
 
 # ── reprocess(全量重跑 + 清孤儿)────────────────────────────────
+def reprocess_to_indexed(pg: PgIO, ctx: StageContext, dvid: str, operator: str) -> str:
+    """全量重跑核心(**CLI 与 web 共用,不重复实现**):guard → PG-first 重置 REGISTERED → 清 Milvus
+    投影 → 推进 → 自动重确认 → INDEXED。返回最终态。
+
+    抛**领域异常**由调用方边界翻译(CLI→typer / web→HTTP),本函数不做表现层:
+    - ``KeyError(dvid)``:文档不存在。
+    - ``ValueError``:当前态不可 reprocess。
+    - ``RuntimeError``:Milvus 投影清理失败(PG 已置 REGISTERED,可安全重入)/ 未达 INDEXED。
+
+    PG-first(对齐"PG 先 → Milvus"硬契约):先把本件移出干净终态再删投影,删前任何失败都停在原一致态;
+    ``resuming``(已在 REGISTERED)= 重入上次中途失败的 reprocess,跳过迁移。
+    """
+    dv = pg.get(DocVersion, dvid)
+    if dv is None:
+        raise KeyError(dvid)
+    state = PipelineState(dv.pipeline_status)
+    resuming = state is PipelineState.REGISTERED
+    if state not in REPROCESS_RESET_FROM and not resuming:
+        raise ValueError(f"当前态 {dv.pipeline_status} 不可 reprocess(仅终态/失败态可)")
+    if not resuming:
+        pg.transition(dvid, PipelineState.REGISTERED, actor=operator, detail={"reprocess": True})
+    try:
+        ctx.milvus.delete(dvid)
+        ctx.milvus.flush()
+    except Exception as e:
+        raise RuntimeError(f"Milvus 投影清理失败(PG 已置 REGISTERED,可安全重入):{e}") from e
+    _, final, error = _advance_one(pg, ctx, dvid)  # → META_REVIEW(人工闸停)
+    if error is None and final == PipelineState.META_REVIEW.value:
+        _approve_doc(pg, ctx, dvid, operator)  # 自动重确认 → INDEXED(+finalize)
+        final = pg.get(DocVersion, dvid).pipeline_status
+    if final not in _INDEXED_STATES:
+        raise RuntimeError(f"reprocess 未达 INDEXED(停在 {final})")
+    return final
+
+
 @app.command()
 def reprocess(
     doc_version_id: str = typer.Argument(..., help="待重跑的 doc_version_id"),
@@ -636,45 +741,18 @@ def reprocess(
 ) -> None:
     """全量重跑单件:重置 REGISTERED(移出干净终态)→ 清孤儿(Milvus 投影)→ 重跑至 INDEXED(自动重确认)。
 
-    确定性 chunk_id 使重跑安全(同 id 覆盖)。仅终态/失败态可重跑(REPROCESS_RESET_FROM);
-    额外接受 REGISTERED 以**重入上次中途失败的 reprocess**(PG 已置位但投影未清完)。
+    仅终态/失败态可重跑(REPROCESS_RESET_FROM);额外接受 REGISTERED 以重入上次中途失败的 reprocess。
+    逻辑在 ``reprocess_to_indexed``(与 web 共用);此处只做 CLI 表现层翻译。
     """
     pg, ctx = _worker_context()  # 重跑跑完 s5,需 embedding + milvus
-    dv = pg.get(DocVersion, doc_version_id)
-    if dv is None:
-        typer.echo(f"✗ 文档不存在: {doc_version_id}")
-        raise typer.Exit(1)
-    state = PipelineState(dv.pipeline_status)
-    # 终态/失败态可重跑;REGISTERED 仅作"上次 reprocess 中途失败"的重入点(避免卡死、需手动改库)
-    resuming = state is PipelineState.REGISTERED
-    if state not in REPROCESS_RESET_FROM and not resuming:
-        typer.echo(f"✗ 当前态 {dv.pipeline_status} 不可 reprocess(仅终态/失败态可)")
-        raise typer.Exit(1)
-
-    # PG-first(对齐"PG 先 → Milvus"硬契约):先把本件移出干净终态(REGISTERED=重跑中、投影不
-    # 再可信),**再**删 Milvus 投影。删投影前任何失败都停在原一致态(PG INDEXED + Milvus
-    # effective),而非旧序"PG 仍 INDEXED 但投影已空"的虚假可见。resuming 时已在 REGISTERED,跳过。
-    if not resuming:
-        pg.transition(
-            doc_version_id, PipelineState.REGISTERED, actor=operator, detail={"reprocess": True}
-        )
-    # 清孤儿:删旧投影(PG chunk 由 s3 replace_chunks 重跑覆盖)。删除幂等;失败时 PG 已在
-    # REGISTERED,`demo reprocess` 可安全重入(确定性 chunk_id 覆盖),不静默吞、给可执行提示。
     try:
-        ctx.milvus.delete(doc_version_id)
-        ctx.milvus.flush()
-    except Exception as e:
-        typer.echo(f"✗ Milvus 投影清理失败(PG 已置 REGISTERED):{e}")
-        typer.echo(f"  重跑 `demo reprocess {doc_version_id}` 可安全重入(确定性 chunk_id 覆盖)")
+        final = reprocess_to_indexed(pg, ctx, doc_version_id, operator)
+    except KeyError:
+        typer.echo(f"✗ 文档不存在: {doc_version_id}")
+        raise typer.Exit(1) from None
+    except (ValueError, RuntimeError) as e:
+        typer.echo(f"✗ {e}")
         raise typer.Exit(1) from e
-    typer.echo(f"→ reprocess {doc_version_id}:已重置 REGISTERED + 清 Milvus 投影")
-    steps, final, error = _advance_one(pg, ctx, doc_version_id)  # → META_REVIEW(人工闸停)
-    if error is None and final == PipelineState.META_REVIEW.value:
-        _approve_doc(pg, ctx, doc_version_id, operator)  # 自动重确认 → INDEXED(+finalize)
-        final = pg.get(DocVersion, doc_version_id).pipeline_status
-    if final not in _INDEXED_STATES:  # 未回到 INDEXED:重跑未到位,非零退出(不静默 exit 0)
-        typer.echo(f"✗ reprocess 未达 INDEXED(停在 {final})")
-        raise typer.Exit(1)
     typer.echo(f"✓ reprocess 完成 → {final}")
 
 

@@ -9,6 +9,7 @@ from sqlalchemy import delete, select, text
 from typer.testing import CliRunner
 from ulid import ULID
 
+from pipeline import cli
 from pipeline.cli import _build_stages, _obligation_chunk_ids, _print_hit, _structuring, app
 from pipeline.config import load_config
 from pipeline.index.pg_io import PgIO
@@ -56,6 +57,16 @@ def sandbox(pg):
             s.execute(delete(Document).where(Document.logical_id.in_(lids)))
         if bids:
             s.execute(delete(ImportBatch).where(ImportBatch.batch_id.in_(bids)))
+
+
+def _force_mode_a(monkeypatch):
+    """固定 A 模式(关自动放行):验 dispose 机制的测试与模式无关,A 模式用轻上下文、不依赖 Milvus/模型
+    (B 模式下 degrade/release 会走 worker 上下文连 Milvus,使本该 PG-only 的测试耦合 Milvus)。"""
+    base = load_config()
+    a_cfg = base.model_copy(
+        update={"toggles": base.toggles.model_copy(update={"auto_confirm_meta_no_conflict": False})}
+    )
+    monkeypatch.setattr(cli, "load_config", lambda *a, **k: a_cfg)
 
 
 def _seed_qc_failed(pg, bids, *, filename="跳号.docx") -> tuple[str, str]:
@@ -172,10 +183,11 @@ def test_status_lists_doc(sandbox):
     assert dvid in r.output and "QC_FAILED" in r.output
 
 
-def test_queue_degrade_via_cli(sandbox):
+def test_queue_degrade_via_cli(sandbox, monkeypatch):
     # degrade 重入 STRUCTURING + 置 degraded;seeded 件无 IR → s3 推进异常被**surfaced**:
     # 处置已落库(degraded/关单/迁移生效)但推进中止 → **非零退出**(契约:推进失败不静默 exit 0)。
     pg, bids = sandbox
+    _force_mode_a(monkeypatch)  # 验 dispose 机制(与模式无关),固定 A 模式保持 PG-only
     dvid, qid = _seed_qc_failed(pg, bids)
     r = runner.invoke(app, ["queue", "degrade", qid])
     assert r.exit_code == 1  # s3 缺 IR 中止 → 推进失败,非零退出
@@ -193,10 +205,30 @@ def test_queue_reject_via_cli(sandbox):
     assert pg.get(DocVersion, dvid).pipeline_status == "REJECTED"
 
 
-def test_queue_degrade_missing_id_exits_1(sandbox):
+def test_queue_degrade_missing_id_exits_1(sandbox, monkeypatch):
     pg, _ = sandbox
+    _force_mode_a(monkeypatch)  # 固定 A 模式:坏 id 在轻上下文即 KeyError,不必连 Milvus
     r = runner.invoke(app, ["queue", "degrade", "no_such_id"])
     assert r.exit_code == 1
+
+
+def test_advance_one_guards_against_transient_strand(sandbox):
+    # B1 回归:无 s5 stage(轻上下文)时,文档停在过渡态 EMBEDDING 必须**报错**,不静默成功——
+    # 否则 dispose/ingest 在 B 模式会返成功却把文档搁浅 EMBEDDING、永不可检索。
+    pg, bids = sandbox
+    bid, lid, dvid = "cli_b1_" + str(ULID()), str(ULID()), str(ULID())
+    bids.append(bid)
+    with pg.session() as s:
+        s.add(ImportBatch(batch_id=bid, source_dir="x"))
+        s.add(Document(logical_id=lid, corpus_type="P-INT"))
+        s.flush()
+        s.add(DocVersion(
+            doc_version_id=dvid, logical_id=lid, batch_id=bid, source_format="docx",
+            source_hash="h" + dvid[:8], raw_object_key="k", pipeline_status=PS.EMBEDDING.value))
+    _pg, ctx = cli._context()  # 轻上下文(无 embedding/milvus → 不注册 s5 stage)
+    steps, final, error = cli._advance_one(pg, ctx, dvid)
+    assert final == PS.EMBEDDING.value
+    assert error is not None and "搁浅" in error
 
 
 # ── C7 · meta(META_REVIEW 闸)/ search 参数校验 ───────────────────

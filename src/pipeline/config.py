@@ -49,6 +49,7 @@ class ObjectStoreConfig(BaseModel):
 class TogglesConfig(BaseModel):
     l2_enabled: bool  # M1 默认 false(零 LLM)
     e1_enabled: bool
+    auto_confirm_meta_no_conflict: bool = False
 
 
 class AlignConfig(BaseModel):
