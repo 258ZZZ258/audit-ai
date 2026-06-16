@@ -92,6 +92,15 @@ class VerifyConfig(BaseModel):
     t4_fuzzy_threshold: int  # ⚠ T4 精确未中的 rapidfuzz partial_ratio 阈值(0-100)
 
 
+class ObligationConfig(BaseModel):
+    """M3 E1 义务预打标词表 + 阈值(零 LLM 正则),全部 ⚠。"""
+
+    markers: list[str]  # ⚠ 强义务情态词(整词命中即义务)
+    bare_ying: bool  # 是否启用「应」单字边界匹配(前不接 exclusions 字)
+    exclusions: list[str]  # ⚠ 「应」歧义排除(相应/适应/对应…)
+    accuracy_threshold: float  # ⚠ V8 门:golden set precision 与 recall 各须 ≥ 此值
+
+
 class ProfileConfig(BaseModel):
     sampling_rate: float  # 抽检率:M1 保留字段,不消费
 
@@ -107,6 +116,7 @@ class Settings(BaseModel):
     chunk: ChunkConfig
     qc: QcThresholds
     verify: VerifyConfig
+    obligation: ObligationConfig
     profiles: dict[str, ProfileConfig]
     config_dir: Path
 
@@ -142,6 +152,7 @@ def load_config(config_dir: str | os.PathLike | None = None) -> Settings:
 
     settings_raw = tomllib.loads((cdir / "settings.toml").read_text(encoding="utf-8"))
     qc_raw = yaml.safe_load((cdir / "qc_thresholds.yaml").read_text(encoding="utf-8"))
+    obligation_raw = yaml.safe_load((cdir / "obligation.yaml").read_text(encoding="utf-8"))
     profiles_raw = yaml.safe_load((cdir / "profiles.yaml").read_text(encoding="utf-8"))
 
     _apply_env(settings_raw)
@@ -157,6 +168,7 @@ def load_config(config_dir: str | os.PathLike | None = None) -> Settings:
         chunk=ChunkConfig(**settings_raw["chunk"]),
         qc=QcThresholds(**qc_raw),
         verify=VerifyConfig(**settings_raw["verify"]),
+        obligation=ObligationConfig(**obligation_raw),
         profiles={k: ProfileConfig(**v) for k, v in profiles_raw.items()},
         config_dir=cdir,
     )

@@ -27,6 +27,12 @@ def test_load_config_defaults():
     assert c.verify.t2_hit_at == 50
     assert c.verify.t4_page_window == 1
     assert 0 < c.verify.t4_fuzzy_threshold <= 100
+    # M3 E1 义务词表 + 阈值
+    assert c.obligation.accuracy_threshold == 0.90
+    assert "应当" in c.obligation.markers and "不得" in c.obligation.markers
+    assert "相应" in c.obligation.exclusions  # 「应」歧义排除
+    assert c.obligation.bare_ying is True
+    assert c.obligation.markers and c.obligation.exclusions  # 非空
 
 
 def test_env_override(monkeypatch):

@@ -1,0 +1,39 @@
+# E1 义务预打标:正则词表 + ⚠ 阈值(零 LLM)。初值据 PLAN_M3 探针(batch01 真文本)固化。
+# is_obligation 判定 = 命中任一 markers(整词)或(bare_ying 时)「应」单字且前不接 exclusions 字。
+
+# 强义务情态词(整词命中即义务)。⚠ 可调:Task 阶段在 golden set 上迭代。
+markers:
+  - 应当
+  - 应该
+  - 应予
+  - 必须
+  - 须经
+  - 不得
+  - 禁止
+  - 严禁
+  - 不应
+  - 不准
+  - 有义务
+  - 负有
+  - 责令
+
+# 是否启用「应」单字边界匹配(前不接 exclusions 字时算义务)。关掉则只认 markers 整词。
+bare_ying: true
+
+# 「应」歧义排除(子串):相应/适应/对应… 中的「应」非义务。bare_ying 时前缀字落此表则不算命中。
+exclusions:
+  - 相应
+  - 适应
+  - 对应
+  - 响应
+  - 反应
+  - 供应
+  - 答应
+  - 顺应
+  - 效应
+  - 感应
+  - 呼应
+  - 映应
+
+# V8 验收门:golden set 上 is_obligation 的 precision 与 recall 各须 ≥ 此值。⚠(V0.1 §23 = 0.90)
+accuracy_threshold: 0.90
