@@ -796,7 +796,27 @@ def report(batch: str = typer.Argument(..., help="批次 id")) -> None:
         f"T2 冒烟 {_pct(rep['t2_pass_rate'])}  T4 锚点回放 {_pct(rep['t4_pass_rate'])}  "
         f"retrieval_mode {rep['retrieval_mode']}"
     )
-    typer.echo(json.dumps(rep, ensure_ascii=False, indent=2))
+    if rep["obligation"] is not None:  # M3 义务覆盖(e1 关→None)
+        o = rep["obligation"]
+        typer.echo(f"义务覆盖 {_pct(o['coverage'])}  ({o['obligation_chunks']} 块标 is_obligation)")
+    typer.echo("版本链:" + "  ".join(f"{k}={v}" for k, v in rep["version_chain"].items()))
+    if rep["queue_disposition"]:
+        typer.echo(
+            "队列处置:"
+            + "  ".join(
+                f"{qt}[{', '.join(f'{st}={n}' for st, n in sts.items())}]"
+                for qt, sts in rep["queue_disposition"].items()
+            )
+        )
+    for corpus, cr in rep["by_corpus"].items():  # 按语料拆
+        typer.echo(
+            f"  [{corpus}] 解析 {_pct(cr['parse_success_rate'])} "
+            f"QC一次过 {_pct(cr['qc_first_pass_rate'])} 锚点 {_pct(cr['anchor_fill_rate'])}"
+        )
+    out_path = Path("reports") / f"{batch}.json"  # JSON 快照落文件(落库不变)
+    out_path.parent.mkdir(exist_ok=True)
+    out_path.write_text(json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8")
+    typer.echo(f"✓ 快照落库 import_batches.report + 文件 {out_path}")
 
 
 if __name__ == "__main__":
