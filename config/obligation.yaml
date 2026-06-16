@@ -1,5 +1,5 @@
 # E1 义务预打标:正则词表 + ⚠ 阈值(零 LLM)。初值据 PLAN_M3 探针(batch01 真文本)固化。
-# is_obligation 判定 = 命中任一 markers(整词)或(bare_ying 时)「应」单字且前不接 exclusions 字。
+# is_obligation 判定 = 命中任一 markers(整词)或某 bare_chars 单字且前缀不落 exclusions。
 
 # 强义务情态词(整词命中即义务)。⚠ 可调:Task 阶段在 golden set 上迭代。
 markers:
@@ -17,12 +17,15 @@ markers:
   - 负有
   - 责令
 
-# 是否启用「应」单字边界匹配(前不接 exclusions 字时算义务)。关掉则只认 markers 整词。
-bare_ying: true
+# 单字情态词:出现且前缀不落 exclusions 即义务(evidence 优先取该字起始的 marker)。
+# 应:应当/应+动词;须:须填/须停(必须/须经已在 markers)。空列表=只认整词 markers。
+bare_chars:
+  - 应
+  - 须
 
-# 「应」前缀歧义排除(X应):相应/适应/对应… 中的「应」非义务,前缀+应 落此表则不算命中
-# (同样作用于 应当 等 marker,修 对应当/相应当 子串误命中)。后缀歧义(应用/应急)在监管语料近乎
-# 不现(PLAN_M3 探针:690 个「应」中 应当 637、应+动词 为主),故**不设后缀排除**以免造假阴。
+# 前缀歧义排除:某 bare 字前接此表首字→非义务。X应=相应/适应/对应…(应 在监管语料 98% 表义务,前缀排除
+# 同样作用于 应当 等 marker 修 对应当/相应当);X须=无须/毋须(否定义务,不排除会把 无须审批 误标)。
+# **后缀歧义(应用/应急)近乎不现(探针:690 个「应」中 应当 637),不设后缀排除以免造假阴。**
 exclusions:
   - 相应
   - 适应
@@ -36,6 +39,8 @@ exclusions:
   - 感应
   - 呼应
   - 映应
+  - 无须
+  - 毋须
 
 # V8 验收门:golden set 上 is_obligation 的 precision 与 recall 各须 ≥ 此值。⚠(V0.1 §23 = 0.90)
 accuracy_threshold: 0.90

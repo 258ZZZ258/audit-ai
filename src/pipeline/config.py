@@ -96,8 +96,8 @@ class ObligationConfig(BaseModel):
     """M3 E1 义务预打标词表 + 阈值(零 LLM 正则),全部 ⚠。"""
 
     markers: list[str]  # ⚠ 强义务情态词(整词命中即义务)
-    bare_ying: bool  # 是否启用「应」单字边界匹配(前不接 exclusions 字)
-    exclusions: list[str]  # ⚠ 「应」歧义排除(相应/适应/对应…)
+    bare_chars: list[str]  # ⚠ 单字情态词(应/须),带前缀排除(空=只认整词 markers)
+    exclusions: list[str]  # ⚠ 前缀歧义排除(相应/对应… X应、无须/毋须 X须)
     accuracy_threshold: float  # ⚠ V8 门:golden set precision 与 recall 各须 ≥ 此值
 
 

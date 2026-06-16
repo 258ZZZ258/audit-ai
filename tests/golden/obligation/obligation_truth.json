@@ -1,5 +1,5 @@
 {
-  "_note": "E1 义务打标 golden set(B1/V8)。真值=人工据语义独立判定,非 matcher 输出。义务=课以作为/禁止义务的规范句;目的/适用范围/定义/施行日期/审批权限分配=非义务。取自 batch01 真条款(int_*.docx 内规 + ext_xxpl 外规),含 相应 负例(测前缀排除)。实测 precision=1.0 / recall=0.955:唯一 FN 是 用印须填写(bare 须 故意不入 markers——『须』全corpus仅现6次且含 无须=否定义务的陷阱,naive 加会造假阳;recall 0.955≥0.90 门,留honest FN 不过拟合)。",
+  "_note": "E1 义务打标 golden set(B1/V8)。真值=人工据语义独立判定,非 matcher 输出。义务=课以作为/禁止义务的规范句;目的/适用范围/定义/施行日期/审批权限分配=非义务。取自 batch01 真条款(int_*.docx 内规 + ext_xxpl 外规),含 相应/无须 负例(测前缀排除)。实测 precision=1.0 / recall=1.0:bare 须 经 bare_chars 泛化纳入(用印须填写 命中),无须/毋须 入 exclusions 排否定义务(无须… 不误标)。",
   "items": [
     {"text": "本单位发生下列重大事项的,有关部门应当在二十四小时内书面报告。", "is_obligation": true, "src": "int_baogao"},
     {"text": "各项费用报销应当符合本单位规定的开支标准,超标准部分原则上不予报销。", "is_obligation": true, "src": "int_baoxiao"},
@@ -35,6 +35,7 @@
     {"text": "单次采购金额在一万元以下的,由部门负责人审批。", "is_obligation": false, "src": "int_tongzhi"},
     {"text": "本通知自发布之日起执行。", "is_obligation": false, "src": "int_tongzhi"},
     {"text": "信息披露文件包括定期报告、临时报告、招股说明书、募集说明书、上市公告书、收购报告书等。", "is_obligation": false, "src": "ext_xxpl"},
-    {"text": "公司对相应债权未提取足额坏账准备。", "is_obligation": false, "src": "ext_xxpl"}
+    {"text": "公司对相应债权未提取足额坏账准备。", "is_obligation": false, "src": "ext_xxpl"},
+    {"text": "无须履行审批程序的事项,由经办部门径行办理。", "is_obligation": false, "src": "无须否定义务(测 X须 前缀排除)"}
   ]
 }

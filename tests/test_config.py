@@ -30,8 +30,8 @@ def test_load_config_defaults():
     # M3 E1 义务词表 + 阈值
     assert c.obligation.accuracy_threshold == 0.90
     assert "应当" in c.obligation.markers and "不得" in c.obligation.markers
-    assert "相应" in c.obligation.exclusions  # 「应」歧义排除
-    assert c.obligation.bare_ying is True
+    assert "相应" in c.obligation.exclusions and "无须" in c.obligation.exclusions  # X应/X须 排除
+    assert c.obligation.bare_chars == ["应", "须"]
     assert c.obligation.markers and c.obligation.exclusions  # 非空
 
 

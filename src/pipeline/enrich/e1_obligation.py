@@ -32,38 +32,26 @@ def match_obligation(text: str, cfg: ObligationConfig) -> tuple[bool, str | None
     """文本是否义务条款 +(命中词 | None)。
 
     两类义务词:
-    - **非「应」类**(必须/不得/禁止/严禁/不应/不准/有义务/负有/责令/须经):整词子串,无歧义。
-    - **「应」类**:监管语料里「应」≈98% 为义务(`应当` 占绝大多数,`应+动词` 亦义务),唯一高频陷阱是
-      **前缀「相/对/适…应」**(相应/对应…,见 `exclusions`)。故「应」判定 = 出现「应」且其前缀+应 不落
-      `exclusions` → 义务;evidence 优先取更具体的 `应`-起始 marker(应当/应该/应予),否则 "应"。
-      **前缀排除同样作用于 `应当` 这类 marker**(修 `对应当`/`相应当` 子串误命中)。`bare_ying` 关时
-      仅认显式 `应`-起始 marker(仍带前缀排除)。后缀歧义(应用/应急…)在监管语料近乎不现,故不设后缀排除
-      (探针证据;避免造假阴)。Task/B1 在 golden set 上据误判迭代。
+    - **非 bare-char 起始的 markers**(必须/不得/禁止/严禁/有义务…):整词子串,无歧义。
+    - **`bare_chars`(应/须)**:这些单字绝大多数表义务(应≈98%、须填/须停),唯一高频陷阱在**前缀**——
+      X应(相应/对应)、X须(无须/毋须=否定义务),见 `exclusions`。判定 = 出现某 bare 字、其前缀+该字
+      不落 `exclusions` → 义务;evidence 优先取该字起始 marker(应当/须经…)否则该字本身。
+
+    **前缀排除同样作用于 `应当`/`须经` 这类 marker**(修 `对应当`/`无须经`)。后缀歧义(应用/应急)
+    在监管语料近乎不现,不设后缀排除(探针证据,避免造假阴)。Task/B1 在 golden set 上据误判迭代。
     """
-    for m in cfg.markers:  # 非「应」类:整词子串即义务
-        if not m.startswith("应") and m in text:
+    bare = cfg.bare_chars
+    for m in cfg.markers:  # 非 bare-char 起始的 markers:整词子串即义务(无歧义)
+        if (not bare or m[0] not in bare) and m in text:
             return True, m
 
     excl = set(cfg.exclusions)
-    ying_markers = [m for m in cfg.markers if m.startswith("应")]
-
-    def _prefix_ok(i: int) -> bool:  # 「应」在 i 处,前缀+应 不落排除表(句首无前缀→必不落)
-        return i == 0 or text[i - 1 : i + 1] not in excl
-
-    if cfg.bare_ying:
-        for i, ch in enumerate(text):
-            if ch == "应" and _prefix_ok(i):
-                for m in ying_markers:  # evidence 尽量取具体 应X marker
-                    if text.startswith(m, i):
-                        return True, m
-                return True, "应"
-    else:  # 仅显式 应-起始 marker,仍带前缀排除
-        for m in ying_markers:
-            idx = text.find(m)
-            while idx != -1:
-                if _prefix_ok(idx):
+    for i, ch in enumerate(text):  # bare 字:前缀+字 不落排除表 → 义务(句首无前缀→必不落)
+        if ch in bare and (i == 0 or text[i - 1 : i + 1] not in excl):
+            for m in cfg.markers:  # evidence 尽量取具体的 该字起始 marker
+                if m[0] == ch and text.startswith(m, i):
                     return True, m
-                idx = text.find(m, idx + 1)
+            return True, ch
     return False, None
 
 

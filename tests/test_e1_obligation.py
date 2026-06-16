@@ -41,9 +41,9 @@ def test_match_obligation(s, expect, ev):
 
 
 def test_prefix_exclusion_applies_to_marker():
-    # bare_ying 关时,应当 marker 仍受前缀排除:对应当事人 不误命中,门应当报告 命中
+    # 应 在 bare_chars 时,应当 marker 仍受前缀排除:对应当事人 不误命中,门应当报告 命中
     cfg = ObligationConfig(
-        markers=["应当"], bare_ying=False, exclusions=["对应"], accuracy_threshold=0.9
+        markers=["应当"], bare_chars=["应"], exclusions=["对应"], accuracy_threshold=0.9
     )
     assert e1.match_obligation("对应当事人作出处理", cfg) == (False, None)
     assert e1.match_obligation("有关部门应当报告", cfg)[0] is True
@@ -54,10 +54,16 @@ def test_marker_priority():
     assert ok and e in CFG.markers
 
 
-def test_bare_ying_toggle():
-    cfg = ObligationConfig(markers=["不得"], bare_ying=False, exclusions=[], accuracy_threshold=0.9)
-    assert e1.match_obligation("报销人应如实填写", cfg) == (False, None)  # bare_ying 关:单应不算
+def test_bare_chars_empty():
+    cfg = ObligationConfig(markers=["不得"], bare_chars=[], exclusions=[], accuracy_threshold=0.9)
+    assert e1.match_obligation("报销人应如实填写", cfg) == (False, None)  # 无 bare 字:单应不算
     assert e1.match_obligation("不得擅自", cfg)[0] is True
+
+
+def test_bare_xu_and_negation():
+    # bare 须 命中(用印须填写);无须 排除(否定义务,不排除会把 无须审批 误标)
+    assert e1.match_obligation("用印须填写申请单", CFG)[0] is True
+    assert e1.match_obligation("无须履行审批程序的事项径行办理", CFG) == (False, None)
 
 
 # ── 集成:tag / clear(连 PG,免模型)────────────────────────────
