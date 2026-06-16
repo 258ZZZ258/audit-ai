@@ -313,6 +313,17 @@ def _register_one(
                     status="open",
                 )
             )
+        if reason:  # B2:隔离件(格式/密级/疑似重复)进统一队列,供 queue list/release/reject 见与处置
+            s.add(
+                ReviewQueue(
+                    queue_id=str(ULID()),
+                    queue_type="quarantine",
+                    doc_version_id=dvid,
+                    reason=reason,
+                    evidence={"error_code": ecode, "format": fmt, "perm_tag": perm or None},
+                    status="open",
+                )
+            )
 
     return FileOutcome(
         fn, status.value, doc_version_id=dvid, logical_id=logical_id,

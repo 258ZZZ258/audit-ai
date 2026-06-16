@@ -18,8 +18,10 @@ from pipeline.index.pg_models import (
     DocVersion,
     ImportBatch,
     PipelineEvent,
+    RemediationRecord,
     ReviewQueue,
 )
+from pipeline.queue import dispose
 from pipeline.stage_base import StageContext
 from pipeline.stages.s0_register import REQUIRED_COLUMNS, register_batch
 
@@ -45,6 +47,7 @@ def reg(pg, tmp_path):
         dvids = [dv.doc_version_id for dv in dvs]
         lids = {dv.logical_id for dv in dvs}
         if dvids:
+            s.execute(delete(RemediationRecord).where(RemediationRecord.doc_version_id.in_(dvids)))
             s.execute(delete(ReviewQueue).where(ReviewQueue.doc_version_id.in_(dvids)))
             s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id.in_(dvids)))
             s.execute(delete(DocVersion).where(DocVersion.doc_version_id.in_(dvids)))
@@ -160,6 +163,24 @@ def test_whitelist_quarantine(reg):
     d, mp = _make_batch(base, bid, [_row("c.xlsx", corpus_type="P-INT")], {"c.xlsx": _xlsx()})
     o = register_batch(ctx, bid, d, mp).outcomes[0]
     assert o.status == "QUARANTINED" and o.error_code == "E101-DEMO"
+    # B2:隔离件进统一队列(quarantine 类型),queue list 可见
+    q = next(r for r in _queue(ctx, o.doc_version_id) if r.queue_type == "quarantine")
+    assert q.status == "open" and q.evidence["error_code"] == "E101-DEMO"
+
+
+def test_quarantine_release_reenters_parsing(reg):
+    """B2 端到端:隔离件经统一队列 release → QUARANTINED 重入 PARSING。"""
+    ctx, base, batches = reg
+    bid = _bid()
+    batches.append(bid)
+    d, mp = _make_batch(base, bid, [_row("a.docx", perm_tag="")], {"a.docx": _docx()})
+    o = register_batch(ctx, bid, d, mp).outcomes[0]
+    q = next(r for r in _queue(ctx, o.doc_version_id) if r.queue_type == "quarantine")
+    out = dispose(ctx.db, q.queue_id, "release", operator="test")
+    assert out.after_state == "PARSING"
+    assert ctx.db.get(DocVersion, o.doc_version_id).pipeline_status == "PARSING"
+    closed = next(r for r in _queue(ctx, o.doc_version_id) if r.queue_id == q.queue_id)
+    assert closed.status == "closed"
 
 
 def test_perm_missing_quarantine(reg):
