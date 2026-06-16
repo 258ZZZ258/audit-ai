@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-**M1 完成(检查点 D,V1/V2/V4/V5)+ M2 验证套件完成(检查点 M2,V3/V6/V7)。** Specs: `SPEC.md`(M1)/ `SPEC_M2.md`(M2,验证套件主体、DeepDoc 降可选)、`PLAN*.md`、`TASKS*.md`(per-task 验收),upstream `文档处理管线_本地Demo_开发文档_v0.1.md` (V0.1)。**The full build narrative — every module, decision, and pitfall — is in `docs/devlog.md`; read it to understand why things are the way they are.** Read the spec before changing contracts — it encodes deliberate cut decisions ("裁机制不裁契约": cut mechanisms, never cut contracts). DeepDoc(M2 可选)留独立轮:走查证明真实 PDF 解析痛点在 `clause_tree`(IR 边界下游),与换不换解析器无关。
+**M1 完成(检查点 D,V1/V2/V4/V5)+ M2 验证套件完成(检查点 M2,V3/V6/V7)+ M3 E1 义务打标/report 打磨(代码完成,**V8 达成**;检查点 M3 硬门待本地 BGE-M3 跑 live V1–V7)。** Specs: `SPEC.md`(M1)/ `SPEC_M2.md`(M2,验证套件主体、DeepDoc 降可选)/ `SPEC_M3.md`(M3,E1+report)、`PLAN*.md`、`TASKS*.md`(per-task 验收),upstream `文档处理管线_本地Demo_开发文档_v0.1.md` (V0.1)。**The full build narrative — every module, decision, and pitfall — is in `docs/devlog.md`; read it to understand why things are the way they are.** Read the spec before changing contracts — it encodes deliberate cut decisions ("裁机制不裁契约": cut mechanisms, never cut contracts). DeepDoc(M2 可选)留独立轮:走查证明真实 PDF 解析痛点在 `clause_tree`(IR 边界下游),与换不换解析器无关。
 
 ### 开发进展 (structured per-phase summary; 细节见 `docs/devlog.md`)
 
@@ -16,8 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **C 结构化→向量化** | ✅ 检查点 C | s3 切块装配 · s4 元数据 L1+交叉校验 · version_chain · EmbeddingClient(本地 BGEM3)· milvus_io 混合查+冷备 · s5 嵌入索引(staging→effective)· C7 `search` 四级引用 + `meta list/confirm` 放行人工闸(覆盖 V1 主干) |
 | **D 切换/幂等/报告** | ✅ 检查点 D(V1/V2/V4/V5) | **D1**: finalize 版本原子切换(自动触发)· corpus_rows 共享层。**D2**: batch02 真实修订对 182→226(**V4**)。**D3**: `verify idempotency`(**V5**)+ `reprocess`。**D4**: `report <batch>`。**D5**(M2 起为真实现)。演示脚本 1–10 步真栈走查通过 |
 | **M2 验证套件** | ✅ 检查点 M2(V3/V6/V7) | **T2 冒烟**(`verify/smoke.py`,V7)·**T4 锚点回放**(`anchor_replay.py`,V3,page_end 窗+rapidfuzz+表格/降级豁免)·**对账**(`reconcile.py`,逐 doc count)·**rebuild**(`rebuild.py`,冷备零编码回灌,V6)· mini golden set(`tests/golden/`,**F1=1.0**)· report 加 t2/t4_pass_rate · finalize 自动跑 T2/T4 留痕。**DeepDoc 降可选/留独立轮**(走查证明真实 PDF 痛点在 clause_tree,与解析器无关) |
+| **M3 E1+report** | ✅ 代码完成(V8;检查点 M3 待 live) | **E1 义务预打标**(`enrich/e1_obligation.py`,零 LLM 正则 + `config/obligation.yaml` 词表;接 `_structuring` 装配:**clear→s3→tag→s4**,写 `clause_tags`;**V8** golden precision=1.0/recall=0.955 ≥0.90)· **report 全量打磨**(义务覆盖/队列处置/版本链/按语料 P-INT·P-EXT 拆 + JSON 落 `reports/<batch>.json`)· **免模型全套 252 passed**。bare `须` 数据驱动**不入**词表(全 corpus 仅 6 次且含 `无须`=否定义务陷阱) |
 
-**当前链路**:`ingest`→s1→s2→STRUCTURING(s3+s4)→META_REVIEW(全件 meta_confirm 人工闸)→`meta confirm`(approve)→EMBEDDING→INDEXING→INDEXED→**finalize**(带 supersedes 时自动把旧版置 superseded:PG `supersede_version` 原子事务 + Milvus 从冷备改标量不删);`search` 混合查(默认 effective,`--include-superseded` 见旧版/`--corpus`/`--topk`)出四级引用;degrade 重入索引终于 DEGRADED_INDEXED。**待修小项**:s0 隔离件不写 review_queue(`queue list` 不可见)。
+**当前链路**:`ingest`→s1→s2→STRUCTURING(`e1_enabled` 时 **clear→s3→tag→s4**:E1 义务打标随切块写 `clause_tags`,异常不阻断终态)→META_REVIEW(全件 meta_confirm 人工闸)→`meta confirm`(approve)→EMBEDDING→INDEXING→INDEXED→**finalize**(带 supersedes 时自动把旧版置 superseded:PG `supersede_version` 原子事务 + Milvus 从冷备改标量不删);`search` 混合查(默认 effective,`--include-superseded` 见旧版/`--corpus`/`--topk`)出四级引用;degrade 重入索引终于 DEGRADED_INDEXED。**待修小项**:s0 隔离件不写 review_queue(`queue list` 不可见)。
 
 **真模型/向量化运行前提**:BGE-M3 经 modelscope 拉到本地(hf-mirror 在该网络 308 跳回 HF、直连慢),设 `PIPELINE_EMBEDDING_MODEL=<本地目录>` + `HF_HUB_OFFLINE=1`;未设时 embed/s5 集成测试自动 skip(绝不联网下载)。
 
@@ -123,7 +124,7 @@ Python 3.11 · typer · SQLAlchemy 2.x + Alembic · PostgreSQL 16 (Docker) · Mi
 
 - **M1 ✅**: skeleton + S0–S5 full chain on the light parser + state machine + queue CLI + demo steps 1–10 → V1/V2/V4/V5 pass(检查点 D)
 - **M2 ✅ 验证套件**(`SPEC_M2.md`): T2/T4/reconcile/rebuild + mini golden set(F1=1.0)→ V3/V6/V7 pass(检查点 M2)。**DeepDoc 降可选/留独立轮**——走查证明真实 PDF 痛点在 `clause_tree`(IR 边界下游),与解析器无关;接入时门=parser-swap 后 golden set 仍 F1=1.0
-- **M3 (optional)**: E1 obligation tagging + report polish → V8
+- **M3 ✅ 代码完成**(`SPEC_M3.md`): E1 义务预打标(零 LLM 正则 + `config/obligation.yaml` 词表,接 `_structuring`)+ report 全量打磨 → **V8 达成**(golden P=1.0/R=0.955)。**免模型全套 252 passed**;**检查点 M3 硬门(V1–V7 live + 端到端走查)待本地 BGE-M3 跑实**。bare `须` 数据驱动不入词表(详见 M3 踩坑)。DeepDoc 仍留独立轮。
 
 If DeepDoc vendoring exceeds 1 day, M2 falls back to the light parser for the demo — the IR boundary guarantees this fallback affects no other acceptance point.
 
@@ -153,3 +154,9 @@ If DeepDoc vendoring exceeds 1 day, M2 falls back to the light parser for the de
 - **report 别现场加载模型**:初版 report 现场跑 smoke → 无模型时触发 HF 下载/卡住。改为 finalize 留痕、report 聚合读取(见验证组件段)。
 - **T2 冒烟须排除 superseded 件**:旧版默认检索不可见,测它必 E801 误报 → `_indexed_dvids(effective_only=True)`;T4 回放不排除(旧版锚点不变)。
 - **clause_tree decimal/cross-ref 是 IR 边界下游**:小数编号(`2.17`/`3.1.2`,`_key` 变长元组排序)、跨法引用过滤(`第X条` 后跟枚举标点 / `N.M.K 条`)、目录剥离(≥4 点引导符)都在 clause_tree,**换 DeepDoc 不解决**。
+
+**M3 踩坑(易再踩):**
+- **E1 写 `clause_tags` → 凡删 chunk 的路径要先删 tag**:`clause_tags.chunk_id` 是 chunk 的 FK 子。生产/reprocess 走 `_structuring` 的 **`clear`-先于-s3**(在 `replace_chunks` 删 chunk 前清旧 `is_obligation` 行)已安全;但**测试 teardown 删 chunk 前须先删 clause_tags**——本会话据此修了 `anchor_replay`/`idempotency`/`smoke`/`version_demo` 四个 teardown(FK 子先删)。**决策 A 取 `clear`-先于-s3 而非 `ON DELETE CASCADE`**(零迁移)。
+- **义务词表数据驱动、克制加词**:`应` 歧义只在**前缀**(相应/对应…),前缀排除**统一作用于 `应当` 这类 marker**(修 `对应当`/`相应当` 子串误命中);**后缀**(应用/应急/应收)在监管语料近乎不现(探针:690 个「应」中 应当 637),**不加后缀排除**以免造假阴;bare `须` 全 corpus 仅 6 次且含 `无须`(=否定义务)陷阱,**故 naive 不加**——留 golden recall=0.955≥0.90 的 honest FN,不过拟合 golden。
+- **golden 真值须人工独立判,非 matcher 输出**(否则自证):`tests/golden/obligation/obligation_truth.json`(义务/禁止规范句=正;目的/适用范围/定义/施行日期/审批权限分配=负),含 `相应` 负例锁「去掉前缀排除」回归、多 marker 正例锁「去掉某词」回归。
+- **report 别加载模型(承 M2)**:M3 四项全**纯 PG 聚合**;义务覆盖 `e1_enabled` 关→`None`(不臆造 0%);`reports/<batch>.json` 落文件入 `.gitignore`。

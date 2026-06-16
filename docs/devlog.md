@@ -266,6 +266,25 @@ spec-driven 再走一轮(`SPEC_M2`/`PLAN_M2`/`TASKS_M2`,各停下评审)。**立
   终态才跑。`test_queue_degrade_via_cli`(seeded 件无 IR,s3 中止)断言从 exit 0 改为 **exit 1 + 「推进失败」**(处置副作用
   仍生效);成功路径(meta confirm/reprocess→INDEXED→exit 0)经模型门控测试确认未破坏。
 
+### 阶段 M3 — E1 义务打标 + report 全量打磨(代码完成,V8 达成;检查点 M3 待 live)
+
+spec-driven 四阶段(`SPEC_M3`/`PLAN_M3`/`TASKS_M3`,各停审)。立项:E1 是富集链起点(为比对智能体预热),
+零 LLM 正则、IR 边界下游——证明加富集步不动状态机/解析器/默认零 LLM。
+
+- **Plan 探针定方向(非拍脑袋)**:batch01 真文本统计「应」分布——690 个「应」中 应当 637(92%),前缀陷阱仅
+  相应(15),后缀(应用/应急)近乎不现。据此词表初值固化进 `config/obligation.yaml`,后缀排除**不加**。
+- **A1 matcher**:`match_obligation(text,cfg)` 整词 markers + bare「应」边界(前缀排除)。反馈后再调:前缀排除
+  **统一作用于 应当 marker**(修 对应当/相应当 子串误命中);3329 真单元验证「含『应当』被排除判 False」0 条(零回归)。
+- **A2 装配**:`_structuring` 改 **clear→s3→tag→s4**(clear 先于 s3 `replace_chunks` 避 `clause_tags` FK);E1 异常
+  `_safe_e1` 吞掉不阻断终态。**连带**:管线给每件写 clause_tags → 修 4 个 ingest 测试 teardown(FK 子先删)。
+- **B1 golden / V8**:人工据语义独立标注 22 正 + 12 负(batch01 真条款,非 matcher 输出),`test_obligation_golden`
+  断言 **precision=1.0 / recall=0.955 ≥0.90**。唯一 FN=「用印须填写」(bare 须)——数据查 须全 corpus 仅 6 次且含
+  无须(否定义务)陷阱,naive 加会造假阳,**故意不加**留 honest FN 不过拟合 golden。
+- **C1/C2 report 打磨**:义务覆盖 / 队列处置 / 版本链 / 按语料 P-INT·P-EXT 拆 + JSON 落 `reports/<batch>.json`,
+  纯 PG 聚合不加载模型;e1 关→义务覆盖 None。
+- **D1 验收(部分)**:免模型全套 **252 passed / 11 skipped**(model-gated)· `ruff check .` 全绿。**model-gated
+  V1–V7 live + 端到端走查待本地 BGE-M3 跑**(检查点 M3 硬门未闭)。提交锚点:M3-0/A1/A2/B1/C1·C2(本批)。
+
 ## 已建链路与下一步
 
 全链路:`demo ingest`(s0 登记+版本关系+去重审计)→ s1(渲染+解析+对齐)→ s2(七指标质检)→ STRUCTURING 复合
@@ -273,13 +292,13 @@ spec-driven 再走一轮(`SPEC_M2`/`PLAN_M2`/`TASKS_M2`,各停下评审)。**立
 → INDEXING(Milvus 索引 + 翻 effective)→ INDEXED → **finalize**(带 supersedes 自动把旧版置 superseded);`search` 混合查出
 四级引用(默认 effective,`--include-superseded` 见旧版);degrade 重入索引终于 DEGRADED_INDEXED。失败件入统一队列、`dispose`
 处置。INDEXED 后 finalize 跑 T2/T4 留痕;`demo verify smoke/replay/reconcile`、`rebuild`、`report` 出验证指标。
-**检查点 B/C/D/M2 达成;M1(V1/V2/V4/V5)+ M2 验证套件(V3/V6/V7)完成。**
+**检查点 B/C/D/M2 达成;M1(V1/V2/V4/V5)+ M2 验证套件(V3/V6/V7)完成;M3(E1+report)代码完成、V8 达成(检查点 M3 待 live)。**
 注:模型门控集成测试假定**干净栈**(SHA 去重);手动 demo 走查残留数据须 `demo down -v` 或清库后再跑测试
 (本会话曾因走查残留致 test_version_demo/reprocess SHA 撞车,清库后通过;test_reprocess 已改 unique_docx 自隔离)。
 
-**状态快照(截至 M2 验证套件,检查点 M2)**:全套 224 passed / 11 skipped(不带 `PIPELINE_EMBEDDING_MODEL`:11 个
-模型门控测试 skip;带时全跑)· `ruff check .` 全绿(含 alembic/versions)· 迁移至 0004 无漂移(M2 无新迁移)·
-检查点 A/B/C/D/M2 达成。**M2 验证套件真栈跑通**:`verify replay` 100%(620/620 含 143 页 ext_sse)· reconcile 一致 ·
+**状态快照(截至 M3 代码完成)**:免模型全套 **252 passed / 11 skipped**(不带 `PIPELINE_EMBEDDING_MODEL`:11 个
+模型门控测试 skip;带时全跑坐实 V1–V7)· `ruff check .` 全绿(含 alembic/versions)· 迁移至 0004 无漂移(M2/M3 均无新迁移)·
+检查点 A/B/C/D/M2 达成,**M3 V8 达成、检查点 M3 硬门待本地 BGE-M3 跑 live**。**M2 验证套件真栈跑通**:`verify replay` 100%(620/620 含 143 页 ext_sse)· reconcile 一致 ·
 `rebuild` 631 块零编码回灌 count 干净 · `verify smoke` 100%(9/9 排除 superseded)· golden F1=1.0 · finalize 留痕→report
 聚合 t2/t4=1.0。提交锚点:M1 见前;M2 = M2-A(0e9333b)+ M2-B/C/D(本批)。
 (检查点 D 走查发现已修:指标3 插入条误报 + clause_tree 跨法引用过滤 + 小数编号做全;batch01 走查 9 INDEXED+1 DEGRADED+1 QUARANTINED。)
