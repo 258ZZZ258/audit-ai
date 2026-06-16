@@ -10,6 +10,7 @@ import json
 import subprocess
 import sys
 from collections import Counter
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -126,21 +127,32 @@ def _context(cfg=None) -> tuple[PgIO, StageContext]:
     return pg, StageContext(config=cfg, object_store=ObjectStore.from_config(cfg), db=pg)
 
 
-def _worker_context(cfg=None) -> tuple[PgIO, StageContext]:
-    """全上下文(含 embedding + 已连接 milvus):推进 META_REVIEW→EMBEDDING→INDEXED 的命令用。
+def _pg_milvus_context(cfg=None) -> tuple[PgIO, StageContext]:
+    """PG + 已连接 Milvus、**不构造 embedding** 的上下文:只读投影/对账类命令用
+    (verify idempotency/reconcile、rebuild、report)。
 
-    仅 C7 的 ``meta confirm`` 需要(它放行人工闸后跑到 s5);ingest 与 queue 处置至多到 META_REVIEW
-    人工闸即停,用轻 ``_context`` 即可。
+    这些命令不编码任何查询(idempotency 走 s0 去重、reconcile/rebuild 从 PG 冷备零编码回灌、
+    report 仅探 retrieval_mode),却曾共用 ``_worker_context``——后者构造 ``EmbeddingClient``,在
+    ``embedding.mode=endpoint``(config 合法值,M1 构造即 fail-fast)下会让这些本不依赖模型的命令
+    直接不可用。拆出本上下文,把"要不要模型"与"要不要 Milvus"解耦。
     """
     cfg = cfg or load_config()
     pg = PgIO.from_config(cfg)
     mio = MilvusIO(cfg)
     mio.connect()
-    ctx = StageContext(
-        config=cfg, object_store=ObjectStore.from_config(cfg), db=pg,
-        embedding=EmbeddingClient.from_config(cfg), milvus=mio,
-    )
+    ctx = StageContext(config=cfg, object_store=ObjectStore.from_config(cfg), db=pg, milvus=mio)
     return pg, ctx
+
+
+def _worker_context(cfg=None) -> tuple[PgIO, StageContext]:
+    """全上下文(PG + 已连接 milvus + embedding):推进 META_REVIEW→EMBEDDING→INDEXED 的命令用。
+
+    在 ``_pg_milvus_context`` 上补 ``EmbeddingClient``;仅真正要编码向量的命令需要它
+    (``meta confirm`` / ``reprocess`` 跑 s5、``search`` 编码 query、``verify smoke`` 编码合成查询)。
+    这些命令在 endpoint 模式下构造即失败属预期——它们本就离不开模型。
+    """
+    pg, ctx = _pg_milvus_context(cfg)
+    return pg, replace(ctx, embedding=EmbeddingClient.from_config(ctx.config))
 
 
 def _advance_one(
@@ -620,7 +632,7 @@ def verify_idempotency(
     manifest: Path | None = typer.Option(None, "--manifest", "-m", help="默认 <dir>/manifest.xlsx"),
 ) -> None:
     """V5:对已入库批次重复 ingest,断言 chunk_id 集合 + Milvus 实体数不变、第二次有去重留痕。"""
-    pg, ctx = _worker_context()  # 需 milvus(count);不重嵌入,模型不加载
+    pg, ctx = _pg_milvus_context()  # 需 milvus(count);走 s0 去重、不重嵌入 → 不构造模型
     report = check_idempotency(ctx, directory, manifest or (directory / "manifest.xlsx"))
     for line in report.lines:
         typer.echo(line)
@@ -671,7 +683,7 @@ def verify_smoke(batch: str | None = _BATCH_OPT) -> None:
 @verify_app.command("replay")
 def verify_replay(batch: str | None = _BATCH_OPT) -> None:
     """T4 锚点回放(V3):逐 chunk 在原件页定位;表格/降级豁免;100% 即过,有未匹配非零退出。"""
-    pg, ctx = _worker_context()  # replay 免模型(embedding 客户端构造不加载);需 object_store
+    pg, ctx = _context()  # replay 比对 chunk 文本 vs 原件页:只需 PG + object_store(无 milvus/模型)
     dvids = _indexed_dvids(pg, batch)
     if not dvids:
         typer.echo("(无已索引文档)")
@@ -687,7 +699,7 @@ def verify_replay(batch: str | None = _BATCH_OPT) -> None:
 @verify_app.command("reconcile")
 def verify_reconcile(batch: str | None = _BATCH_OPT) -> None:
     """对账:逐 doc PG 块数 vs Milvus,不平以 PG 重灌;全部一致即过,否则非零退出。"""
-    pg, ctx = _worker_context()
+    pg, ctx = _pg_milvus_context()  # 需 milvus(count/回灌);不编码 → 不构造模型
     with pg.session() as s:
         q = select(Chunk.doc_version_id).distinct()
         if batch:
@@ -710,7 +722,7 @@ def verify_reconcile(batch: str | None = _BATCH_OPT) -> None:
 @app.command()
 def rebuild() -> None:
     """V6:drop Milvus collection → 从 PG chunks + bytea 冷备零编码全量重灌。"""
-    pg, ctx = _worker_context()
+    pg, ctx = _pg_milvus_context()  # 冷备零编码回灌:需 milvus,不构造模型
     r = run_rebuild(ctx)
     typer.echo(
         f"✓ rebuild:{r.docs} 件 {r.chunks_reloaded} 块从冷备零编码回灌;"
@@ -729,7 +741,7 @@ def report(batch: str = typer.Argument(..., help="批次 id")) -> None:
 
     输出控制台摘要 + JSON,并把快照落库到 import_batches.report。
     """
-    pg, ctx = _worker_context()  # 需 milvus 探 retrieval_mode
+    pg, ctx = _pg_milvus_context()  # 仅探 retrieval_mode:需 milvus,不构造模型
     rep = build_report(ctx, batch)
     if rep["doc_count"] == 0:
         typer.echo(f"✗ 批次无文档: {batch}")
