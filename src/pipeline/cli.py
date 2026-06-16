@@ -143,33 +143,39 @@ def _worker_context(cfg=None) -> tuple[PgIO, StageContext]:
     return pg, ctx
 
 
-def _advance_one(pg: PgIO, ctx: StageContext, dvid: str, *, max_steps: int = 20) -> tuple[int, str]:
-    """只推进本文档至无 stage 可推进,不触碰其他文档。
+def _advance_one(
+    pg: PgIO, ctx: StageContext, dvid: str, *, max_steps: int = 20
+) -> tuple[int, str, str | None]:
+    """只推进本文档至无 stage 可推进,不触碰其他文档。返回 ``(steps, final_state, error)``。
 
-    处置已落库,推进尽力而为:某 stage 抛错(如缺 IR)则报告后停,不崩命令。
+    某 stage 抛错(如缺 IR)→ 报告后停,并**回带错误信息**(不静默吞):调用方据此判定推进是否
+    真正到位、决定退出码,避免"卡在 EMBEDDING/INDEXING 却 exit 0"。``error=None`` 表示干净停
+    (到人工等待态/终态);非 None 表示推进中途因异常中止。
     """
     orch = Orchestrator(pg, ctx, _build_stages())
     steps = 0
+    error: str | None = None
     while steps < max_steps:
         dv = pg.get(DocVersion, dvid)
         if dv is None:
             break
         try:
-            if not orch.step(dv):  # 当前态无 stage → 停
+            if not orch.step(dv):  # 当前态无 stage → 干净停(人工等待/终态)
                 break
-        except Exception as e:  # 推进中某 stage 失败(如缺 IR):不崩命令,报告后停
+        except Exception as e:  # 推进中某 stage 失败:报告 + 回带错误(不静默)
+            error = str(e)
             typer.echo(f"  推进在 {dv.pipeline_status} 中止: {e}")
             break
         steps += 1
     final = pg.get(DocVersion, dvid)
     final_state = final.pipeline_status if final else "?"
     # 推进到 INDEXED 即 finalize:① 带 supersedes 则版本原子切换 ② T2/T4 评测留痕(§9,M2)。
-    # 仅 worker ctx(含 milvus)才可能到 INDEXED;轻 ctx 至多停 META_REVIEW,故此处 milvus 必非空。
-    if final is not None and final_state in _INDEXED_STATES and ctx.milvus is not None:
+    # 仅无中途异常、确到 INDEXED 才 finalize(否则不在终态);worker ctx 才可能到此,milvus 必非空。
+    if error is None and final is not None and final_state in _INDEXED_STATES and ctx.milvus:
         result = finalize.run(ctx, dvid)
         if result.switched:
             typer.echo(f"  版本切换:旧版 {result.old_dvid} → superseded")
-    return steps, final_state
+    return steps, final_state, error
 
 
 def _print_status(docs: list[DocVersion]) -> None:
@@ -303,9 +309,12 @@ def _do_dispose(queue_id: str, disposition: str, operator: str) -> None:
         f"✓ {disposition}: {outcome.doc_version_id}  "
         f"{outcome.before_state} → {outcome.after_state}"
     )
-    steps, final = _advance_one(pg, ctx, outcome.doc_version_id)  # 重入态自动推进本件
+    steps, final, error = _advance_one(pg, ctx, outcome.doc_version_id)  # 重入态自动推进本件
     if steps:
         typer.echo(f"  worker 推进 {steps} 步 → {final}")
+    if error is not None:  # 推进中途异常 → 文档卡住,非零退出(处置已落库但未达预期态)
+        typer.echo(f"✗ {disposition} 后推进失败,文档停在 {final}")
+        raise typer.Exit(1)
 
 
 _OPERATOR = typer.Option("cli", "--operator", "-u", help="处置人(写 pipeline_events.actor)")
@@ -487,26 +496,33 @@ def _close_extra_meta(pg: PgIO, queue_id: str, operator: str) -> None:
         q.processed_at = datetime.now(UTC)
 
 
-def _approve_doc(pg: PgIO, ctx: StageContext, dvid: str, operator: str) -> None:
+def _approve_doc(pg: PgIO, ctx: StageContext, dvid: str, operator: str) -> bool:
     """doc-centric 放行:首条 meta_confirm 走 approve(迁移 META_REVIEW→EMBEDDING),该 doc 其余
     open meta_confirm(merge/split 件有 s0+s4 两条)随之关单,再推进本件至 INDEXED。
+
+    返回**是否成功推进至终态**(INDEXED/DEGRADED_INDEXED)。放行失败 / 推进中途异常 / 未达终态
+    均返回 False(契约:人工闸放行后须到 INDEXED,否则调用方非零退出,不静默 exit 0)。
     """
     qids = _open_meta_confirms(pg, dvid)
     if not qids:
         typer.echo(f"  (doc {dvid} 无 open meta_confirm,跳过)")
-        return
+        return True  # 无待放行项:no-op,非失败
     try:
         outcome = dispose(pg, qids[0], "approve", operator=operator)  # 迁移 + 关首行 + remediation
     except (KeyError, ValueError) as e:
         typer.echo(f"✗ 放行失败 {dvid}: {e}")
-        return
+        return False
     for qid in qids[1:]:  # 关联行(同 doc 其余 meta_confirm)
         _close_extra_meta(pg, qid, operator)
     extra = f"(+{len(qids) - 1} 关联项)" if len(qids) > 1 else ""
     typer.echo(f"✓ approve: {dvid}  {outcome.before_state} → {outcome.after_state}{extra}")
-    steps, final = _advance_one(pg, ctx, dvid)  # approve→EMBEDDING→…→INDEXED
+    steps, final, error = _advance_one(pg, ctx, dvid)  # approve→EMBEDDING→…→INDEXED
     if steps:
         typer.echo(f"  worker 推进 {steps} 步 → {final}")
+    if error is not None or final not in _INDEXED_STATES:  # 未达终态:契约违背,报失败
+        typer.echo(f"✗ {dvid} 放行后未达 INDEXED(停在 {final})")
+        return False
+    return True
 
 
 @meta_app.command("confirm")
@@ -550,8 +566,10 @@ def meta_confirm(
                 typer.echo(f"✗ {queue_id} 非 meta_confirm 项(queue_type={q.queue_type})")
                 raise typer.Exit(1)
             dvids = [q.doc_version_id]
-    for dvid in dvids:
-        _approve_doc(pg, ctx, dvid, operator)
+    results = [_approve_doc(pg, ctx, dvid, operator) for dvid in dvids]  # 全跑,不短路
+    if not all(results):
+        typer.echo(f"✗ {results.count(False)}/{len(results)} 件未达 INDEXED")
+        raise typer.Exit(1)
 
 
 # ── reprocess(全量重跑 + 清孤儿)────────────────────────────────
@@ -579,10 +597,13 @@ def reprocess(
         doc_version_id, PipelineState.REGISTERED, actor=operator, detail={"reprocess": True}
     )
     typer.echo(f"→ reprocess {doc_version_id}:已重置 REGISTERED + 清 Milvus 投影")
-    steps, final = _advance_one(pg, ctx, doc_version_id)  # → META_REVIEW(人工闸停)
-    if final == PipelineState.META_REVIEW.value:
+    steps, final, error = _advance_one(pg, ctx, doc_version_id)  # → META_REVIEW(人工闸停)
+    if error is None and final == PipelineState.META_REVIEW.value:
         _approve_doc(pg, ctx, doc_version_id, operator)  # 自动重确认 → INDEXED(+finalize)
         final = pg.get(DocVersion, doc_version_id).pipeline_status
+    if final not in _INDEXED_STATES:  # 未回到 INDEXED:重跑未到位,非零退出(不静默 exit 0)
+        typer.echo(f"✗ reprocess 未达 INDEXED(停在 {final})")
+        raise typer.Exit(1)
     typer.echo(f"✓ reprocess 完成 → {final}")
 
 

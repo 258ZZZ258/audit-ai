@@ -258,6 +258,13 @@ spec-driven 再走一轮(`SPEC_M2`/`PLAN_M2`/`TASKS_M2`,各停下评审)。**立
   回灌 count 631→631 干净 · `verify smoke` 100%(9/9)。**走查发现:smoke 须排除 superseded 件**(182 被 226 替代后默认检索
   不可见,测它必 E801)→ `_indexed_dvids(effective_only=True)`;replay 不排除(旧版锚点不变仍可回放)。
 - 验证:A2/A3/A4/B1 免模型连真栈过;A1 + C1/C2 e2e(finalize 留痕→report 聚合 t2/t4=1.0)本地 BGE-M3 真跑过。
+- **M2 审查修复(推进失败静默 exit 0)**:用户审查发现 `_advance_one` 捕获 stage 异常后只打印「推进中止」并 break、
+  不抛错,`_approve_doc`/`reprocess`/`_do_dispose` 随后仍走成功路径 → 文档可能停在 EMBEDDING/INDEXING/META_REVIEW
+  但 CLI **exit 0**,违反「人工闸放行后达 INDEXED / 验证命令可靠表达结果」契约。修:`_advance_one` 回带
+  `error`(中途异常即记,非静默);`_approve_doc` 返回**是否到终态** bool;`meta confirm` 聚合(任一未达 INDEXED →
+  exit 1)、`reprocess`(final ∉ INDEXED 态 → exit 1)、`_do_dispose`(推进异常 → exit 1)。finalize 仅在无 error 且到
+  终态才跑。`test_queue_degrade_via_cli`(seeded 件无 IR,s3 中止)断言从 exit 0 改为 **exit 1 + 「推进失败」**(处置副作用
+  仍生效);成功路径(meta confirm/reprocess→INDEXED→exit 0)经模型门控测试确认未破坏。
 
 ## 已建链路与下一步
 

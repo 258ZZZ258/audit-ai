@@ -130,15 +130,15 @@ def test_status_lists_doc(sandbox):
 
 
 def test_queue_degrade_via_cli(sandbox):
-    # degrade 现在重入 STRUCTURING + 置 degraded(走索引终于 DEGRADED_INDEXED);seeded 件无 IR,
-    # 韧性推进在 s3 处中止(不崩命令),doc 停 STRUCTURING、degraded 已置位。
+    # degrade 重入 STRUCTURING + 置 degraded;seeded 件无 IR → s3 推进异常被**surfaced**:
+    # 处置已落库(degraded/关单/迁移生效)但推进中止 → **非零退出**(契约:推进失败不静默 exit 0)。
     pg, bids = sandbox
     dvid, qid = _seed_qc_failed(pg, bids)
     r = runner.invoke(app, ["queue", "degrade", qid])
-    assert r.exit_code == 0
-    assert "STRUCTURING" in r.output
+    assert r.exit_code == 1  # s3 缺 IR 中止 → 推进失败,非零退出
+    assert "STRUCTURING" in r.output and "推进失败" in r.output
     dv = pg.get(DocVersion, dvid)
-    assert dv.degraded is True
+    assert dv.degraded is True  # 处置副作用仍生效(落库在推进之前)
     assert pg.get(ReviewQueue, qid).status == "closed"
 
 
