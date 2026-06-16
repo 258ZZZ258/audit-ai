@@ -112,7 +112,7 @@ git **直接提交 main**(本地单人 demo)。沟通用中文。
 - **C3 version_chain**:`meta/version_chain.py`(纯)解析 supersedes → 关系(demo 编码:空/单文件 revise_replace
   /`abolish:`abolish_only/多文件 merge;split=批次内 ≥2 新件指向同一旧件)。s0 `_resolve_logical`→`_resolve_version`:
   revise 继承 logical、abolish 新 logical+记被废止版、merge/split 登记 + meta_confirm 队列"demo 不支持"(s0 首次写
-  队列)。原子切换留 D1。**发现未修**(超范围):s0 隔离件不写 review_queue → `queue list` 不可见,待补。
+  队列)。原子切换留 D1。**发现**(超范围,**M3 末 B2 已补**):s0 隔离件不写 review_queue → `queue list` 不可见。
 - **C4 EmbeddingClient**:`index/embedding_client.py` ABC + 本地 BGEM3(FlagEmbedding,懒加载,一次 encode 出
   dense+sparse,batch/max_length/retries 从 config,指数退避)+ endpoint 桩。**环境坑**:hf-mirror 在此网络 308
   跳回 HF、直连慢 → 用 **modelscope** 拉 bge-m3,经 `PIPELINE_EMBEDDING_MODEL`(config 新增 env 覆盖)指本地目录 +
