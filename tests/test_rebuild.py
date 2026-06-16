@@ -100,6 +100,64 @@ def test_rebuild_reloads_from_cold_zero_encode(seeded):
     # 该件恢复 + 同查询命中集一致(向量 bit 一致 → 无漂移,V6)
     assert mio.count(dvid) == n
     assert _topk_ids(mio, dvid) == before_ids
-    # 全集 == PG 全量 indexable(rebuild 后 Milvus = PG 权威)
-    pg_total = sum(len(corpus_rows.indexable_chunks(pg, d)) for d in pg.chunk_doc_version_ids())
+    # 全集 == PG 全量可回灌块(rebuild 后 Milvus = PG 权威;未嵌入 staging 块本就无投影,排除)
+    pg_total = sum(len(corpus_rows.reloadable_chunks(pg, d)) for d in pg.chunk_doc_version_ids())
+    assert mio.count() == pg_total
+
+
+@pytest.fixture
+def staging_doc(stack):
+    """META_REVIEW 态件:有非 parent chunk 但 chunk_status=staging、**无冷备**、无 Milvus 投影。"""
+    pg, mio, ctx = stack
+    bid, lid, dvid = "rb_st_" + str(ULID()), str(ULID()), str(ULID())
+    n = 3
+    with pg.session() as s:
+        s.add(ImportBatch(batch_id=bid, source_dir="x"))
+        s.add(Document(logical_id=lid, corpus_type="P-INT"))
+        s.flush()
+        s.add(
+            DocVersion(
+                doc_version_id=dvid, logical_id=lid, batch_id=bid, source_format="docx",
+                source_hash="h" + dvid[:8], raw_object_key="k", pipeline_status="META_REVIEW",
+                perm_tag="内部", biz_domain="X", issuer="CSRC",
+            )
+        )
+        s.flush()
+        for i in range(n):
+            s.add(
+                Chunk(
+                    chunk_id=(f"s{i}" + dvid)[:24], doc_version_id=dvid, text="第x条 内容",
+                    clause_path="1", clause_path_norm="1", seq=i, page_start=1,
+                    is_parent=False, is_table=False, chunk_status="staging",
+                    dense_vec_cold=None, sparse_vec_cold=None,  # 未过 s5 嵌入:无冷备
+                )
+            )
+    yield pg, mio, ctx, dvid, n
+    with pg.session() as s:
+        s.execute(delete(Chunk).where(Chunk.doc_version_id == dvid))
+        s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id == dvid))
+        s.execute(delete(DocVersion).where(DocVersion.doc_version_id == dvid))
+        s.execute(delete(Document).where(Document.logical_id == lid))
+        s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
+
+
+def test_rebuild_skips_unembedded_without_data_loss(seeded, staging_doc):
+    """回归(P1a):库内有 META_REVIEW 件(有块无冷备)时,rebuild 不得在 drop 后对 None 冷备反序列化崩。
+
+    旧实现先 drop 全集再遍历,崩在半路 = 集合已空丢数据。应:不抛、已索引件块全恢复、未嵌入件零回灌。
+    """
+    pg, mio, ctx, dvid, n = seeded
+    _pg, _mio, _ctx, sdvid, _sn = staging_doc
+    before_ids = _topk_ids(mio, dvid)
+    assert before_ids and mio.count(dvid) == n
+
+    run_rebuild(ctx)  # 不应抛(旧实现遇 staging 件在 drop 后崩)
+
+    # 已索引件:块全恢复、同查询命中一致(未因另一件缺冷备而被半路清空丢失)
+    assert mio.count(dvid) == n
+    assert _topk_ids(mio, dvid) == before_ids
+    # 未嵌入件:无冷备 → 零回灌、Milvus 无该件投影
+    assert mio.count(sdvid) == 0
+    # 全集 == PG 可回灌块(staging 件的块被排除)
+    pg_total = sum(len(corpus_rows.reloadable_chunks(pg, d)) for d in pg.chunk_doc_version_ids())
     assert mio.count() == pg_total

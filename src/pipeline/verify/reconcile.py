@@ -1,8 +1,10 @@
 """对账(支撑 V6,V0.1 §12.2/§21.2):逐 doc_version 比对 PG 与 Milvus 块数,不平以 PG 为准重灌。
 
-逐 doc 比 PG 非 parent chunk 数 vs `MilvusIO.count(dvid)`(query-by-PK 准确;**不用**全集
-`num_entities`——upsert churn 使其虚高)。不平 → 记 `E701` + `milvus.delete` 清旧投影 + 从 PG 冷备
-`rows_from_cold`(按各 chunk 存储 status 还原,零编码)重灌 + flush + 复检。对终态无阻断权。
+逐 doc 比 PG **应有投影块数** vs `MilvusIO.count(dvid)`(query-by-PK 准确;**不用**全集
+`num_entities`——upsert churn 使其虚高)。"应有投影"= ``reloadable_chunks``(非 parent 且冷备齐全),
+**非**全部非 parent 块:META_REVIEW 等未嵌入中间态 PG 有块、Milvus 本就该没有(冷备也为 None),
+是正常态——按 0==0 判一致,不会误当缺失而走重灌(那会对 None 反序列化崩)。不平 → 记 `E701` +
+`milvus.delete` 清旧投影 + 从 PG 冷备 `rows_from_cold`(零编码)重灌 + flush + 复检。对终态无阻断权。
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ def run_reconcile(ctx: StageContext, doc_version_ids: list[str]) -> ReconcileRes
     per_doc: list[dict] = []
     consistent = True
     for dvid in doc_version_ids:
-        pg_n = len(corpus_rows.indexable_chunks(ctx.db, dvid))  # 入 Milvus 的(非 parent)
+        pg_n = len(corpus_rows.reloadable_chunks(ctx.db, dvid))  # 应有投影:非 parent 且冷备齐全
         m_n = ctx.milvus.count(dvid)  # query-by-PK,准确
         rec: dict = {"dvid": dvid, "pg": pg_n, "milvus": m_n, "reconciled": False}
         if pg_n != m_n:

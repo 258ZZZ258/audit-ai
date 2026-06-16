@@ -101,3 +101,52 @@ def test_reconcile_consistent_is_noop(seeded):
     rec = next(d for d in r.per_doc if d["dvid"] == dvid)
     assert rec["pg"] == n and rec["milvus"] == n and rec["reconciled"] is False
     assert r.consistent
+
+
+@pytest.fixture
+def staging_doc(stack):
+    """META_REVIEW 态件:有非 parent chunk 但 chunk_status=staging、无冷备、无 Milvus 投影。"""
+    pg, mio, ctx = stack
+    bid, lid, dvid = "rc_st_" + str(ULID()), str(ULID()), str(ULID())
+    n = 3
+    with pg.session() as s:
+        s.add(ImportBatch(batch_id=bid, source_dir="x"))
+        s.add(Document(logical_id=lid, corpus_type="P-INT"))
+        s.flush()
+        s.add(
+            DocVersion(
+                doc_version_id=dvid, logical_id=lid, batch_id=bid, source_format="docx",
+                source_hash="h" + dvid[:8], raw_object_key="k", pipeline_status="META_REVIEW",
+                perm_tag="内部", biz_domain="X", issuer="CSRC",
+            )
+        )
+        s.flush()
+        for i in range(n):
+            s.add(
+                Chunk(
+                    chunk_id=(f"s{i}" + dvid)[:24], doc_version_id=dvid, text="第x条 内容",
+                    clause_path="1", clause_path_norm="1", seq=i, page_start=1,
+                    is_parent=False, is_table=False, chunk_status="staging",
+                    dense_vec_cold=None, sparse_vec_cold=None,  # 未过 s5 嵌入:无冷备
+                )
+            )
+    yield pg, mio, ctx, dvid, n
+    with pg.session() as s:
+        s.execute(delete(Chunk).where(Chunk.doc_version_id == dvid))
+        s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id == dvid))
+        s.execute(delete(DocVersion).where(DocVersion.doc_version_id == dvid))
+        s.execute(delete(Document).where(Document.logical_id == lid))
+        s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
+
+
+def test_reconcile_skips_unembedded_intermediate(staging_doc):
+    """回归(P1b):META_REVIEW 件 PG 有块、Milvus 本就该空——应判一致、**不**误当缺失走重灌
+    (旧实现以 indexable 计 pg=n≠milvus=0 → 进 rows_from_cold,对 None 冷备反序列化崩)。"""
+    pg, mio, ctx, dvid, n = staging_doc
+    assert mio.count(dvid) == 0  # 未嵌入 → 本就无投影
+    r = run_reconcile(ctx, [dvid])  # 不应抛
+    rec = next(d for d in r.per_doc if d["dvid"] == dvid)
+    assert rec["pg"] == 0 and rec["milvus"] == 0  # 应有投影=reloadable(非 parent 且冷备齐全)=0
+    assert rec["reconciled"] is False  # 一致 → 不重灌
+    assert r.consistent
+    assert mio.count(dvid) == 0  # 未被误灌

@@ -63,18 +63,34 @@ def _run_verify(ctx: StageContext, dvid: str) -> None:
     """INDEXED 后跑 T2 冒烟 + T4 回放,留痕 `pipeline_events.detail['verify']`(供 report 聚合,§9)。
 
     finalize 仅在 worker ctx(含 embedding+milvus)到 INDEXED 时被调用,故 smoke 复用已载模型。
-    **评测组件对终态无阻断权**:任何异常吞掉、只记日志,不改 pipeline_status。
+    **评测组件对终态无阻断权**:评测异常(源文件/渲染件缺失、解析异常等)不改 pipeline_status,但
+    **必须据实留痕为失败**——否则该 doc 在 report 聚合里整条消失,T4/T2 通过率显 None 掩盖失败,违背
+    V0.1 §21.2「不阻断终态,但写入报告」。故 T4 没跑出来即记 ``t4_pass=False`` + ``error``;若仅 T2
+    崩,已得的 T4 结果仍保留。
     """
+    t2_hit = None
+    t4_pass = None
+    t4_rate = None
+    error = None
     try:
         from pipeline.verify.anchor_replay import run_replay
         from pipeline.verify.smoke import run_smoke
 
         t4 = run_replay(ctx, [dvid])
-        t2_hit = None
+        t4_pass, t4_rate = t4.passed, t4.pass_rate
         if ctx.embedding is not None and ctx.milvus is not None:
             sm = run_smoke(ctx, [dvid])
             t2_hit = sm.per_doc[0]["hit"] if sm.per_doc else None
-        detail = {"verify": {"t2_hit": t2_hit, "t4_pass": t4.passed, "t4_rate": t4.pass_rate}}
+    except Exception as e:  # 不阻断终态,但记为失败(否则 report 聚合不到 → 显 None 掩盖)
+        error = str(e)
+        if t4_pass is None:  # T4 都没跑出来 → 计失败,而非从报告里消失
+            t4_pass = False
+        logger.warning("finalize T2/T4 评测异常(不阻断,记入报告):%s", e)
+
+    detail = {"verify": {"t2_hit": t2_hit, "t4_pass": t4_pass, "t4_rate": t4_rate}}
+    if error is not None:
+        detail["verify"]["error"] = error
+    try:
         with ctx.db.session() as s:
             cur = s.get(DocVersion, dvid)
             s.add(
@@ -83,6 +99,9 @@ def _run_verify(ctx: StageContext, dvid: str) -> None:
                     to_state=cur.pipeline_status, actor="finalize", detail=detail,
                 )
             )
-        logger.info("finalize 评测 %s:T2 hit=%s T4 pass=%s", dvid, t2_hit, t4.passed)
-    except Exception as e:  # 评测失败不阻断终态(V0.1 §21.2)
-        logger.warning("finalize T2/T4 评测失败(不阻断):%s", e)
+        logger.info(
+            "finalize 评测 %s:T2 hit=%s T4 pass=%s%s",
+            dvid, t2_hit, t4_pass, f" err={error}" if error else "",
+        )
+    except Exception as e:  # 连留痕都写不进(PG 异常)——只能日志,仍不阻断终态
+        logger.warning("finalize 评测留痕写入失败(不阻断):%s / %s", dvid, e)
