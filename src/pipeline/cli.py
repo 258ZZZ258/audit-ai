@@ -7,6 +7,7 @@ INDEXED)。后续模块:verify/rebuild/reprocess/report。
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import sys
 from collections import Counter
@@ -19,6 +20,7 @@ from sqlalchemy import select
 from ulid import ULID
 
 from pipeline.config import load_config
+from pipeline.enrich import e1_obligation
 from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
 from pipeline.index.object_store import ObjectStore
@@ -93,13 +95,31 @@ def down(
 
 
 # ── 编排器组装根(composition root)──────────────────────────────
+logger = logging.getLogger(__name__)
+
+
+def _safe_e1(fn, ctx: StageContext, dvid: str) -> None:
+    """跑 E1 富集步,异常吞掉记日志——富集无状态机阻断权,不阻断 _structuring 终态(V0.1 §21.2)。"""
+    try:
+        fn(ctx, dvid)
+    except Exception as e:  # noqa: BLE001 富集失败不阻断管线(同验证组件纪律,V0.1 §21.2)
+        logger.warning("E1 义务打标 %s(%s)失败(不阻断):%s", fn.__name__, dvid, e)
+
+
 def _structuring(ctx: StageContext, doc_version_id: str) -> StageResult:
     """STRUCTURING 复合(在装配层组合,守 CLAUDE.md「stage 之间不得互相 import」约束):
 
-    先 s3 切块(副作用写 chunks,其 StageResult 弃用)→ 再 s4 元数据交叉校验(决定 META_REVIEW
-    + 冲突时 meta_confirm 队列)。s3/s4 仍互不依赖、各自可测;最终态由 s4 决定。
+    E1 富集(可选)→ s3 切块 → E1 打标 → s4 元数据。`e1_enabled` 时:**先 `clear`(在 s3
+    `replace_chunks` 删 chunk 之前,避 `clause_tags` 外键)→ s3 → `tag`**;E1 异常不阻断(`_safe_e1`)。
+    s3 切块副作用写 chunks(StageResult 弃用)→ s4 交叉校验定 META_REVIEW(冲突时 meta_confirm 队列)。
+    s3/s4/e1 互不依赖、各自可测;最终态由 s4 决定。
     """
+    e1_on = ctx.config.toggles.e1_enabled
+    if e1_on:
+        _safe_e1(e1_obligation.clear, ctx, doc_version_id)  # 先于 s3 删 chunk,避 clause_tags FK
     s3_structure.run(ctx, doc_version_id)
+    if e1_on:
+        _safe_e1(e1_obligation.tag, ctx, doc_version_id)
     return s4_meta.run(ctx, doc_version_id)
 
 

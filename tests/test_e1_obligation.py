@@ -2,8 +2,10 @@
 
 import pytest
 from sqlalchemy import delete, select, text
+from sqlalchemy.exc import IntegrityError
 from ulid import ULID
 
+from pipeline import cli
 from pipeline.config import ObligationConfig, load_config
 from pipeline.enrich import e1_obligation as e1
 from pipeline.index.object_store import ObjectStore
@@ -144,3 +146,68 @@ def test_clear_then_tag_idempotent(seeded):
     assert n == 3 and not _tags(pg, dvid)  # clear 删净
     e1.tag(ctx, dvid)
     assert {t.chunk_id for t in _tags(pg, dvid)} == first  # 重打同集 → 幂等
+
+
+def test_replace_chunks_without_clear_hits_fk(seeded):
+    """证明风险:clause_tags 引用 chunk 时直接 replace_chunks(删 chunk)→ FK 违例。"""
+    pg, ctx, dvid = seeded
+    e1.tag(ctx, dvid)
+    assert _tags(pg, dvid)
+    with pytest.raises(IntegrityError):  # 删被 clause_tags 引用的 chunk → 外键违例
+        pg.replace_chunks(dvid, [])
+
+
+def test_clear_before_replace_is_fk_safe(seeded):
+    """证明修复:_structuring 的 clear-先于-s3 顺序——先清 tag 再删 chunk 不撞 FK。"""
+    pg, ctx, dvid = seeded
+    e1.tag(ctx, dvid)
+    e1.clear(ctx, dvid)
+    pg.replace_chunks(dvid, [])  # 不应抛
+    assert not pg.get_chunks(dvid)
+
+
+# ── 装配:_structuring 接 E1(clear→s3→tag→s4),免栈 monkeypatch 编排逻辑 ──────────
+@pytest.fixture
+def cfg_ctx():
+    return StageContext(config=load_config())  # 仅 config;s3/s4/e1 被 monkeypatch,不碰 PG
+
+
+def _spy_structuring(monkeypatch):
+    """monkeypatch _structuring 的四个被调,记录调用序;返回 (calls, s4_sentinel)。"""
+    calls: list[str] = []
+    sentinel = object()
+    monkeypatch.setattr(cli.e1_obligation, "clear", lambda c, d: calls.append("clear"))
+    monkeypatch.setattr(cli.e1_obligation, "tag", lambda c, d: calls.append("tag"))
+    monkeypatch.setattr(cli.s3_structure, "run", lambda c, d: calls.append("s3"))
+    monkeypatch.setattr(cli.s4_meta, "run", lambda c, d: (calls.append("s4"), sentinel)[1])
+    return calls, sentinel
+
+
+def test_structuring_e1_enabled_order(cfg_ctx, monkeypatch):
+    calls, sentinel = _spy_structuring(monkeypatch)
+    cfg_ctx.config.toggles.e1_enabled = True
+    out = cli._structuring(cfg_ctx, "dv")
+    assert calls == ["clear", "s3", "tag", "s4"]  # clear 先于 s3;tag 在 s3 后;s4 收尾
+    assert out is sentinel  # 终态由 s4 决定
+
+
+def test_structuring_e1_disabled_no_write(cfg_ctx, monkeypatch):
+    calls, sentinel = _spy_structuring(monkeypatch)
+    cfg_ctx.config.toggles.e1_enabled = False
+    out = cli._structuring(cfg_ctx, "dv")
+    assert calls == ["s3", "s4"]  # 关 e1:不调 clear/tag
+    assert out is sentinel
+
+
+def test_structuring_e1_exception_nonblocking(cfg_ctx, monkeypatch):
+    calls, sentinel = _spy_structuring(monkeypatch)
+    cfg_ctx.config.toggles.e1_enabled = True
+
+    def boom(c, d):
+        calls.append("tag-boom")
+        raise RuntimeError("E1 炸了")
+
+    monkeypatch.setattr(cli.e1_obligation, "tag", boom)
+    out = cli._structuring(cfg_ctx, "dv")  # tag 抛错被 _safe_e1 吞
+    assert out is sentinel  # 不阻断:仍返 s4 终态
+    assert "tag-boom" in calls and "s4" in calls

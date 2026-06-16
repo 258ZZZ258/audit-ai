@@ -22,6 +22,7 @@ from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
 from pipeline.index.pg_models import (
     Chunk,
+    ClauseTag,
     Document,
     DocVersion,
     ImportBatch,
@@ -81,6 +82,13 @@ def _cleanup(pg, mio, batch_ids: list[str]) -> None:
         if dvids:
             s.execute(delete(RemediationRecord).where(RemediationRecord.doc_version_id.in_(dvids)))
             s.execute(delete(ReviewQueue).where(ReviewQueue.doc_version_id.in_(dvids)))
+            s.execute(  # E1 clause_tags 是 chunk 的 FK 子,先删
+                delete(ClauseTag).where(
+                    ClauseTag.chunk_id.in_(
+                        select(Chunk.chunk_id).where(Chunk.doc_version_id.in_(dvids))
+                    )
+                )
+            )
             s.execute(delete(Chunk).where(Chunk.doc_version_id.in_(dvids)))
             s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id.in_(dvids)))
             s.execute(delete(DocVersion).where(DocVersion.doc_version_id.in_(dvids)))

@@ -25,6 +25,7 @@ from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
 from pipeline.index.pg_models import (
     Chunk,
+    ClauseTag,
     Document,
     DocVersion,
     ImportBatch,
@@ -146,6 +147,13 @@ def test_verify_idempotency_stable(pgmilvus, tmp_path):
             mio.delete(x)
         mio.flush()
         with pg.session() as s:
+            s.execute(  # E1 clause_tags 是 chunk 的 FK 子,先删
+                delete(ClauseTag).where(
+                    ClauseTag.chunk_id.in_(
+                        select(Chunk.chunk_id).where(Chunk.doc_version_id == dvid)
+                    )
+                )
+            )
             s.execute(delete(Chunk).where(Chunk.doc_version_id == dvid))
             s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id == dvid))
             s.execute(delete(DocVersion).where(DocVersion.doc_version_id == dvid))
@@ -178,6 +186,13 @@ def test_reprocess_deterministic(model_stack, soffice, tmp_path, unique_docx, in
             lids = {x.logical_id for x in dvs}
             s.execute(delete(RemediationRecord).where(RemediationRecord.doc_version_id == dvid))
             s.execute(delete(ReviewQueue).where(ReviewQueue.doc_version_id == dvid))
+            s.execute(  # E1 clause_tags 是 chunk 的 FK 子,先删
+                delete(ClauseTag).where(
+                    ClauseTag.chunk_id.in_(
+                        select(Chunk.chunk_id).where(Chunk.doc_version_id == dvid)
+                    )
+                )
+            )
             s.execute(delete(Chunk).where(Chunk.doc_version_id == dvid))
             s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id == dvid))
             s.execute(delete(DocVersion).where(DocVersion.doc_version_id == dvid))
