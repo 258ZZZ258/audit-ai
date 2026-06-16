@@ -213,7 +213,8 @@ def test_report_cli_persists(batch):
     snap = pg.get(ImportBatch, bid).report  # 快照落库
     assert snap is not None and snap["batch_id"] == bid
     assert snap["retrieval_mode"] in ("hybrid", "dense_only")
-    rep_file = pathlib.Path("reports") / f"{bid}.json"  # M3:JSON 快照落文件
+    # M3:JSON 快照落文件,锚到 config 同级 reports/(稳定项目内位置,不随 cwd 漂移)
+    rep_file = load_config().config_dir.parent / "reports" / f"{bid}.json"
     try:
         assert rep_file.exists()
         frep = json.loads(rep_file.read_text("utf-8"))

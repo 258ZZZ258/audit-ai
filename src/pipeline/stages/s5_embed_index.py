@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from pipeline.index.corpus_rows import build_rows, indexable_chunks, rows_from_cold
+from pipeline.index.corpus_rows import build_rows, indexable_chunks, rows_from_cold_strict
 from pipeline.index.milvus_io import dense_to_bytes, sparse_to_bytes
 from pipeline.index.pg_models import DocVersion
 from pipeline.stage_base import StageContext, StageResult
@@ -42,7 +42,8 @@ def index(ctx: StageContext, doc_version_id: str) -> StageResult:
     if indexed != len(chunks):  # 文档级全块就绪校验(写序不变量)
         raise RuntimeError(f"索引不齐:PG {len(chunks)} != Milvus {indexed}({doc_version_id})")
     if chunks:  # 从 PG 冷备重建 effective 行 upsert(零重编码)→ 翻转可见
-        ctx.milvus.upsert(rows_from_cold(ctx.db, doc_version_id, "effective"))
+        # 严格:任一块缺冷备即抛 → 文档不进 INDEXED(不可在缺投影下翻 effective)。维护命令才用跳过式。
+        ctx.milvus.upsert(rows_from_cold_strict(ctx.db, doc_version_id, "effective"))
         ctx.milvus.flush()
     ctx.db.set_chunk_status(doc_version_id, "effective")
     terminal = PipelineState.DEGRADED_INDEXED if dv.degraded else PipelineState.INDEXED

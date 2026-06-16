@@ -21,6 +21,7 @@ from ulid import ULID
 
 from pipeline.config import load_config
 from pipeline.enrich import e1_obligation
+from pipeline.index.corpus_rows import ColdBackupIncomplete
 from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
 from pipeline.index.object_store import ObjectStore
@@ -205,9 +206,13 @@ def _advance_one(
     # 推进到 INDEXED 即 finalize:① 带 supersedes 则版本原子切换 ② T2/T4 评测留痕(§9,M2)。
     # 仅无中途异常、确到 INDEXED 才 finalize(否则不在终态);worker ctx 才可能到此,milvus 必非空。
     if error is None and final is not None and final_state in _INDEXED_STATES and ctx.milvus:
-        result = finalize.run(ctx, dvid)
-        if result.switched:
-            typer.echo(f"  版本切换:旧版 {result.old_dvid} → superseded")
+        try:
+            result = finalize.run(ctx, dvid)
+            if result.switched:
+                typer.echo(f"  版本切换:旧版 {result.old_dvid} → superseded")
+        except ColdBackupIncomplete as e:  # 旧版冷备缺失:本件已 INDEXED,版本切换未完成 → 失败可重试
+            typer.echo(f"✗ 版本切换失败(旧版冷备缺失):{e};修复冷备 / reprocess 旧版后重试")
+            raise typer.Exit(1) from e
     return steps, final_state, error
 
 
@@ -832,7 +837,8 @@ def report(batch: str = typer.Argument(..., help="批次 id")) -> None:
             f"  [{corpus}] 解析 {_pct(cr['parse_success_rate'])} "
             f"QC一次过 {_pct(cr['qc_first_pass_rate'])} 锚点 {_pct(cr['anchor_fill_rate'])}"
         )
-    out_path = Path("reports") / f"{batch}.json"  # JSON 快照落文件(落库不变)
+    # JSON 快照落文件:锚到 config 同级的 reports/(稳定项目内位置,不随调用方 cwd 漂移);落库不变
+    out_path = ctx.config.config_dir.parent / "reports" / f"{batch}.json"
     out_path.parent.mkdir(exist_ok=True)
     out_path.write_text(json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8")
     typer.echo(f"✓ 快照落库 import_batches.report + 文件 {out_path}")

@@ -141,6 +141,17 @@ def staging_doc(stack):
         s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
 
 
+def test_rows_from_cold_strict_vs_skip(staging_doc):
+    """P2:有非 parent 块但冷备缺失时,strict 抛(s5/finalize 用,不放行半成品),跳过式返 []（维护用）。"""
+    from pipeline.index.corpus_rows import (
+        ColdBackupIncomplete, rows_from_cold, rows_from_cold_strict,
+    )
+    pg, _mio, _ctx, sdvid, _n = staging_doc
+    assert rows_from_cold(pg, sdvid) == []  # 跳过式:无冷备块跳过,不崩
+    with pytest.raises(ColdBackupIncomplete):  # 严格式:有非 parent 块却缺冷备 → 抛
+        rows_from_cold_strict(pg, sdvid, "effective")
+
+
 def test_rebuild_skips_unembedded_without_data_loss(seeded, staging_doc):
     """回归(P1a):库内有 META_REVIEW 件(有块无冷备)时,rebuild 不得在 drop 后对 None 冷备反序列化崩。
 

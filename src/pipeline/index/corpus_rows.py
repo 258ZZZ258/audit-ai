@@ -72,14 +72,40 @@ def build_rows(
     ]
 
 
-def rows_from_cold(db: PgIO, dvid: str, status: str | None = None) -> list[CorpusRow]:
-    """从 PG 冷备(dense_vec_cold / sparse_vec_cold)重建 CorpusRow——零重编码。
+class ColdBackupIncomplete(RuntimeError):
+    """严格回灌(s5 翻 effective / finalize 翻 superseded)时发现块冷备缺失——不可在缺投影下放行。"""
 
-    仅取 ``reloadable_chunks``(冷备齐全):未嵌入的 staging 块无冷备,既不该入投影也无法回灌,
-    跳过而非崩。``status`` 指定:s5 index(→effective)/ finalize(→superseded)的"改标量重 upsert";
-    ``status=None``(默认):按各 chunk 存储的 chunk_status 还原——reconcile/rebuild 重灌用。
+    def __init__(self, dvid: str, missing: list[str]) -> None:
+        self.dvid = dvid
+        self.missing = missing
+        super().__init__(f"{dvid}:{len(missing)} 块冷备缺失,不可严格回灌(如 {missing[:3]})")
+
+
+def rows_from_cold(db: PgIO, dvid: str, status: str | None = None) -> list[CorpusRow]:
+    """**跳过式**回灌:仅取 ``reloadable_chunks``(冷备齐全),缺冷备的块跳过而非崩。
+
+    供**维护命令**(reconcile / rebuild):尽力回灌,缺冷备的块由对账暴露,不该让维护操作崩。
+    ``status=None``:按各 chunk 存储的 chunk_status 还原。**S5/finalize 必须用 ``rows_from_cold_strict``**
+    ——见其文档(跳过式会让缺冷备的块静默少返回一行,破坏「全块就绪才可见」契约)。
     """
     chunks = reloadable_chunks(db, dvid)
+    vectors = [
+        (dense_from_bytes(c.dense_vec_cold), sparse_from_bytes(c.sparse_vec_cold)) for c in chunks
+    ]
+    return build_rows(db, dvid, chunks, vectors, status)
+
+
+def rows_from_cold_strict(db: PgIO, dvid: str, status: str) -> list[CorpusRow]:
+    """**严格**回灌:取**全部** ``indexable_chunks``(非 parent),任一缺冷备即抛 ``ColdBackupIncomplete``。
+
+    供 **s5 INDEXING**(翻 effective)与 **finalize 版本切换**(翻 superseded):保「PG 冷备完整、全块就绪
+    才可见」契约——绝不静默少返回一行(那会让文档进 INDEXED 却缺 Milvus 投影,或旧版残留 effective)。
+    缺冷备 → 抛错让调用方失败、可重试(修复冷备 / reprocess 重嵌入),而非放行半成品。
+    """
+    chunks = indexable_chunks(db, dvid)
+    missing = [c.chunk_id for c in chunks if c.dense_vec_cold is None or c.sparse_vec_cold is None]
+    if missing:
+        raise ColdBackupIncomplete(dvid, missing)
     vectors = [
         (dense_from_bytes(c.dense_vec_cold), sparse_from_bytes(c.sparse_vec_cold)) for c in chunks
     ]
