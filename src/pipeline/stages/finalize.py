@@ -45,7 +45,7 @@ def run(ctx: StageContext, doc_version_id: str) -> FinalizeResult:
     old_dvid = dv.supersedes_version_id
 
     if old_dvid:  # 版本原子切换(旧版置 superseded)
-        # 先**严格**组装旧版冷备行(任一块缺冷备即抛,**此时 PG 未动**→ 整体可重试、不留 PG 超前 Milvus
+        # 先严格组装旧版冷备行(任一块缺冷备即抛,此时 PG 未动 → 整体可重试、不留 PG 超前 Milvus
         # 的残留)。冷备齐全才继续:PG 原子切换 → Milvus 旧版 chunk 标量改 superseded(零重编码,不删)。
         rows = corpus_rows.rows_from_cold_strict(ctx.db, old_dvid, "superseded")
         ctx.db.supersede_version(old_dvid, new_dvid=doc_version_id)

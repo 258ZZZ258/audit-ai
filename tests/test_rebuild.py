@@ -142,9 +142,11 @@ def staging_doc(stack):
 
 
 def test_rows_from_cold_strict_vs_skip(staging_doc):
-    """P2:有非 parent 块但冷备缺失时,strict 抛(s5/finalize 用,不放行半成品),跳过式返 []（维护用）。"""
+    """P2:有非 parent 块但冷备缺失时,strict 抛(s5/finalize 用),跳过式返 []（维护用)。"""
     from pipeline.index.corpus_rows import (
-        ColdBackupIncomplete, rows_from_cold, rows_from_cold_strict,
+        ColdBackupIncomplete,
+        rows_from_cold,
+        rows_from_cold_strict,
     )
     pg, _mio, _ctx, sdvid, _n = staging_doc
     assert rows_from_cold(pg, sdvid) == []  # 跳过式:无冷备块跳过,不崩

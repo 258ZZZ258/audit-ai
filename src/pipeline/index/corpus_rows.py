@@ -85,7 +85,7 @@ def rows_from_cold(db: PgIO, dvid: str, status: str | None = None) -> list[Corpu
     """**跳过式**回灌:仅取 ``reloadable_chunks``(冷备齐全),缺冷备的块跳过而非崩。
 
     供**维护命令**(reconcile / rebuild):尽力回灌,缺冷备的块由对账暴露,不该让维护操作崩。
-    ``status=None``:按各 chunk 存储的 chunk_status 还原。**S5/finalize 必须用 ``rows_from_cold_strict``**
+    ``status=None``:按各 chunk 存储的 chunk_status 还原;S5/finalize 须用 ``rows_from_cold_strict``
     ——见其文档(跳过式会让缺冷备的块静默少返回一行,破坏「全块就绪才可见」契约)。
     """
     chunks = reloadable_chunks(db, dvid)
@@ -96,9 +96,9 @@ def rows_from_cold(db: PgIO, dvid: str, status: str | None = None) -> list[Corpu
 
 
 def rows_from_cold_strict(db: PgIO, dvid: str, status: str) -> list[CorpusRow]:
-    """**严格**回灌:取**全部** ``indexable_chunks``(非 parent),任一缺冷备即抛 ``ColdBackupIncomplete``。
+    """严格回灌:取全部 ``indexable_chunks``(非 parent),任一缺冷备即抛 ``ColdBackupIncomplete``。
 
-    供 **s5 INDEXING**(翻 effective)与 **finalize 版本切换**(翻 superseded):保「PG 冷备完整、全块就绪
+    供 s5 INDEXING(翻 effective)与 finalize 版本切换(翻 superseded):保「PG 冷备完整、全块就绪
     才可见」契约——绝不静默少返回一行(那会让文档进 INDEXED 却缺 Milvus 投影,或旧版残留 effective)。
     缺冷备 → 抛错让调用方失败、可重试(修复冷备 / reprocess 重嵌入),而非放行半成品。
     """

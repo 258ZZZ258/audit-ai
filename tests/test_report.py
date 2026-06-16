@@ -7,7 +7,6 @@
 """
 
 import json
-import pathlib
 
 import pytest
 from sqlalchemy import delete, select, text
