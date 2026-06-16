@@ -97,6 +97,25 @@ def test_hierarchy_catches_duplicate_clause():
     assert 3 in {i.index for i in r.failures()}
 
 
+def test_toc_chapter_lines_do_not_fail_hierarchy_legality():
+    # 目录区(显式「目录」锚 + 末尾页码项)由 build_tree 区域预扫剥离,不与正文章节重复
+    # 成节点 → 不触发层级合法性误判。
+    lines = [
+        ("目录", 1),
+        ("第一章总则 1", 1),
+        ("第二章附则 3", 1),
+        ("第一章总则", 2),
+        ("第一条 为规范本单位管理工作根据有关规定制定本办法内容充实", 2),
+        ("第二条 本办法适用于各部门及全体人员的日常管理活动", 2),
+        ("第二章附则", 3),
+        ("第三条 本办法自发布之日起施行由办公室负责解释说明", 3),
+    ]
+    r = evaluate(_ir(lines), load_config().qc)
+    ind3 = next(i for i in r.indicators if i.index == 3)
+    assert ind3.evidence["violations"] == []
+    assert ind3.passed
+
+
 def test_marginal_band_with_tight_threshold():
     th = QcThresholds(
         clause_coverage_min=0.99, clause_continuity_max_gap=0, hierarchy_illegal_max=0,

@@ -79,13 +79,71 @@ def test_decimal_false_positives_not_matched():
     assert classify_heading("14.1.1 条第（六）项规定的标准") is None
 
 
-def test_toc_entry_not_treated_as_heading():
-    # 目录条目(点引导符)→ 非结构标题,避免目录章节与正文重复
-    assert classify_heading("第一章 总则 " + "." * 40 + " 5") is None
-    assert classify_heading("第二节 董事会秘书 …………………………… 12") is None
-    # 正文里少量点(省略号 2 字)不误伤
+def test_classify_heading_is_context_free():
+    # classify_heading 现为纯单行分类:目录判定上移到 build_tree 区域预扫,
+    # 故「第一章 总则」(无页码/点引导)仍正常识别为章。
     h = classify_heading("第一章 总则")
     assert h is not None and h.type is NodeType.CHAPTER
+
+
+def _chapters(root):
+    return [c.raw_label for c in root.children if c.type is NodeType.CHAPTER]
+
+
+def test_toc_stripped_by_dotted_leader():
+    # 信号①点引导符(≥4 连续点/省略号)→ 单行即判目录(正文绝不出现),长度不限
+    blocks = [
+        blk(0, "第一章 总则 " + "." * 40 + " 5"),
+        blk(1, "第二节 董事会秘书 …………………………… 12"),
+        blk(2, "第一章 总则"),
+        blk(3, "第一条 正文内容"),
+    ]
+    root = build_tree(blocks)
+    assert _chapters(root) == ["第一章"]  # 目录的「第一章」不重复成节点
+    assert root.body_block_indices == [0, 1]  # scheme A:目录行留作根 body
+
+
+def test_toc_stripped_by_explicit_anchor_even_when_short():
+    # 信号②显式「目录」锚 → 其后紧邻候选行阈值降为 1(覆盖只有一两项、无点引导的短目录)
+    blocks = [
+        blk(0, "目 录"),
+        blk(1, "第一章 总则 1"),
+        blk(2, "第二章 附则 3"),
+        blk(3, "第一章 总则"),
+        blk(4, "第一条 正文内容"),
+        blk(5, "第二章 附则"),
+        blk(6, "第二条 正文内容"),
+    ]
+    root = build_tree(blocks)
+    assert _chapters(root) == ["第一章", "第二章"]
+    assert root.body_block_indices == [0, 1, 2]  # 锚 + 两条目录项
+
+
+def test_toc_stripped_by_trailing_page_run_covers_decimal_and_article():
+    # 信号③无锚无点引导:连续 ≥3 行「文本+末尾页码」成簇 → 目录。统一覆盖 章/条/小数体例
+    # 目录项(旧版逐行正则只认 章/节,会漏后两者——尤其小数项会被误当真 ARTICLE)。
+    blocks = [
+        blk(0, "第一章 总则 1"),
+        blk(1, "第一条 定义 2"),
+        blk(2, "2.17 交易行为规范 15"),
+        blk(3, "第一章 总则"),
+        blk(4, "第一条 正文内容"),
+    ]
+    root = build_tree(blocks)
+    assert _chapters(root) == ["第一章"]
+    assert root.body_block_indices == [0, 1, 2]
+    assert "2.17" not in [a.raw_label for a in iter_articles(root)]
+
+
+def test_isolated_heading_ending_in_number_not_stripped():
+    # 反向误伤防护:孤立一行真标题恰以数字结尾(run=1、无锚无点引导)→ 不剥
+    blocks = [
+        blk(0, "第一条 正文一"),
+        blk(1, "第二条 二〇二四年度计划 2024"),
+        blk(2, "第三条 正文三"),
+    ]
+    root = build_tree(blocks)
+    assert [a.raw_label for a in iter_articles(root)] == ["第一条", "第二条", "第三条"]
 
 
 def test_decimal_cross_section_ordering_no_false_violation():

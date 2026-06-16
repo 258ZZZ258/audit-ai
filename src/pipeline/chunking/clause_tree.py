@@ -17,7 +17,8 @@ from typing import NamedTuple
 from pipeline.chunking.normalize import normalize_clause_no, strip_ws, to_halfwidth
 from pipeline.ir import Block
 
-_NUM = r"[〇零一二三四五六七八九十百千两\d]+"
+_NUM_CHARS = "〇零一二三四五六七八九十百千两\\d"
+_NUM = rf"[{_NUM_CHARS}]+"
 # 条号(可含插入条西文/小数写法:21bis、21.1b);最终交 normalize_clause_no 归一与校验
 _ART_NUM = rf"(?:{_NUM}(?:bis|ter|quater|quinquies)?|\d+\.\d+[a-zA-Z]?)"
 _CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫"
@@ -59,17 +60,25 @@ class InternalRef(NamedTuple):
     raw: str
 
 
-#: 目录条目的点引导符(如「第一章 总则 …… 5」);≥4 连续点/省略号 → 目录行,非真标题。
+#: 目录识别(**区域级**,见 ``_toc_block_indices``)。不在 ``classify_heading`` 逐行判——目录是
+#: 结构区域而非单行属性,故用三类结构信号、对 章/节/条/小数/无编号目录项一视同仁:
+#: - 点引导符:行内 ≥4 连续点/省略号(如「第一章 总则 …… 5」),正文绝不出现 → 单行即定;
+#: - 末尾页码:文本 + 空白 + 1–4 位页码(如「第一章 总则 1」),需成簇或有锚才确认;
+#: - 显式锚:独占一行的「目录/目次/Contents」。
 _TOC_LEADER = re.compile(r"[.．·…]{4,}")
+_TOC_TRAILING_PAGE = re.compile(r"\S\s+\d{1,4}\s*$")
+_TOC_HEADER = frozenset({"目录", "目次", "contents", "tableofcontents"})
+#: 无锚、无点引导时,末尾页码行需连续 ≥此数成簇才判目录(孤立一行恰以数字结尾的真标题不误伤)。
+_TOC_MIN_RUN = 3
 
 
 def classify_heading(text: str) -> Heading | None:
-    """识别一行是否为某类节点标题;否则 None(正文段)。"""
+    """识别**单行**是否为某类节点标题;否则 None(正文段)。**纯单行、不管上下文**:
+    目录剥离由 ``build_tree`` 的区域级预扫(``_toc_block_indices``)负责,本函数不再自判目录。
+    """
     half = to_halfwidth(text)
     s = strip_ws(half)
     if not s:
-        return None
-    if _TOC_LEADER.search(half):  # 目录条目(点引导符)→ 非结构标题(避免目录章节与正文重复)
         return None
     for nt, suffix in (
         (NodeType.CHAPTER, "章"),
@@ -156,12 +165,58 @@ class ClauseNode:
         return sorted(idxs)
 
 
+def _toc_block_indices(blocks: list[Block]) -> set[int]:
+    """**区域级**目录识别:返回属于目录区的 block 序号(scheme A:``build_tree`` 留作 body、不当标题)。
+
+    抓目录的**结构不变量**,而非逐行枚举哪些标题类型会出现——故对 章/节/条/小数/无编号目录项
+    一视同仁(旧版逐行正则只认 章/节,会漏 条 与小数体例目录项):
+    - **显式锚**:出现「目录/目次/Contents」行 → 其后**紧邻**的候选行(阈值降为 1)整体计入;
+    - **点引导**:行内 ≥4 连续点 → 单行即定(正文绝不出现);
+    - **末尾页码簇**:连续 ≥``_TOC_MIN_RUN`` 行「文本+空白+1–4 位页码」→ 整段计入
+      (孤立一行恰以数字结尾的真标题 run=1,不被剥)。
+    """
+    halves = [to_halfwidth(b.text) for b in blocks]
+    leader = [bool(_TOC_LEADER.search(h)) for h in halves]
+    cand = [leader[i] or bool(_TOC_TRAILING_PAGE.search(h)) for i, h in enumerate(halves)]
+    header = [strip_ws(h).lower() in _TOC_HEADER for h in halves]
+
+    toc: set[int] = set()
+    n = len(blocks)
+    i = 0
+    while i < n:
+        if header[i]:  # 显式锚:消费其后紧邻候选行(阈值降为 1)
+            j = i + 1
+            while j < n and cand[j]:
+                j += 1
+            if j > i + 1:  # 锚后确有候选项,才连锚行一并计入(否则「目录」可能只是正文用词)
+                toc.update(blocks[k].index for k in range(i, j))
+                i = j
+                continue
+            i += 1
+            continue
+        if cand[i]:  # 候选行成簇:连续 ≥_TOC_MIN_RUN,或簇内含点引导(单行即可信)才确认
+            j = i
+            while j < n and cand[j]:
+                j += 1
+            if (j - i) >= _TOC_MIN_RUN or any(leader[k] for k in range(i, j)):
+                toc.update(blocks[k].index for k in range(i, j))
+            i = j
+            continue
+        i += 1
+    return toc
+
+
 def build_tree(blocks: list[Block]) -> ClauseNode:
-    """按文档序建条款树。标题入栈分层,正文挂到当前最深节点;无章直条挂虚拟根。"""
+    """按文档序建条款树。标题入栈分层,正文挂到当前最深节点;无章直条挂虚拟根。
+
+    目录区(``_toc_block_indices`` 区域级识别)的块不当标题、留作当前节点 body(scheme A):
+    避免目录章节与正文重复成节点;目录文本随根 body 不入 chunk(chunker 只切 节/条节点)。
+    """
     root = ClauseNode(NodeType.ROOT, None, "", "", None)
     stack: list[ClauseNode] = [root]
+    toc = _toc_block_indices(blocks)
     for b in blocks:
-        h = classify_heading(b.text)
+        h = None if b.index in toc else classify_heading(b.text)
         if h is None:
             stack[-1].body_block_indices.append(b.index)
             continue
