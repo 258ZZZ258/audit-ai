@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-**M1 完成(检查点 D,V1/V2/V4/V5)+ M2 验证套件完成(检查点 M2,V3/V6/V7)+ M3 E1 义务打标/report 打磨(代码完成,**V8 达成**;检查点 M3 硬门待本地 BGE-M3 跑 live V1–V7)。** Specs: `SPEC.md`(M1)/ `SPEC_M2.md`(M2,验证套件主体、DeepDoc 降可选)/ `SPEC_M3.md`(M3,E1+report)、`PLAN*.md`、`TASKS*.md`(per-task 验收),upstream `文档处理管线_本地Demo_开发文档_v0.1.md` (V0.1)。**The full build narrative — every module, decision, and pitfall — is in `docs/devlog.md`; read it to understand why things are the way they are.** Read the spec before changing contracts — it encodes deliberate cut decisions ("裁机制不裁契约": cut mechanisms, never cut contracts). DeepDoc(M2 可选)留独立轮:走查证明真实 PDF 解析痛点在 `clause_tree`(IR 边界下游),与换不换解析器无关。
+**M1 完成(检查点 D,V1/V2/V4/V5)+ M2 验证套件完成(检查点 M2,V3/V6/V7)+ M3 E1 义务打标/report 打磨完成(检查点 M3,**V1–V8 全过**;全套 263 passed 含 model-gated,本地 BGE-M3 真跑)。** Specs: `SPEC.md`(M1)/ `SPEC_M2.md`(M2,验证套件主体、DeepDoc 降可选)/ `SPEC_M3.md`(M3,E1+report)、`PLAN*.md`、`TASKS*.md`(per-task 验收),upstream `文档处理管线_本地Demo_开发文档_v0.1.md` (V0.1)。**The full build narrative — every module, decision, and pitfall — is in `docs/devlog.md`; read it to understand why things are the way they are.** Read the spec before changing contracts — it encodes deliberate cut decisions ("裁机制不裁契约": cut mechanisms, never cut contracts). DeepDoc(M2 可选)留独立轮:走查证明真实 PDF 解析痛点在 `clause_tree`(IR 边界下游),与换不换解析器无关。
 
 ### 开发进展 (structured per-phase summary; 细节见 `docs/devlog.md`)
 
@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **C 结构化→向量化** | ✅ 检查点 C | s3 切块装配 · s4 元数据 L1+交叉校验 · version_chain · EmbeddingClient(本地 BGEM3)· milvus_io 混合查+冷备 · s5 嵌入索引(staging→effective)· C7 `search` 四级引用 + `meta list/confirm` 放行人工闸(覆盖 V1 主干) |
 | **D 切换/幂等/报告** | ✅ 检查点 D(V1/V2/V4/V5) | **D1**: finalize 版本原子切换(自动触发)· corpus_rows 共享层。**D2**: batch02 真实修订对 182→226(**V4**)。**D3**: `verify idempotency`(**V5**)+ `reprocess`。**D4**: `report <batch>`。**D5**(M2 起为真实现)。演示脚本 1–10 步真栈走查通过 |
 | **M2 验证套件** | ✅ 检查点 M2(V3/V6/V7) | **T2 冒烟**(`verify/smoke.py`,V7)·**T4 锚点回放**(`anchor_replay.py`,V3,page_end 窗+rapidfuzz+表格/降级豁免)·**对账**(`reconcile.py`,逐 doc count)·**rebuild**(`rebuild.py`,冷备零编码回灌,V6)· mini golden set(`tests/golden/`,**F1=1.0**)· report 加 t2/t4_pass_rate · finalize 自动跑 T2/T4 留痕。**DeepDoc 降可选/留独立轮**(走查证明真实 PDF 痛点在 clause_tree,与解析器无关) |
-| **M3 E1+report** | ✅ 代码完成(V8;检查点 M3 待 live) | **E1 义务预打标**(`enrich/e1_obligation.py`,零 LLM 正则 + `config/obligation.yaml` 词表;接 `_structuring` 装配:**clear→s3→tag→s4**,写 `clause_tags`;**V8** golden precision=1.0/recall=0.955 ≥0.90)· **report 全量打磨**(义务覆盖/队列处置/版本链/按语料 P-INT·P-EXT 拆 + JSON 落 `reports/<batch>.json`)· **免模型全套 252 passed**。bare `须` 数据驱动**不入**词表(全 corpus 仅 6 次且含 `无须`=否定义务陷阱) |
+| **M3 E1+report** | ✅ 检查点 M3(V1–V8 全过) | **E1 义务预打标**(`enrich/e1_obligation.py`,零 LLM 正则 + `config/obligation.yaml` 词表;接 `_structuring` 装配:**clear→s3→tag→s4**,写 `clause_tags`;**V8** golden precision=1.0/recall=0.955 ≥0.90)· **report 全量打磨**(义务覆盖/队列处置/版本链/按语料 P-INT·P-EXT 拆 + JSON 落 `reports/<batch>.json`)· **全套 263 passed**(含 11 model-gated,本地 BGE-M3)· 真 CLI 走查通过(report 义务覆盖 42.9% + search 四级引用)。bare `须` 数据驱动**不入**词表(全 corpus 仅 6 次且含 `无须`=否定义务陷阱) |
 
 **当前链路**:`ingest`→s1→s2→STRUCTURING(`e1_enabled` 时 **clear→s3→tag→s4**:E1 义务打标随切块写 `clause_tags`,异常不阻断终态)→META_REVIEW(全件 meta_confirm 人工闸)→`meta confirm`(approve)→EMBEDDING→INDEXING→INDEXED→**finalize**(带 supersedes 时自动把旧版置 superseded:PG `supersede_version` 原子事务 + Milvus 从冷备改标量不删);`search` 混合查(默认 effective,`--include-superseded` 见旧版/`--corpus`/`--topk`)出四级引用;degrade 重入索引终于 DEGRADED_INDEXED。**待修小项**:s0 隔离件不写 review_queue(`queue list` 不可见)。
 
@@ -124,7 +124,7 @@ Python 3.11 · typer · SQLAlchemy 2.x + Alembic · PostgreSQL 16 (Docker) · Mi
 
 - **M1 ✅**: skeleton + S0–S5 full chain on the light parser + state machine + queue CLI + demo steps 1–10 → V1/V2/V4/V5 pass(检查点 D)
 - **M2 ✅ 验证套件**(`SPEC_M2.md`): T2/T4/reconcile/rebuild + mini golden set(F1=1.0)→ V3/V6/V7 pass(检查点 M2)。**DeepDoc 降可选/留独立轮**——走查证明真实 PDF 痛点在 `clause_tree`(IR 边界下游),与解析器无关;接入时门=parser-swap 后 golden set 仍 F1=1.0
-- **M3 ✅ 代码完成**(`SPEC_M3.md`): E1 义务预打标(零 LLM 正则 + `config/obligation.yaml` 词表,接 `_structuring`)+ report 全量打磨 → **V8 达成**(golden P=1.0/R=0.955)。**免模型全套 252 passed**;**检查点 M3 硬门(V1–V7 live + 端到端走查)待本地 BGE-M3 跑实**。bare `须` 数据驱动不入词表(详见 M3 踩坑)。DeepDoc 仍留独立轮。
+- **M3 ✅ 检查点 M3**(`SPEC_M3.md`): E1 义务预打标(零 LLM 正则 + `config/obligation.yaml` 词表,接 `_structuring`)+ report 全量打磨 → **V8 达成**(golden P=1.0/R=0.955)。**全套 263 passed(含 11 model-gated,本地 BGE-M3)· V1–V8 全过 · 真 CLI 端到端走查通过**(demo report 义务覆盖/版本链/按语料 + search 四级引用)。bare `须` 数据驱动不入词表(详见 M3 踩坑)。DeepDoc 仍留独立轮。
 
 If DeepDoc vendoring exceeds 1 day, M2 falls back to the light parser for the demo — the IR boundary guarantees this fallback affects no other acceptance point.
 

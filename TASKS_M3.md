@@ -65,15 +65,16 @@
 
 ## M3-D · 端到端验收
 
-- [~] **D1 · 演示走查 + V8 + V1–V7 回归**
+- [x] **D1 · 演示走查 + V8 + V1–V7 回归**
   - Acceptance:干净栈 + 本地 BGE-M3 跑 ingest(e1_enabled)→ E1 随管线打标;reprocess 件重打且幂等;`demo report` 出
     全五项 + `reports/<batch>.json`;**V8**(golden P/R ≥0.90)达成;V1–V7 回归全过;演示脚本补 E1 + report 展示步、据实跑微调措辞
   - Verify:`[需 demo up + 模型]` 手动走查 + 全套 `pytest` / `ruff check .` 全绿;`alembic check` 无漂移(无新迁移)
   - Files:`docs/`(演示脚本 / devlog)
 
-- [ ] **✅ 检查点 M3(硬门)**:V8(golden precision/recall ≥0.90)达成;E1 随管线自动打标 + reprocess 幂等 + `e1_enabled`
-  gate + 异常不阻断;`demo report` 全五项 + JSON 落文件;V1–V7 回归全过;`pytest` + `ruff check .` 全绿;**无新迁移**;
-  默认路径零 LLM、状态机/IR/Milvus schema/chunk_id 均未动。
+- [x] **✅ 检查点 M3(硬门)达成**:V8(golden P=1.0/R=0.955 ≥0.90)· 全套 **263 passed**(含 11 model-gated,
+  本地 BGE-M3)· V1–V8 全过 · E1 随管线自动打标 + reprocess 幂等 + `e1_enabled` gate + 异常不阻断 · 真 CLI 走查
+  (`demo report` 义务覆盖 42.9%/版本链/按语料 + JSON 落文件 + `search` 四级引用)· `ruff check .` 全绿 ·
+  `alembic check` 无漂移(**无新迁移**)· 默认零 LLM、状态机/IR/Milvus schema/chunk_id 均未动。
 
 ## 依赖图
 
