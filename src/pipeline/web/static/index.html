@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>审计文档管线工作台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="mark">审</span>
+          <div>
+            <h1>审计文档管线</h1>
+            <p>本地演示工作台</p>
+          </div>
+        </div>
+
+        <section class="upload-panel" id="dropZone">
+          <div class="upload-head">
+            <strong>上传文档</strong>
+            <span id="uploadCount">0 个文件</span>
+          </div>
+          <input id="fileInput" type="file" multiple accept=".pdf,.docx,.xlsx" />
+          <label for="fileInput" class="drop-copy">
+            拖入 PDF / DOCX 文件
+            <small>可同时上传 manifest.xlsx</small>
+          </label>
+          <div class="upload-grid">
+            <label>语料类型
+              <select id="corpusType">
+                <option value="auto">自动识别</option>
+                <option value="P-INT">内规 P-INT</option>
+                <option value="P-EXT">外规 P-EXT</option>
+              </select>
+            </label>
+            <label>权限标签
+              <input id="permTag" value="内部" />
+            </label>
+            <label>业务域
+              <input id="bizDomain" value="GENERAL" />
+            </label>
+            <label>发布机构
+              <input id="issuer" value="DEMO" />
+            </label>
+          </div>
+          <button id="uploadBtn" class="primary">进入管线</button>
+        </section>
+
+        <section>
+          <div class="section-title">
+            <span>批次</span>
+            <button id="refreshBtn" class="ghost">刷新</button>
+          </div>
+          <div id="batchList" class="list"></div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <h2>管线控制台</h2>
+            <p id="subtitle">PostgreSQL 权威库 · Milvus 投影 · ObjectStore 产物</p>
+          </div>
+          <div class="search-box">
+            <input id="searchInput" placeholder="检索已索引条款" />
+            <button id="searchBtn">检索</button>
+          </div>
+        </header>
+
+        <section class="metrics" id="metrics"></section>
+
+        <section class="flow" id="flow"></section>
+
+        <section class="panel search-results" id="searchResults" hidden></section>
+
+        <section class="grid-main">
+          <div class="panel docs-panel">
+            <div class="panel-head">
+              <h3>文档</h3>
+              <div class="actions">
+                <button id="reportBtn" class="ghost">报告</button>
+                <button id="smokeBtn" class="ghost">烟测</button>
+                <button id="replayBtn" class="ghost">锚点回放</button>
+                <button id="reconcileBtn" class="ghost">对账</button>
+              </div>
+            </div>
+            <div id="docTable" class="table"></div>
+          </div>
+
+          <div class="panel detail-panel">
+            <div class="panel-head">
+              <h3 id="detailTitle">文档详情</h3>
+              <div class="actions">
+                <button id="confirmDocBtn" class="ghost">确认</button>
+                <button id="reprocessBtn" class="ghost">重跑</button>
+              </div>
+            </div>
+            <div id="docDetail" class="detail-empty">请选择一个文档</div>
+          </div>
+        </section>
+
+        <section class="grid-main lower">
+          <div class="panel queue-panel">
+            <div class="panel-head">
+              <h3>人工队列</h3>
+              <label class="toggle"><input id="showAllQueue" type="checkbox" /> 全部</label>
+            </div>
+            <div id="queueList" class="queue-list"></div>
+          </div>
+          <div class="panel console-panel">
+            <div class="panel-head">
+              <h3>活动日志</h3>
+              <button id="clearLogBtn" class="ghost">清空</button>
+            </div>
+            <pre id="activityLog"></pre>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

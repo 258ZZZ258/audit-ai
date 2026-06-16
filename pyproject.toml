@@ -32,9 +32,13 @@ dev = ["ruff>=0.4", "pytest>=8.0", "pypdf>=4.0", "Pillow>=10.0"]
 
 [project.scripts]
 demo = "pipeline.cli:app"
+demo-web = "pipeline.web.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"pipeline.web" = ["static/*"]
 
 [tool.ruff]
 line-length = 100
