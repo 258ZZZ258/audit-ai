@@ -70,3 +70,16 @@ python3.11 -m venv .venv
 .venv/bin/pytest          # 单元测试
 .venv/bin/ruff check .    # lint
 ```
+
+## 代码图谱(codegraph,可选)
+
+仓内已带 codegraph 配置(`.mcp.json` + `.claude/`,团队共享);**索引本体 `.codegraph/` 不入库,各自本地建**。启用:
+
+```bash
+npm i -g @colbymchenry/codegraph    # 装 CLI(一次)
+codegraph init                      # 建本地索引(.codegraph/,已 gitignore)
+```
+
+装好后:命令行 `codegraph query|explore|node <…>` 可用;重启 Claude Code 后其 MCP 工具(只读,已 auto-allow)即生效。
+`.githooks/` 的 `codegraph sync` 钩子有 `command -v codegraph || exit 0` 守卫——**未装 codegraph 不影响任何流程**。
+启用钩子:`git config core.hooksPath .githooks`。详见 `docs/CP-009-仓库与升格规范.md §5`。
