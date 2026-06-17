@@ -17,7 +17,7 @@
 | 评测组件 T1–T6 | **只实现了 T2**(`verify/smoke.py`)+ **T4**(`verify/anchor_replay.py`)。T1/T3/T5/T6 不存在 | eval 只搬 T2/T4 + 另 4 个非 T 编号组件→ 见决策 ③ |
 | 管线阶段 S0–S5、**S0.5**,富集 **E1–E4** | S0–S5 + finalize 齐全;**无 S0.5、无 S6**;富集**只有 E1**(`enrich/e1_obligation.py`),E2/E3/E4 不存在 | 不缺的搬,缺的是约定(CP-009),**不scaffold** |
 
-> 结论:严格遵守硬约束 #4「不铺空包」——对**不存在 demo 代码**的接缝/阶段/组件,本次**不创建**任何包或 stub 文件,只在 CP-009 冻结为约定 + 再集成触发条件。这与任务 Step 3 表里列出的 Checkpointer/GraphStore 接缝直接冲突,**需你裁决**(决策 ①)。
+> 结论:严格遵守硬约束 #4「不铺空包」——对**不存在 demo 代码**的接缝/阶段/组件,本次**不创建**任何包或 stub 文件,只在 CP-009 冻结为约定 + 再集成触发条件。这与任务 Step 3 表里列出的 Checkpointer/GraphStore 接缝直接冲突 → 决策 ①**已定:不创建**。
 
 ---
 
@@ -79,10 +79,10 @@
 |---|---|---|---|
 | `verify/smoke.py` | `eval/` | **T2** 批次冒烟 | §21.2 |
 | `verify/anchor_replay.py` | `eval/` | **T4** 锚点回放 | §21.4 |
-| `verify/reconcile.py` | `eval/`(待定) | 对账 | §12.2(非 T1–T6) |
-| `verify/rebuild.py` | `eval/`(待定) | 全量重建 | §12.3(非 T1–T6) |
+| `verify/reconcile.py` | `eval/` | 对账 | §12.2(非 T1–T6) |
+| `verify/rebuild.py` | `eval/` | 全量重建 | §12.3(非 T1–T6) |
 | `verify/idempotency.py` | `eval/` | 幂等(V5) | 非 T1–T6 |
-| `verify/report.py` | `eval/`(待定) | 批次质量报告 | §15 看板 |
+| `verify/report.py` | `eval/` | 批次质量报告 | §15 看板 |
 | eval 测试:`test_smoke`、`test_anchor_replay`、`test_reconcile`、`test_rebuild`、`test_idempotency`、`test_report`、`test_finalize_verify` | `eval/tests/` | | |
 
 > **依赖告警(决策 ②)**:`verify/*` import 了 `pipeline` 内部(`StageContext`、`MilvusIO`、`corpus_rows`、`embedding`)。故 `eval` 必须依赖 `pipeline`(eval→pipeline→common),而非只依赖 `libs/common`。任务依赖声明只说了"两者依赖 common",未禁 eval→pipeline,需你确认这条 DAG。
@@ -101,7 +101,7 @@
 | `.cursor/rules/doc-pipeline-code-review.mdc` | repo 根保留 | 杂项 | |
 | `docs/devlog.md` | `docs/` | 文档 | |
 | `README.md`、`CLAUDE.md`、`PROMPTS.md` | repo 根 | 文档 | |
-| `SPEC*.md`、`PLAN*.md`、`TASKS*.md` | `docs/`(待定) | 文档 | 决策 ⑨ |
+| `SPEC*.md`、`PLAN*.md`、`TASKS*.md` | `docs/` | 文档 | 决策 ⑨(已定:收进 docs/) |
 | `文档处理管线_本地Demo_开发文档_v0.1.md`(tracked) | `docs/` | 文档 | 决策 ⑨ |
 | `文档处理与语料库构建_技术框架设计_v1.6.md`、`制度查询与制度比对智能体_RAG技术框架设计_v1.5.md`(**均 untracked**) | `docs/`?并入库? | 文档 | 决策 ⑨(是否纳入版本控制) |
 
@@ -111,7 +111,9 @@
 
 ---
 
-## D. 需你裁决的事项(标「待定」者,确认前不进 Step 1)
+## D. 决策(zy 于 2026-06-17 确认 —— 9 项全部采纳推荐项)
+
+> 下列每项的**加粗建议即最终裁决**。Step 1 起按此执行。①③④ 系对"任务表按全系统写、本仓仅管线"这一错配的归正。
 
 1. **【最关键】无 demo 代码的两个接缝(Checkpointer/MemorySaver、GraphStore/NetworkX)怎么办?**
    本仓零相关代码。按硬约束 #4「不铺空包」,我**建议本次不创建**这两个接缝的任何 Protocol/包/stub,只在 CP-009 冻结为约定 + 再集成触发条件。**或** 你要求即便无实现也先放 Protocol 声明?(我倾向前者——后者就是铺空包)。
