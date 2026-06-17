@@ -28,6 +28,7 @@ from common.pg_models import (
     ReviewQueue,
 )
 from pipeline import cli
+from pipeline.meta import l1_rules
 from pipeline.queue import dispose
 from pipeline.stages.s0_register import register_batch
 
@@ -275,6 +276,24 @@ def queue_items(show_all: bool = False) -> list[dict[str, Any]]:
     return [_queue_payload(r) for r in rows]
 
 
+def _clause_sort_key(chunk: Chunk) -> tuple:
+    """分块列表的"文档阅读序"排序键。
+
+    DB 里 ``seq`` 是**条内子块序号**(单块条恒为 0),不足以定全局序;``clause_path`` 按中文串排
+    又错(第十条<第二条)。故据 ``clause_path_norm``(已归一阿拉伯号,如 ``"1/6"``/节级 ``"3/2/17"``/
+    插入条 ``"21-1"``/小数体例 ``"10.1.3"``)把每段按 ``.``、``-`` 拆成整数元组,按 章/节/条… 数值
+    升序;同条多块以 ``seq`` 续接。norm 缺失/非数值时回退 ``(page_start, seq, chunk_id)`` 保持稳定
+    确定序,**绝不抛错**(纯展示层,不动 chunk_id / 不重切 / 不碰任何契约)。
+    """
+    segs: list[tuple[int, ...]] = []
+    for seg in (chunk.clause_path_norm or "").split("/"):
+        if not seg:
+            continue
+        parts = tuple(int(p) if p.isdigit() else 0 for p in seg.replace("-", ".").split("."))
+        segs.append(parts)
+    return (tuple(segs), chunk.page_start or 0, chunk.seq or 0, chunk.chunk_id)
+
+
 def doc_detail(doc_version_id: str) -> dict[str, Any]:
     pg, ctx = _light()
     with pg.session() as s:
@@ -282,10 +301,9 @@ def doc_detail(doc_version_id: str) -> dict[str, Any]:
         if dv is None:
             raise KeyError(doc_version_id)
         doc = s.get(Document, dv.logical_id)
-        chunks = list(
-            s.scalars(
-                select(Chunk).where(Chunk.doc_version_id == doc_version_id).order_by(Chunk.seq)
-            )
+        chunks = sorted(
+            s.scalars(select(Chunk).where(Chunk.doc_version_id == doc_version_id)),
+            key=_clause_sort_key,
         )
         events = list(
             s.scalars(
@@ -621,6 +639,76 @@ def approve_meta(
     if any(not r["ok"] for r in results):
         raise RuntimeError("部分文档未达 INDEXED")
     return {"results": results}
+
+
+#: 允许"一键采用 L1 抽取值"的 manifest 字段(与 l1_rules.cross_check 的冲突字段一致)。
+_META_SUGGESTABLE = {"title", "doc_number", "issuer", "issue_date"}
+
+
+def _set_meta_field(dv: DocVersion, field: str, value: str) -> None:
+    """把单个 manifest 字段改成采纳值;``issue_date`` 解析 ISO 串(非法 → ValueError → 400)。"""
+    if field == "issue_date":
+        dv.issue_date = date.fromisoformat(value)
+    else:
+        setattr(dv, field, value)
+
+
+def apply_meta_suggestion(
+    queue_id: str, field: str, value: str, operator: str = "web"
+) -> dict[str, Any]:
+    """一键采用某冲突字段的 L1 抽取值,改 manifest 值后**重算冲突**:全清且非修订件则自动放行至
+    INDEXED;否则留 META_REVIEW 并回写余下冲突供继续处置。
+
+    纯人工闸语义:采纳 L1 抽取值是操作者的裁决,改的是 DocVersion 权威值(EMBEDDING 前注入,
+    s5 / 引用即用新值)。抛 KeyError(不存在)/ ValueError(字段非法 / 态不可 / 日期非法)/
+    RuntimeError(放行未达终态),由 HTTP 层翻译。
+    """
+    if field not in _META_SUGGESTABLE:
+        raise ValueError(f"不支持一键采用的字段: {field}")
+    pg, ctx = _worker()
+    issuers = [(i.code, i.name) for i in ctx.db.get_issuers()]
+    with pg.session() as s:
+        q = s.get(ReviewQueue, queue_id)
+        if q is None:
+            raise KeyError(queue_id)
+        if q.queue_type != "meta_confirm" or q.status != "open":
+            raise ValueError("该队列项不是待处理的元数据确认项")
+        dvid = q.doc_version_id
+        dv = s.get(DocVersion, dvid)
+        if dv is None:
+            raise KeyError(dvid)
+        if dv.pipeline_status != "META_REVIEW":
+            raise ValueError(f"文档不在 META_REVIEW(当前 {dv.pipeline_status}),无法采用推荐值")
+        _set_meta_field(dv, field, value)
+        # 重算冲突(同 s4 口径):用更新后的权威值再跑一次交叉校验
+        ir = ctx.object_store.load_ir(dvid)
+        meta = l1_rules.extract(ir, issuers)
+        remaining = l1_rules.cross_check(
+            meta,
+            doc_number=dv.doc_number,
+            issue_date=dv.issue_date,
+            issuer_code=l1_rules.resolve_issuer(dv.issuer, issuers),
+            title=dv.title,
+        )
+        is_revision = bool(dv.supersedes_version_id)
+        q.evidence = {**(q.evidence or {}), "conflicts": [asdict(c) for c in remaining]}
+    # session 退出已提交字段更新 + 余下冲突
+    resolved = not remaining and not is_revision
+    final = None
+    if resolved:  # 冲突清零且非修订件:采纳即裁决,直接放行到终态
+        if not cli._approve_doc(pg, ctx, dvid, operator):
+            raise RuntimeError("采用推荐值后放行未达 INDEXED")
+        final = "INDEXED"
+    return {
+        "doc_version_id": dvid,
+        "field": field,
+        "value": value,
+        "resolved": resolved,
+        "is_revision": is_revision,
+        "remaining_conflicts": [asdict(c) for c in remaining],
+        "final": final,
+        "doc": doc_detail(dvid)["doc"],
+    }
 
 
 def reprocess_doc(doc_version_id: str, operator: str = "web") -> dict[str, Any]:

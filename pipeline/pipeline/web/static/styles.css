@@ -402,3 +402,59 @@ h3 { font-size: 15px; }
   padding: 0 6px;
   font-size: 11px;
 }
+
+/* 错误横幅 / 错误码标 / 元数据冲突一键采用 */
+.error-banner {
+  border: 1px solid var(--red);
+  border-left: 4px solid var(--red);
+  background: #fdf3f1;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.error-banner strong { color: var(--red); display: block; }
+.eb-detail { color: var(--ink); font-size: 13px; margin-top: 4px; }
+.eb-fix { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.err-chip {
+  color: var(--red);
+  background: #fdf3f1;
+  border: 1px solid var(--red);
+  border-radius: 5px;
+  padding: 0 6px;
+  font-size: 11px;
+  cursor: help;
+}
+.conflicts { display: grid; gap: 8px; margin-top: 8px; }
+.conflict {
+  border: 1px solid var(--amber);
+  border-left: 4px solid var(--amber);
+  background: #fbf4e9;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.conflict-field { font-size: 13px; }
+.conflict-field strong { color: var(--amber); }
+.conflict-vals {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  align-items: baseline;
+  margin: 6px 0;
+}
+.cv-label { color: var(--muted); font-size: 12px; }
+.conflict-vals code {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.suggest-btn {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.suggest-btn:hover { background: #265d4a; border-color: #265d4a; }
