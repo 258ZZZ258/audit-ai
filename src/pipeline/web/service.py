@@ -27,6 +27,7 @@ from pipeline.index.pg_models import (
     PipelineEvent,
     ReviewQueue,
 )
+from pipeline.meta import l1_rules
 from pipeline.queue import dispose
 from pipeline.stages.s0_register import REQUIRED_COLUMNS, register_batch
 from pipeline.verify.anchor_replay import run_replay
@@ -639,6 +640,76 @@ def approve_meta(
     if any(not r["ok"] for r in results):
         raise RuntimeError("部分文档未达 INDEXED")
     return {"results": results}
+
+
+#: 允许"一键采用 L1 抽取值"的 manifest 字段(与 l1_rules.cross_check 的冲突字段一致)。
+_META_SUGGESTABLE = {"title", "doc_number", "issuer", "issue_date"}
+
+
+def _set_meta_field(dv: DocVersion, field: str, value: str) -> None:
+    """把单个 manifest 字段改成采纳值;``issue_date`` 解析 ISO 串(非法 → ValueError → 400)。"""
+    if field == "issue_date":
+        dv.issue_date = date.fromisoformat(value)
+    else:
+        setattr(dv, field, value)
+
+
+def apply_meta_suggestion(
+    queue_id: str, field: str, value: str, operator: str = "web"
+) -> dict[str, Any]:
+    """一键采用某冲突字段的 L1 抽取值,改 manifest 值后**重算冲突**:全清且非修订件则自动放行至
+    INDEXED;否则留 META_REVIEW 并回写余下冲突供继续处置。
+
+    纯人工闸语义:采纳 L1 抽取值是操作者的裁决,改的是 DocVersion 权威值(EMBEDDING 前注入,
+    s5 / 引用即用新值)。抛 KeyError(不存在)/ ValueError(字段非法 / 态不可 / 日期非法)/
+    RuntimeError(放行未达终态),由 HTTP 层翻译。
+    """
+    if field not in _META_SUGGESTABLE:
+        raise ValueError(f"不支持一键采用的字段: {field}")
+    pg, ctx = _worker()
+    issuers = [(i.code, i.name) for i in ctx.db.get_issuers()]
+    with pg.session() as s:
+        q = s.get(ReviewQueue, queue_id)
+        if q is None:
+            raise KeyError(queue_id)
+        if q.queue_type != "meta_confirm" or q.status != "open":
+            raise ValueError("该队列项不是待处理的元数据确认项")
+        dvid = q.doc_version_id
+        dv = s.get(DocVersion, dvid)
+        if dv is None:
+            raise KeyError(dvid)
+        if dv.pipeline_status != "META_REVIEW":
+            raise ValueError(f"文档不在 META_REVIEW(当前 {dv.pipeline_status}),无法采用推荐值")
+        _set_meta_field(dv, field, value)
+        # 重算冲突(同 s4 口径):用更新后的权威值再跑一次交叉校验
+        ir = ctx.object_store.load_ir(dvid)
+        meta = l1_rules.extract(ir, issuers)
+        remaining = l1_rules.cross_check(
+            meta,
+            doc_number=dv.doc_number,
+            issue_date=dv.issue_date,
+            issuer_code=l1_rules.resolve_issuer(dv.issuer, issuers),
+            title=dv.title,
+        )
+        is_revision = bool(dv.supersedes_version_id)
+        q.evidence = {**(q.evidence or {}), "conflicts": [asdict(c) for c in remaining]}
+    # session 退出已提交字段更新 + 余下冲突
+    resolved = not remaining and not is_revision
+    final = None
+    if resolved:  # 冲突清零且非修订件:采纳即裁决,直接放行到终态
+        if not cli._approve_doc(pg, ctx, dvid, operator):
+            raise RuntimeError("采用推荐值后放行未达 INDEXED")
+        final = "INDEXED"
+    return {
+        "doc_version_id": dvid,
+        "field": field,
+        "value": value,
+        "resolved": resolved,
+        "is_revision": is_revision,
+        "remaining_conflicts": [asdict(c) for c in remaining],
+        "final": final,
+        "doc": doc_detail(dvid)["doc"],
+    }
 
 
 def reprocess_doc(doc_version_id: str, operator: str = "web") -> dict[str, Any]:

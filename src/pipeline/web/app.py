@@ -101,6 +101,19 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     operator=str(body.get("operator") or "web"),
                 )
             )
+        if path == "/api/meta/resolve":  # 一键采用某冲突字段的 L1 抽取值
+            body = self._read_json()
+            queue_id, field, value = body.get("queue_id"), body.get("field"), body.get("value")
+            if not queue_id or not field or value is None:
+                raise ValueError("queue_id / field / value 必填")
+            return self._send_json(
+                service.apply_meta_suggestion(
+                    str(queue_id),
+                    str(field),
+                    str(value),
+                    operator=str(body.get("operator") or "web"),
+                )
+            )
         if path.startswith("/api/queue/"):
             parts = path.strip("/").split("/")
             if len(parts) != 4:

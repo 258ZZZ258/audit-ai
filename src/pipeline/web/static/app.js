@@ -38,6 +38,49 @@ const nodeStatusLabels = {
   pending: "未开始",
 };
 
+// 冲突字段中文名(与 l1_rules.cross_check 字段一致)。
+const conflictFieldLabels = {
+  title: "标题",
+  doc_number: "发文字号",
+  issue_date: "成文日期",
+  issuer: "发布机关",
+};
+
+function conflictFieldLabel(field) {
+  return conflictFieldLabels[field] || field;
+}
+
+// 错误码目录:管线码(E1xx–E8xx,states.py:ErrorCode)+ 服务/HTTP 码(app.py:_send_error)。
+// 每码给「标题 / 含义 / 处理建议」,在错误横幅、事件流、API 失败日志统一翻译,免得操作者只看到裸码。
+const errorCatalog = {
+  "E101-DEMO": { title: "格式不在白名单", detail: "demo 仅支持 .docx / .pdf。", fix: "转换为 docx/pdf 后重新上传。" },
+  "E202-DEMO": { title: "疑似扫描件 · OCR 未启用", detail: "每页可抽取字符数低于阈值,判为扫描影像件;demo 未接 OCR。", fix: "改用带文字层的电子版;或在队列中「降级索引」(仅全文检索)。" },
+  "E203": { title: "解析超时", detail: "单文档解析超过配置时限(parse.parse_timeout_sec)。", fix: "拆分超大文档,或调高 config 超时后 reprocess。" },
+  "E204-DEMO": { title: "规范渲染失败", detail: "soffice 生成对齐用 PDF 失败,docx 无法定位页码。", fix: "检查 LibreOffice(PIPELINE_SOFFICE)可用性;修复后 reprocess。" },
+  "E301": { title: "质检硬关卡未通过", detail: "七项质检指标存在硬性不达标(乱码率 / 页码锚定等)。", fix: "查看队列中的具体指标:修复重试 / 降级索引 / 驳回。" },
+  "E701": { title: "PG / Milvus 数量不平", detail: "投影块数与权威库不一致;对账已尝试以 PG 冷备重灌。", fix: "重跑对账;仍不平则「重建」集合。" },
+  "E801": { title: "冒烟未命中", detail: "T2 合成查询未在 hit@N 内检索到文档自身。", fix: "检查嵌入 / 索引完整性;非阻断,仅记入报告。" },
+  "E802": { title: "检索缺 status 过滤位", detail: "search 未携带 status==effective,staging / 旧版可能可见。", fix: "代码级断言失败,无需操作者处理,记入报告。" },
+  BAD_INPUT: { title: "输入有误", detail: "请求参数不合法。", fix: "检查表单 / 参数后重试。" },
+  NOT_FOUND: { title: "未找到", detail: "目标资源不存在(可能已清理或 ID 有误)。", fix: "刷新后重试。" },
+  PIPELINE_FAILED: { title: "管线处理失败", detail: "stage 推进中途异常,文档未达预期终态(可重试)。", fix: "看文档详情的事件与错误码定位 stage;修复后 reprocess。" },
+  PAYLOAD_TOO_LARGE: { title: "上传体过大", detail: "请求体超过上限(整批 200MB / API 1MB)。", fix: "减少单次上传文件数量或体积。" },
+  INTERNAL: { title: "服务器内部错误", detail: "未预期异常,细节见服务端日志。", fix: "查看 /tmp/pipeline_web.log;必要时重启服务。" },
+};
+
+function explainError(code) {
+  return code ? errorCatalog[code] || null : null;
+}
+
+// 统一错误日志:在原文案后补「错误标题 — 处理建议」,并把 code/guidance 一并落进活动日志数据。
+function logError(context, err) {
+  const info = explainError(err && err.code);
+  const data = { error: err ? err.message : String(err) };
+  if (err && err.code) data.code = err.code;
+  if (info) data.guidance = info.fix;
+  log(info ? `${context}：${info.title} — ${info.fix}` : context, data);
+}
+
 function log(message, data) {
   const line = `[${new Date().toLocaleTimeString()}] ${message}`;
   const extra = data ? `\n${JSON.stringify(data, null, 2)}` : "";
@@ -49,7 +92,11 @@ async function api(path, options = {}) {
   const text = await res.text();
   const payload = text ? JSON.parse(text) : {};
   // 错误体结构化为 {error:{code,message}};兼容旧扁平字符串 + statusText 兜底
-  if (!res.ok) throw new Error(payload.error?.message || payload.error || res.statusText);
+  if (!res.ok) {
+    const err = new Error(payload.error?.message || payload.error || res.statusText);
+    err.code = payload.error?.code; // 供 logError / 错误目录翻译
+    throw err;
+  }
   return payload;
 }
 
@@ -138,12 +185,34 @@ async function selectDoc(dvid) {
   log(`已加载文档 ${dvid}`);
 }
 
+// 错误横幅:文档带 last_error_code 时,详情顶部给「码 · 含义 · 处理建议」。返回安全 HTML 串(调用处 raw 包裹)。
+function errorBannerHtml(d) {
+  if (!d.last_error_code) return "";
+  const info = explainError(d.last_error_code);
+  const body = info
+    ? h`<div class="eb-detail">${info.detail}</div><div class="eb-fix">处理建议：${info.fix}</div>`
+    : "";
+  return h`<div class="error-banner">
+      <strong>⚠ 错误 ${d.last_error_code}${info ? ` · ${info.title}` : ""}</strong>
+      ${raw(body)}
+    </div>`;
+}
+
+// 事件流里的错误码小标:鼠标悬停看含义+建议。返回安全 HTML 串(调用处 raw 包裹)。
+function errorCodeChip(code) {
+  if (!code) return "";
+  const info = explainError(code);
+  const tip = info ? `${info.detail} 处理建议：${info.fix}` : code;
+  return h`<span class="err-chip" title="${tip}">${code}${info ? ` ${info.title}` : ""}</span>`;
+}
+
 function renderDocDetail() {
   const d = state.doc.doc;
   $("detailTitle").textContent = d.title || d.source_filename || "文档详情";
   const verify = state.doc.events.filter((e) => e.detail && e.detail.verify).slice(-1)[0];
   $("docDetail").innerHTML = h`
     <div class="detail">
+      ${raw(errorBannerHtml(d))}
       <div class="kv"><span>文档版本</span><strong>${d.doc_version_id}</strong></div>
       <div class="kv"><span>管线状态</span><span><i class="badge s-${d.pipeline_status}">${d.pipeline_status}</i></span></div>
       <div class="kv"><span>版本状态</span><span>${d.version_status || "-"}</span></div>
@@ -173,7 +242,7 @@ function renderDocDetail() {
       <h3>事件</h3>
       <div class="event-list">${raw(state.doc.events.slice().reverse().map((e) => h`
         <div class="event"><strong>${e.from_state || "开始"} → ${e.to_state}</strong>
-          <div class="meta">${e.actor || "system"} · ${e.created_at || ""} ${e.error_code || ""}</div>
+          <div class="meta">${e.actor || "system"} · ${e.created_at || ""} ${raw(errorCodeChip(e.error_code))}</div>
           ${e.detail ? raw(`<pre>${escapeHtml(JSON.stringify(e.detail, null, 2))}</pre>`) : ""}
         </div>
       `).join(""))}</div>
@@ -189,16 +258,45 @@ function renderDocDetail() {
   `;
 }
 
+// 元数据冲突块:逐字段列「manifest 声明 vs 文档实际」,并为每个 L1 抽取候选给「采用并确认」按钮。
+// 返回安全 HTML 串(调用处 raw 包裹);按钮 data-* 用 escapeHtml 防注入(同 queueButtons)。
+function conflictBlockHtml(q) {
+  const conflicts = (q.evidence && q.evidence.conflicts) || [];
+  if (q.queue_type !== "meta_confirm" || !conflicts.length) return "";
+  const rows = conflicts.map((c) => {
+    const candidates = String(c.extracted || "").split("/").map((s) => s.trim()).filter(Boolean);
+    const buttons = candidates.map((v) =>
+      `<button class="suggest-btn" data-resolve-qid="${escapeHtml(q.queue_id)}" data-resolve-field="${escapeHtml(c.field)}" data-resolve-value="${escapeHtml(v)}">采用文档实际值「${escapeHtml(v)}」并确认</button>`
+    ).join("");
+    return h`
+      <div class="conflict">
+        <div class="conflict-field">字段 <strong>${conflictFieldLabel(c.field)}</strong> 不一致</div>
+        <div class="conflict-vals">
+          <span class="cv-label">manifest 声明</span><code>${c.manifest || "(空)"}</code>
+          <span class="cv-label">文档实际</span><code>${c.extracted || "(未抽到)"}</code>
+        </div>
+        ${raw(buttons)}
+      </div>`;
+  }).join("");
+  return h`<div class="conflicts">${raw(rows)}</div>`;
+}
+
 function renderQueue(items) {
   $("queueList").innerHTML = items.map((q) => h`
     <div class="queue-item">
       <strong>${queueLabel(q.queue_type)} · ${short(q.queue_id)}</strong>
       <div class="meta">${short(q.doc_version_id)} · ${queueStatusLabel(q.status)} · ${q.reason || ""}</div>
+      ${q.status === "open" ? raw(conflictBlockHtml(q)) : ""}
       ${q.status === "open" ? raw(`<div class="queue-actions">${queueButtons(q)}</div>`) : ""}
     </div>
   `).join("");
   document.querySelectorAll("[data-queue-action]").forEach((btn) => {
     btn.onclick = () => runQueueAction(btn.dataset.queueId, btn.dataset.queueAction, btn);
+  });
+  document.querySelectorAll("[data-resolve-qid]").forEach((btn) => {
+    btn.onclick = () => applySuggestion(
+      btn.dataset.resolveQid, btn.dataset.resolveField, btn.dataset.resolveValue, btn
+    );
   });
 }
 
@@ -249,7 +347,27 @@ async function runQueueAction(qid, action, btn) {
       log(`队列动作已完成：${actionLabels[action] || action}`, { qid });
       await refreshAll();
     } catch (err) {
-      log(`队列动作失败：${actionLabels[action] || action}`, { error: err.message });
+      logError(`队列动作失败：${actionLabels[action] || action}`, err);
+    }
+  });
+}
+
+// 一键采用某冲突字段的 L1 抽取值:全清且非修订件 → 服务端自动放行至 INDEXED;否则留闸显示剩余冲突。
+async function applySuggestion(qid, field, value, btn) {
+  await withBusy(btn, async () => {
+    try {
+      const res = await api("/api/meta/resolve", postJson({ queue_id: qid, field, value, operator: "web" }));
+      if (res.resolved) {
+        log(`已采用${conflictFieldLabel(field)}「${value}」并放行至 ${res.final}`, { doc_version_id: res.doc_version_id });
+      } else {
+        const n = (res.remaining_conflicts || []).length;
+        const tail = res.is_revision ? "(修订件仍需人工确认放行)" : `,仍有 ${n} 项冲突待处理`;
+        log(`已采用${conflictFieldLabel(field)}「${value}」${tail}`, { remaining: res.remaining_conflicts });
+      }
+      await refreshAll();
+      await selectDoc(res.doc_version_id);
+    } catch (err) {
+      logError("采用推荐值失败", err);
     }
   });
 }
@@ -315,7 +433,7 @@ async function uploadFiles() {
       await refreshAll();
       await selectBatch(res.batch_id);
     } catch (err) {
-      log("上传失败", { error: err.message });
+      logError("上传失败", err);
     }
   });
 }
@@ -328,7 +446,7 @@ async function runBatchReport() {
       log("报告已刷新", rep);
       await selectBatch(state.batch.batch_id, false);
     } catch (err) {
-      log("报告生成失败", { error: err.message });
+      logError("报告生成失败", err);
     }
   });
 }
@@ -341,7 +459,7 @@ async function runVerify(name, btn) {
       log(`${verifyLabel(name)} 已完成`, res);
       await refreshAll();
     } catch (err) {
-      log(`${verifyLabel(name)} 失败`, { error: err.message });
+      logError(`${verifyLabel(name)} 失败`, err);
     }
   });
 }
@@ -355,7 +473,7 @@ async function search() {
       renderSearch(res);
       log("检索完成", { query, hits: res.hits?.length ?? 0 });
     } catch (err) {
-      log("检索失败", { error: err.message });
+      logError("检索失败", err);
     }
   });
 }
@@ -376,7 +494,7 @@ async function reprocessSelected() {
       await refreshAll();
       await selectDoc(state.doc.doc.doc_version_id);
     } catch (err) {
-      log("重跑失败", { error: err.message });
+      logError("重跑失败", err);
     }
   });
 }
@@ -449,4 +567,4 @@ function bindActions() {
 
 bindUpload();
 bindActions();
-refreshAll().catch((err) => log("初始化加载失败", { error: err.message }));
+refreshAll().catch((err) => logError("初始化加载失败", err));
