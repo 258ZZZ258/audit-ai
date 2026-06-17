@@ -1,1 +1,0 @@
-# 管线测试目录(按包共置)。Step 3 由 git mv 填入 test_chunker / test_s*/ test_qc 等 + conftest + golden/。
