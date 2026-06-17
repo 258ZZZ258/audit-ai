@@ -276,6 +276,24 @@ def queue_items(show_all: bool = False) -> list[dict[str, Any]]:
     return [_queue_payload(r) for r in rows]
 
 
+def _clause_sort_key(chunk: Chunk) -> tuple:
+    """分块列表的"文档阅读序"排序键。
+
+    DB 里 ``seq`` 是**条内子块序号**(单块条恒为 0),不足以定全局序;``clause_path`` 按中文串排
+    又错(第十条<第二条)。故据 ``clause_path_norm``(已归一阿拉伯号,如 ``"1/6"``/节级 ``"3/2/17"``/
+    插入条 ``"21-1"``/小数体例 ``"10.1.3"``)把每段按 ``.``、``-`` 拆成整数元组,按 章/节/条… 数值
+    升序;同条多块以 ``seq`` 续接。norm 缺失/非数值时回退 ``(page_start, seq, chunk_id)`` 保持稳定
+    确定序,**绝不抛错**(纯展示层,不动 chunk_id / 不重切 / 不碰任何契约)。
+    """
+    segs: list[tuple[int, ...]] = []
+    for seg in (chunk.clause_path_norm or "").split("/"):
+        if not seg:
+            continue
+        parts = tuple(int(p) if p.isdigit() else 0 for p in seg.replace("-", ".").split("."))
+        segs.append(parts)
+    return (tuple(segs), chunk.page_start or 0, chunk.seq or 0, chunk.chunk_id)
+
+
 def doc_detail(doc_version_id: str) -> dict[str, Any]:
     pg, ctx = _light()
     with pg.session() as s:
@@ -283,10 +301,9 @@ def doc_detail(doc_version_id: str) -> dict[str, Any]:
         if dv is None:
             raise KeyError(doc_version_id)
         doc = s.get(Document, dv.logical_id)
-        chunks = list(
-            s.scalars(
-                select(Chunk).where(Chunk.doc_version_id == doc_version_id).order_by(Chunk.seq)
-            )
+        chunks = sorted(
+            s.scalars(select(Chunk).where(Chunk.doc_version_id == doc_version_id)),
+            key=_clause_sort_key,
         )
         events = list(
             s.scalars(
