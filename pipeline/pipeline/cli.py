@@ -34,7 +34,8 @@ from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
-from pipeline.orchestrator import Orchestrator, Stage
+from pipeline.orchestration import make_workflow_engine
+from pipeline.orchestrator import Stage
 from pipeline.queue import dispose
 from pipeline.stage_base import StageContext, StageResult
 from pipeline.stages import finalize, s1_parse, s2_qc, s3_structure, s4_meta, s5_embed_index
@@ -238,7 +239,8 @@ def _finalize_batch_indexed(pg: PgIO, ctx: StageContext, batch_id: str) -> None:
 
 def _drive_batch(pg: PgIO, ctx: StageContext, batch_id: str) -> int:
     """跑 worker 推进整批至各自停态;B 模式(worker ctx)无冲突新件直达 INDEXED → 扫尾 finalize。"""
-    steps = Orchestrator(pg, ctx, _build_stages(include_s5=_can_run_s5(ctx))).run_until_idle()
+    engine = make_workflow_engine(pg, ctx, _build_stages(include_s5=_can_run_s5(ctx)))
+    steps = engine.run_until_idle()
     if _can_run_s5(ctx):  # = worker 上下文 = B 模式:补 orchestrator 不做的 finalize
         _finalize_batch_indexed(pg, ctx, batch_id)
     return steps
@@ -253,7 +255,7 @@ def _advance_one(
     真正到位、决定退出码,避免"卡在 EMBEDDING/INDEXING 却 exit 0"。``error=None`` 表示干净停
     (到人工等待态/终态);非 None 表示推进中途因异常中止。
     """
-    orch = Orchestrator(pg, ctx, _build_stages(include_s5=_can_run_s5(ctx)))
+    orch = make_workflow_engine(pg, ctx, _build_stages(include_s5=_can_run_s5(ctx)))
     steps = 0
     error: str | None = None
     while steps < max_steps:

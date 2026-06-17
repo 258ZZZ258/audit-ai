@@ -18,7 +18,7 @@ from pathlib import Path
 from common.ir import IRDocument, SourceFormat
 from common.pg_models import DocVersion
 from pipeline.parsing.adapter import ParseResult
-from pipeline.parsing.light_parser import LightParser
+from pipeline.parsing.factory import make_parser
 from pipeline.parsing.page_align import align_blocks
 from pipeline.parsing.rendition import page_texts, render_pdf
 from pipeline.stage_base import QueueItem, QueueType, StageContext, StageResult
@@ -63,7 +63,7 @@ def _parse_docx(ctx: StageContext, dvid: str, data: bytes) -> StageResult:
                 return _fail(dvid, ErrorCode.RENDITION_FAILED.value, f"渲染失败: {e}")
             store.put_rendition(dvid, rpdf.read_bytes())
 
-        res = LightParser().parse(
+        res = make_parser().parse(
             data, "docx", scanned_char_per_page_max=cfg.parse.scanned_char_per_page_max
         )
         if not res.ok:
@@ -85,7 +85,7 @@ def _parse_docx(ctx: StageContext, dvid: str, data: bytes) -> StageResult:
 
 def _parse_pdf(ctx: StageContext, dvid: str, data: bytes) -> StageResult:
     cfg, store = ctx.config, ctx.object_store
-    res = LightParser().parse(
+    res = make_parser().parse(
         data, "pdf", scanned_char_per_page_max=cfg.parse.scanned_char_per_page_max
     )
     if not res.ok:
