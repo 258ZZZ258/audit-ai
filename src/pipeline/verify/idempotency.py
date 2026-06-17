@@ -17,7 +17,7 @@ from openpyxl import load_workbook
 from sqlalchemy import select
 from ulid import ULID
 
-from pipeline.index.pg_models import DocVersion, PipelineEvent
+from common.pg_models import DocVersion, PipelineEvent
 from pipeline.stage_base import StageContext
 from pipeline.stages.s0_register import register_batch
 

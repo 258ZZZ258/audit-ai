@@ -64,6 +64,11 @@ select = ["E", "F", "I", "UP", "B"]
 # typer 的 CLI 参数默认值本就是 Argument()/Option() 调用,非 B008 针对的可变默认值。
 extend-immutable-calls = ["typer.Argument", "typer.Option"]
 
+[tool.ruff.lint.isort]
+# 升格后 workspace 三成员均为本仓首方包(否则 isort 误判 common/eval 为第三方,分组错乱)。
+known-first-party = ["common", "pipeline", "eval"]
+
 [tool.pytest.ini_options]
-pythonpath = ["src"]
-testpaths = ["tests"]
+# 过渡期:pipeline 在 src/(Step 3 后移 pipeline/),契约层 common 在 libs/common/。
+pythonpath = ["src", "libs/common"]
+testpaths = ["tests", "libs/common/tests"]

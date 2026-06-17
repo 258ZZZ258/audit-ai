@@ -13,12 +13,7 @@ from sqlalchemy import delete, text
 from typer.testing import CliRunner
 from ulid import ULID
 
-from pipeline.cli import app
-from pipeline.config import load_config
-from pipeline.index.embedding_client import EmbeddingClient
-from pipeline.index.milvus_io import MilvusIO
-from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import (
+from common.pg_models import (
     Chunk,
     Document,
     DocVersion,
@@ -27,6 +22,11 @@ from pipeline.index.pg_models import (
     RemediationRecord,
     ReviewQueue,
 )
+from pipeline.cli import app
+from pipeline.config import load_config
+from pipeline.index.embedding_client import EmbeddingClient
+from pipeline.index.milvus_io import MilvusIO
+from pipeline.index.pg_io import PgIO
 from pipeline.states import PipelineState as PS
 
 runner = CliRunner()

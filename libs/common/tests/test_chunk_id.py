@@ -1,8 +1,9 @@
 import hashlib
 
-from pipeline.chunking.chunker import build_chunks, compute_chunk_id
+from common.chunk_id import compute_chunk_id
+from common.ir import Block, BlockType, IRDocument, SourceFormat
+from pipeline.chunking.chunker import build_chunks
 from pipeline.config import ChunkConfig
-from pipeline.ir import Block, BlockType, IRDocument, SourceFormat
 
 CFG = ChunkConfig(target_token_min=1, target_token_max=8, parent_block_token_max=20)
 

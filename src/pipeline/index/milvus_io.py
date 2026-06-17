@@ -19,17 +19,13 @@ from pymilvus import (
     AnnSearchRequest,
     Collection,
     CollectionSchema,
-    DataType,
-    FieldSchema,
     RRFRanker,
     connections,
     utility,
 )
 
+from common.milvus_schema import DENSE_DIM, audit_corpus_schema
 from pipeline.config import Settings
-
-#: BAAI/bge-m3 dense 维度(由模型决定,非 ⚠ 可调)
-DENSE_DIM = 1024
 
 _ALIAS = "default"
 
@@ -124,22 +120,8 @@ class MilvusIO:
         connections.disconnect(_ALIAS)
 
     def schema(self) -> CollectionSchema:
-        fields = [
-            FieldSchema("chunk_id", DataType.VARCHAR, is_primary=True, max_length=24),
-            FieldSchema("dense_vec", DataType.FLOAT_VECTOR, dim=DENSE_DIM),
-            FieldSchema("sparse_vec", DataType.SPARSE_FLOAT_VECTOR),
-            FieldSchema("doc_version_id", DataType.VARCHAR, max_length=26),
-            # corpus_type 作 partition key(P-INT / P-EXT)
-            FieldSchema("corpus_type", DataType.VARCHAR, max_length=16, is_partition_key=True),
-            FieldSchema("status", DataType.VARCHAR, max_length=16),  # staging|effective|superseded
-            FieldSchema("perm_tag", DataType.VARCHAR, max_length=32),  # 密级:写入,M1 不过滤
-            FieldSchema("biz_domain", DataType.VARCHAR, max_length=64),
-            FieldSchema("issuer_level", DataType.VARCHAR, max_length=32),
-            FieldSchema("clause_path", DataType.VARCHAR, max_length=512),  # 四级引用:条款路径
-            FieldSchema("page_start", DataType.INT64),  # 四级引用:页码
-            FieldSchema("degraded", DataType.BOOL),
-        ]
-        return CollectionSchema(fields, description="审计语料库 audit_corpus(dense+sparse)")
+        """audit_corpus collection schema —— 契约定义在 common.milvus_schema(只搬位置,值不变)。"""
+        return audit_corpus_schema()
 
     def create_collection(self, *, drop_existing: bool = False) -> Collection:
         """建 audit_corpus + 索引(dense=HNSW/COSINE,sparse=SPARSE_INVERTED_INDEX/IP)。

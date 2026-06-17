@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from common.ir import IRDocument
 from pipeline.config import QcThresholds
-from pipeline.ir import IRDocument
 from pipeline.qc.indicators import ALL_INDICATORS, IndicatorResult
 
 

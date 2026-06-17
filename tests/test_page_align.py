@@ -1,4 +1,4 @@
-from pipeline.ir import Block, BlockType, Table, TableCell
+from common.ir import Block, BlockType, Table, TableCell
 from pipeline.parsing.page_align import align_blocks, align_pages
 
 

@@ -19,8 +19,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from common.pg_models import DocVersion, PipelineEvent
 from pipeline.index import corpus_rows
-from pipeline.index.pg_models import DocVersion, PipelineEvent
 from pipeline.stage_base import StageContext
 from pipeline.states import PipelineState
 

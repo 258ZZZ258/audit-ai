@@ -8,8 +8,8 @@ s5;``chunk_status`` 默认 staging(INDEXED 前对检索不可见)。状态机出
 
 from __future__ import annotations
 
+from common.pg_models import Chunk, DocVersion
 from pipeline.chunking.chunker import ChunkSpec, build_chunks
-from pipeline.index.pg_models import Chunk, DocVersion
 from pipeline.stage_base import StageContext, StageResult
 from pipeline.states import PipelineState
 

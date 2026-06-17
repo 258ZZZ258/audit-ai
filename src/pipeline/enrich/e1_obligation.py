@@ -14,8 +14,8 @@ from dataclasses import dataclass
 
 from sqlalchemy import delete, select
 
+from common.pg_models import Chunk, ClauseTag
 from pipeline.config import ObligationConfig
-from pipeline.index.pg_models import Chunk, ClauseTag
 from pipeline.stage_base import StageContext
 
 _TAG_TYPE = "is_obligation"

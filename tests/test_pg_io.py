@@ -6,15 +6,15 @@ import pytest
 from sqlalchemy import delete, select, text
 from ulid import ULID
 
-from pipeline.config import load_config
-from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import (
+from common.pg_models import (
     DictIssuer,
     Document,
     DocVersion,
     ImportBatch,
     PipelineEvent,
 )
+from pipeline.config import load_config
+from pipeline.index.pg_io import PgIO
 from pipeline.states import PipelineState as PS
 
 REPO = Path(__file__).resolve().parents[1]

@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from pipeline.ir import Block
+from common.ir import Block
 
 
 @dataclass

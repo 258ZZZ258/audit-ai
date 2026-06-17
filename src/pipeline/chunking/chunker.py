@@ -15,15 +15,15 @@ chunk_id = sha1(doc_version_id|clause_path_norm|seq)[:24] —— 逐字确定性
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
+from common.chunk_id import compute_chunk_id
+from common.ir import Block, BlockType, IRDocument, Table
 from pipeline.chunking.clause_tree import ClauseNode, NodeType, build_tree, iter_articles
 from pipeline.chunking.normalize import strip_ws, to_halfwidth
 from pipeline.config import ChunkConfig
-from pipeline.ir import Block, BlockType, IRDocument, Table
 
 
 @dataclass
@@ -41,11 +41,6 @@ class ChunkSpec:
     is_parent: bool = False
     is_table: bool = False
     oversize: bool = False  # 单段超长无语义边界,被字符硬切(质量信号)
-
-
-def compute_chunk_id(doc_version_id: str, clause_path_norm: str, seq: int) -> str:
-    raw = f"{doc_version_id}|{clause_path_norm}|{seq}"
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24]
 
 
 def count_tokens(text: str) -> int:

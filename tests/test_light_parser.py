@@ -3,7 +3,7 @@ import io
 from docx import Document as Docx
 from PIL import Image, ImageDraw
 
-from pipeline.ir import BlockType
+from common.ir import BlockType
 from pipeline.parsing.light_parser import LightParser
 
 

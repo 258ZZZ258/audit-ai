@@ -4,11 +4,11 @@ import pytest
 from sqlalchemy import delete, select, text
 from ulid import ULID
 
+from common.ir import Block, BlockType, IRDocument, SourceFormat
+from common.pg_models import Document, DocVersion, ImportBatch, PipelineEvent
 from pipeline.config import QcThresholds, load_config
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import Document, DocVersion, ImportBatch, PipelineEvent
-from pipeline.ir import Block, BlockType, IRDocument, SourceFormat
 from pipeline.qc.gate import evaluate
 from pipeline.qc.indicators import _ge, _le
 from pipeline.stage_base import StageContext

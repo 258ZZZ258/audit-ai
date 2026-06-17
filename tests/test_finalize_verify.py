@@ -10,10 +10,10 @@ import pytest
 from sqlalchemy import delete, select, text
 from ulid import ULID
 
+from common.pg_models import Document, DocVersion, ImportBatch, PipelineEvent
 from pipeline.config import load_config
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import Document, DocVersion, ImportBatch, PipelineEvent
 from pipeline.stage_base import StageContext
 from pipeline.stages import finalize
 

@@ -8,12 +8,12 @@ import pytest
 from sqlalchemy import delete, select, text
 from ulid import ULID
 
+from common.ir import Block, BlockType, IRDocument, SourceFormat, Table, TableCell
+from common.pg_models import Chunk, Document, DocVersion, ImportBatch, PipelineEvent
 from pipeline.chunking.chunker import build_chunks
 from pipeline.config import load_config
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import Chunk, Document, DocVersion, ImportBatch, PipelineEvent
-from pipeline.ir import Block, BlockType, IRDocument, SourceFormat, Table, TableCell
 from pipeline.stage_base import StageContext
 from pipeline.stages import s3_structure as s3
 from pipeline.states import PipelineState as PS

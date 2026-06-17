@@ -15,8 +15,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from pipeline.index.pg_models import DocVersion
-from pipeline.ir import IRDocument, SourceFormat
+from common.ir import IRDocument, SourceFormat
+from common.pg_models import DocVersion
 from pipeline.parsing.adapter import ParseResult
 from pipeline.parsing.light_parser import LightParser
 from pipeline.parsing.page_align import align_blocks

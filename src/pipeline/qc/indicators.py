@@ -10,6 +10,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
+from common.ir import BlockType, IRDocument
 from pipeline.chunking.clause_tree import (
     NodeType,
     build_tree,
@@ -17,7 +18,6 @@ from pipeline.chunking.clause_tree import (
 )
 from pipeline.chunking.normalize import strip_ws, to_halfwidth
 from pipeline.config import QcThresholds
-from pipeline.ir import BlockType, IRDocument
 
 _LOOSE_ARTICLE = re.compile(r"^第[〇零一二三四五六七八九十百千两\dA-Za-z.]+条")
 

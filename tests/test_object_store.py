@@ -1,6 +1,6 @@
+from common.ir import Block, BlockType, IRDocument, SourceFormat
 from pipeline.config import load_config
 from pipeline.index.object_store import ObjectStore
-from pipeline.ir import Block, BlockType, IRDocument, SourceFormat
 
 
 def test_key_layout():

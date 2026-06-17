@@ -1,5 +1,6 @@
 import pytest
 
+from common.ir import Block, BlockType
 from pipeline.chunking.clause_tree import (
     NodeType,
     build_tree,
@@ -7,7 +8,6 @@ from pipeline.chunking.clause_tree import (
     find_internal_refs,
     iter_articles,
 )
-from pipeline.ir import Block, BlockType
 
 
 def blk(i: int, text: str) -> Block:

@@ -14,8 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from common.pg_models import DocVersion, RemediationRecord, ReviewQueue
 from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import DocVersion, RemediationRecord, ReviewQueue
 from pipeline.states import PipelineState
 
 _PS = PipelineState

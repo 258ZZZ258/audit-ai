@@ -13,8 +13,8 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
+from common.ir import IRDocument
 from pipeline.chunking.normalize import strip_ws, to_halfwidth
-from pipeline.ir import IRDocument
 
 HEAD_BLOCKS = 8
 

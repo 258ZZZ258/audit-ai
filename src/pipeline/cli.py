@@ -19,14 +19,7 @@ import typer
 from sqlalchemy import select
 from ulid import ULID
 
-from pipeline.config import load_config
-from pipeline.enrich import e1_obligation
-from pipeline.index.corpus_rows import ColdBackupIncomplete
-from pipeline.index.embedding_client import EmbeddingClient
-from pipeline.index.milvus_io import MilvusIO
-from pipeline.index.object_store import ObjectStore
-from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import (
+from common.pg_models import (
     Chunk,
     ClauseTag,
     DocVersion,
@@ -34,6 +27,13 @@ from pipeline.index.pg_models import (
     RemediationRecord,
     ReviewQueue,
 )
+from pipeline.config import load_config
+from pipeline.enrich import e1_obligation
+from pipeline.index.corpus_rows import ColdBackupIncomplete
+from pipeline.index.embedding_client import EmbeddingClient
+from pipeline.index.milvus_io import MilvusIO
+from pipeline.index.object_store import ObjectStore
+from pipeline.index.pg_io import PgIO
 from pipeline.orchestrator import Orchestrator, Stage
 from pipeline.queue import dispose
 from pipeline.stage_base import StageContext, StageResult

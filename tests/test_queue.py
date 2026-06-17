@@ -4,9 +4,7 @@ import pytest
 from sqlalchemy import delete, select, text
 from ulid import ULID
 
-from pipeline.config import load_config
-from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import (
+from common.pg_models import (
     Document,
     DocVersion,
     ImportBatch,
@@ -14,6 +12,8 @@ from pipeline.index.pg_models import (
     RemediationRecord,
     ReviewQueue,
 )
+from pipeline.config import load_config
+from pipeline.index.pg_io import PgIO
 from pipeline.queue import dispose
 from pipeline.states import PipelineState as PS
 

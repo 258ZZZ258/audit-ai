@@ -15,8 +15,8 @@ from docx.oxml.ns import qn
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
 
+from common.ir import Block, BlockType, Table, TableCell
 from pipeline.chunking.normalize import strip_ws
-from pipeline.ir import Block, BlockType, Table, TableCell
 from pipeline.parsing.adapter import ParserAdapter, ParseResult
 from pipeline.states import ErrorCode
 

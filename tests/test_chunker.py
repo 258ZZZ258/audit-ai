@@ -1,6 +1,6 @@
+from common.ir import Block, BlockType, IRDocument, SourceFormat, Table, TableCell
 from pipeline.chunking.chunker import build_chunks
 from pipeline.config import ChunkConfig
-from pipeline.ir import Block, BlockType, IRDocument, SourceFormat, Table, TableCell
 
 BIG = ChunkConfig(target_token_min=1, target_token_max=10000, parent_block_token_max=10000)
 SMALL = ChunkConfig(target_token_min=1, target_token_max=10, parent_block_token_max=20)

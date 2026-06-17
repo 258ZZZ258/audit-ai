@@ -4,15 +4,15 @@ import pytest
 from sqlalchemy import delete, select, text
 from ulid import ULID
 
-from pipeline.config import load_config
-from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import (
+from common.pg_models import (
     Document,
     DocVersion,
     ImportBatch,
     PipelineEvent,
     ReviewQueue,
 )
+from pipeline.config import load_config
+from pipeline.index.pg_io import PgIO
 from pipeline.orchestrator import Orchestrator
 from pipeline.stage_base import QueueItem, QueueType, StageContext, StageResult
 from pipeline.states import PipelineState as PS

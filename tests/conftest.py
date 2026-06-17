@@ -83,8 +83,8 @@ def ingest_index():
     from sqlalchemy import select
     from ulid import ULID
 
+    from common.pg_models import DocVersion
     from pipeline import cli
-    from pipeline.index.pg_models import DocVersion
     from pipeline.orchestrator import Orchestrator
     from pipeline.stages.s0_register import register_batch
 

@@ -9,11 +9,7 @@ import pytest
 from sqlalchemy import delete, select, text
 from ulid import ULID
 
-from pipeline.cli import _build_stages
-from pipeline.config import load_config
-from pipeline.index.object_store import ObjectStore
-from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import (
+from common.pg_models import (
     Chunk,
     ClauseTag,
     Document,
@@ -22,6 +18,10 @@ from pipeline.index.pg_models import (
     PipelineEvent,
     ReviewQueue,
 )
+from pipeline.cli import _build_stages
+from pipeline.config import load_config
+from pipeline.index.object_store import ObjectStore
+from pipeline.index.pg_io import PgIO
 from pipeline.orchestrator import Orchestrator
 from pipeline.stage_base import StageContext
 from pipeline.stages.s0_register import register_batch

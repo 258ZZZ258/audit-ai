@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from rapidfuzz import fuzz
 
+from common.ir import Block
 from pipeline.chunking.normalize import strip_ws, to_halfwidth
-from pipeline.ir import Block
 
 
 def normalize_for_align(s: str) -> str:

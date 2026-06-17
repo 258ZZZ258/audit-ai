@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import NamedTuple
 
+from common.ir import Block
 from pipeline.chunking.normalize import normalize_clause_no, strip_ws, to_halfwidth
-from pipeline.ir import Block
 
 _NUM_CHARS = "〇零一二三四五六七八九十百千两\\d"
 _NUM = rf"[{_NUM_CHARS}]+"

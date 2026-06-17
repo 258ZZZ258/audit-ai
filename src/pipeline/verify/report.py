@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 from sqlalchemy import func, select
 
-from pipeline.index.pg_models import (
+from common.pg_models import (
     Chunk,
     ClauseTag,
     Document,

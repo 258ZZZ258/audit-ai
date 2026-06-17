@@ -9,11 +9,7 @@ from sqlalchemy import delete, select, text
 from typer.testing import CliRunner
 from ulid import ULID
 
-from pipeline import cli
-from pipeline.cli import _build_stages, _obligation_chunk_ids, _print_hit, _structuring, app
-from pipeline.config import load_config
-from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import (
+from common.pg_models import (
     Chunk,
     ClauseTag,
     Document,
@@ -23,6 +19,10 @@ from pipeline.index.pg_models import (
     RemediationRecord,
     ReviewQueue,
 )
+from pipeline import cli
+from pipeline.cli import _build_stages, _obligation_chunk_ids, _print_hit, _structuring, app
+from pipeline.config import load_config
+from pipeline.index.pg_io import PgIO
 from pipeline.stages import s1_parse, s2_qc
 from pipeline.states import PipelineState as PS
 

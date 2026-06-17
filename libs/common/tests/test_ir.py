@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from pipeline.ir import (
+from common.ir import (
     BBox,
     Block,
     BlockType,

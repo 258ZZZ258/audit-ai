@@ -14,8 +14,8 @@ from collections.abc import Callable
 
 from ulid import ULID
 
+from common.pg_models import DocVersion, ReviewQueue
 from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import DocVersion, ReviewQueue
 from pipeline.stage_base import QueueItem, StageContext, StageResult
 from pipeline.states import WORKER_ADVANCEABLE_STATES, PipelineState
 

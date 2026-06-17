@@ -5,12 +5,12 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from ulid import ULID
 
+from common.pg_models import Chunk, ClauseTag, Document, DocVersion, ImportBatch
 from pipeline import cli
 from pipeline.config import ObligationConfig, load_config
 from pipeline.enrich import e1_obligation as e1
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import Chunk, ClauseTag, Document, DocVersion, ImportBatch
 from pipeline.stage_base import StageContext
 
 # ── 单元:match_obligation(免栈,真实 obligation.yaml 词表)──────────────

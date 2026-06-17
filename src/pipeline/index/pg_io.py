@@ -16,8 +16,7 @@ from typing import Any
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from pipeline.config import Settings
-from pipeline.index.pg_models import (
+from common.pg_models import (
     Chunk,
     DictBizDomain,
     DictIssuer,
@@ -25,6 +24,7 @@ from pipeline.index.pg_models import (
     PipelineEvent,
     ReviewQueue,
 )
+from pipeline.config import Settings
 from pipeline.states import PipelineState, can_transition
 
 

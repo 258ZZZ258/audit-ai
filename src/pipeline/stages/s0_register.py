@@ -21,7 +21,8 @@ from openpyxl import load_workbook
 from sqlalchemy import select
 from ulid import ULID
 
-from pipeline.index.pg_models import (
+from common.manifest import REQUIRED_COLUMNS
+from common.pg_models import (
     Document,
     DocVersion,
     ImportBatch,
@@ -33,10 +34,6 @@ from pipeline.meta.version_chain import RelationType
 from pipeline.stage_base import StageContext
 from pipeline.states import ErrorCode, PipelineState
 
-REQUIRED_COLUMNS = [
-    "filename", "title", "doc_number", "issuer", "perm_tag",
-    "corpus_type", "biz_domain", "issue_date", "supersedes",
-]
 WHITELIST_FORMATS = {"docx", "pdf"}
 
 

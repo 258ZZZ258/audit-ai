@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from pipeline.index.pg_models import DocVersion
+from common.pg_models import DocVersion
 from pipeline.qc.gate import evaluate
 from pipeline.stage_base import QueueItem, QueueType, StageContext, StageResult
 from pipeline.states import ErrorCode, PipelineState

@@ -8,9 +8,9 @@
 
 from __future__ import annotations
 
+from common.pg_models import DocVersion
 from pipeline.index.corpus_rows import build_rows, indexable_chunks, rows_from_cold_strict
 from pipeline.index.milvus_io import dense_to_bytes, sparse_to_bytes
-from pipeline.index.pg_models import DocVersion
 from pipeline.stage_base import StageContext, StageResult
 from pipeline.states import PipelineState
 

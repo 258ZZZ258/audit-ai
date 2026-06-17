@@ -2,7 +2,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from pipeline.index.pg_models import ReviewQueue
+from common.pg_models import ReviewQueue
 from pipeline.web import app, service
 
 

@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 
 from rapidfuzz import fuzz
 
+from common.pg_models import Chunk, DocVersion
 from pipeline.chunking.normalize import strip_ws, to_halfwidth
-from pipeline.index.pg_models import Chunk, DocVersion
 from pipeline.parsing.rendition import page_texts
 from pipeline.stage_base import StageContext
 

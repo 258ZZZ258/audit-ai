@@ -17,8 +17,8 @@ from openpyxl import Workbook
 from sqlalchemy import select
 from ulid import ULID
 
-from pipeline import cli
-from pipeline.index.pg_models import (
+from common.manifest import REQUIRED_COLUMNS
+from common.pg_models import (
     Chunk,
     ClauseTag,
     Document,
@@ -27,8 +27,9 @@ from pipeline.index.pg_models import (
     PipelineEvent,
     ReviewQueue,
 )
+from pipeline import cli
 from pipeline.queue import dispose
-from pipeline.stages.s0_register import REQUIRED_COLUMNS, register_batch
+from pipeline.stages.s0_register import register_batch
 from pipeline.verify.anchor_replay import run_replay
 from pipeline.verify.rebuild import run_rebuild
 from pipeline.verify.reconcile import run_reconcile

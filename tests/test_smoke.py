@@ -9,12 +9,7 @@ import os
 import pytest
 from sqlalchemy import delete, select, text
 
-from pipeline.config import load_config
-from pipeline.index.embedding_client import EmbeddingClient
-from pipeline.index.milvus_io import MilvusIO
-from pipeline.index.object_store import ObjectStore
-from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import (
+from common.pg_models import (
     Chunk,
     ClauseTag,
     Document,
@@ -24,6 +19,11 @@ from pipeline.index.pg_models import (
     RemediationRecord,
     ReviewQueue,
 )
+from pipeline.config import load_config
+from pipeline.index.embedding_client import EmbeddingClient
+from pipeline.index.milvus_io import MilvusIO
+from pipeline.index.object_store import ObjectStore
+from pipeline.index.pg_io import PgIO
 from pipeline.stage_base import StageContext
 from pipeline.verify.report import build_report
 from pipeline.verify.smoke import run_smoke

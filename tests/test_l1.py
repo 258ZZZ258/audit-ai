@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from pipeline.ir import Block, BlockType, IRDocument, SourceFormat
+from common.ir import Block, BlockType, IRDocument, SourceFormat
 from pipeline.meta.l1_rules import L1Meta, cross_check, extract, resolve_issuer
 
 ISSUERS = [("CSRC", "中国证券监督管理委员会"), ("SSE", "上海证券交易所")]

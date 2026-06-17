@@ -10,10 +10,8 @@ from openpyxl import Workbook
 from sqlalchemy import delete, select, text
 from ulid import ULID
 
-from pipeline.config import load_config
-from pipeline.index.object_store import ObjectStore
-from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import (
+from common.manifest import REQUIRED_COLUMNS
+from common.pg_models import (
     Document,
     DocVersion,
     ImportBatch,
@@ -21,9 +19,12 @@ from pipeline.index.pg_models import (
     RemediationRecord,
     ReviewQueue,
 )
+from pipeline.config import load_config
+from pipeline.index.object_store import ObjectStore
+from pipeline.index.pg_io import PgIO
 from pipeline.queue import dispose
 from pipeline.stage_base import StageContext
-from pipeline.stages.s0_register import REQUIRED_COLUMNS, register_batch
+from pipeline.stages.s0_register import register_batch
 
 
 @pytest.fixture

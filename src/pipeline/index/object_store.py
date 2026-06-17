@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from common.ir import IRDocument
 from pipeline.config import Settings
-from pipeline.ir import IRDocument
 
 
 class ObjectStore:

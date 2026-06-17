@@ -13,11 +13,7 @@ from sqlalchemy import delete, select, text
 from typer.testing import CliRunner
 from ulid import ULID
 
-from pipeline import cli
-from pipeline.config import load_config
-from pipeline.index.milvus_io import MilvusIO
-from pipeline.index.pg_io import PgIO
-from pipeline.index.pg_models import (
+from common.pg_models import (
     Chunk,
     ClauseTag,
     Document,
@@ -26,6 +22,10 @@ from pipeline.index.pg_models import (
     PipelineEvent,
     ReviewQueue,
 )
+from pipeline import cli
+from pipeline.config import load_config
+from pipeline.index.milvus_io import MilvusIO
+from pipeline.index.pg_io import PgIO
 from pipeline.stage_base import StageContext
 from pipeline.verify.report import build_report
 

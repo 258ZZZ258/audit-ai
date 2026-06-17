@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pipeline.index.pg_models import DocVersion
+from common.pg_models import DocVersion
 from pipeline.stage_base import StageContext
 
 E_SMOKE_NO_HIT = "E801"
