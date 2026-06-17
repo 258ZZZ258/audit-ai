@@ -4,11 +4,11 @@
 **用途**:回看"某节点为什么这么做 / 当时的决策与踩坑"的全过程。
 > **按模块查更快**:各模块的蒸馏记忆已拆到包内 `*_devlog.md`(见 `CLAUDE.md`「模块开发记忆索引」);
 > **audit-ai 升格**(Step 0–7)叙事在 `migration_devlog.md` + `CP-009`(本文未含升格阶段)。
-稳定结论已提炼进 `CLAUDE.md`;规格见 `SPEC*.md` / `PLAN*.md` / `TASKS*.md`。
+稳定结论已提炼进 `CLAUDE.md`;规格见 `file-processing-workflow-docs/SPEC*.md` / `file-processing-workflow-docs/PLAN*.md` / `file-processing-workflow-docs/TASKS*.md`。
 
 ## 工作方式
 
-spec-driven:`SPEC.md`(M1 规格)→ `PLAN.md`(四阶段)→ `TASKS.md`(任务级验收)→ 逐模块实现。
+spec-driven:`file-processing-workflow-docs/SPEC.md`(M1 规格)→ `file-processing-workflow-docs/PLAN.md`(四阶段)→ `file-processing-workflow-docs/TASKS.md`(任务级验收)→ 逐模块实现。
 每个模块:实现 → 验证(pytest + ruff,集成测连真栈)→ 停下等用户审批 → 下一个。
 决策**逐个**用问答定,不打包;用户常自带技术方案(如页码对齐),给空间先听其思路。
 git **直接提交 main**(本地单人 demo)。沟通用中文。

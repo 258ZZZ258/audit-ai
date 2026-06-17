@@ -1,7 +1,26 @@
-# 文档处理管线 · 本地 Demo(M1–M3 + Web 工作台)
+# audit-ai · 智能审计平台(monorepo)
 
-生产设计 S0–S5 主干的本地最小可运行实现。设计与决策见 `SPEC.md` / `PLAN.md` / `TASKS.md`,
-开发约定见 `CLAUDE.md`。本文件只讲怎么跑起来。
+智能审计平台的代码仓库。**整个平台的 agent 相关代码都归集于此仓**(Python monorepo,由"文档处理管线 demo"
+原地升格而来——见 `docs/CP-009-仓库与升格规范.md` / `docs/migration_devlog.md`)。
+
+当前已落地 **文档处理与语料库构建** 子系统(S0–S5 管线 + 验证套件 + Web 工作台,生产设计主干的最小可运行实现);
+**制度查询 / 制度比对等智能体代码后续加入本仓**(布局约定与抽包触发见 CP-009)。
+
+> 架构与硬契约见 `CLAUDE.md`(底部「模块开发记忆索引」→ 各包内 `*_devlog.md`);文档处理子系统规格见
+> `docs/file-processing-workflow-docs/SPEC*.md` / `docs/file-processing-workflow-docs/PLAN*.md` / `docs/file-processing-workflow-docs/TASKS*.md`;设计依据 `docs/文档处理与语料库构建_技术框架设计_v1.6.md`、
+> `docs/制度查询与制度比对智能体_RAG技术框架设计_v1.5.md`。本文件只讲怎么跑起来。
+
+## 仓库结构(workspace)
+
+```
+libs/common   契约承重层(IR / chunk_id / PG 模型 / Milvus schema / manifest),不依赖任何上层
+pipeline      文档处理管线(S0–S5/finalize · 解析/编排接缝 · web 工作台)          → common
+eval          验证组件(冒烟 / 锚点回放 / 对账 / 重建 / 幂等 / 报告)                → pipeline → common
+config/ · seeds/ · alembic/ · compose.yaml    workspace 级配置 / 数据 / 运维(置 repo 根)
+```
+
+**约定但未建**(待第一份真实代码 / 第二个消费方出现再建,见 CP-009 §1/§3):`libs/rag` · `libs/orchestration` ·
+`libs/doc_compare` · `libs/report_gen` · `services/*`——后续智能体子系统在此扩展。依赖方向只能向下(`eval→pipeline→common`)。
 
 ## 环境前置
 
@@ -9,13 +28,17 @@
 - **Docker**(`docker compose` 起 pg16 + Milvus 2.4 standalone)
 - 本地嵌入(可选)需 `BAAI/bge-m3` 模型缓存,见下「离线嵌入缓存」
 
-## 安装
+## 安装(workspace 各成员 editable)
 
 ```bash
 python3.11 -m venv .venv
-.venv/bin/pip install -e ".[dev]"     # 核心 + 开发工具(pytest/ruff)
+# 顺序敏感:先 common(pipeline/eval 依赖它)
+.venv/bin/pip install -e libs/common
+.venv/bin/pip install -e pipeline
+.venv/bin/pip install -e eval
+.venv/bin/pip install -e ".[dev]"          # 根:dev 工具(pytest/ruff)+ 运维(alembic)
 # 本地嵌入(local 模式)再装(含 torch,较重):
-.venv/bin/pip install -e ".[embed]"
+.venv/bin/pip install -e "pipeline[embed]"
 ```
 
 ## 起停与建库
