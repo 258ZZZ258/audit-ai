@@ -1,0 +1,29 @@
+# CI 占位(audit-ai 升格脊柱)。过渡期装 root demo 包;Step 3 源码就位后改为各成员 editable。
+# Step 6 接 codegraph 后,把"全量 pytest"换成 `codegraph affected` 只重跑受影响测试。
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install
+        run: |
+          python -m pip install -U pip
+          # workspace 成员各自 editable(顺序敏感:先 common,pipeline/eval 依赖它)+ 根 dev 工具。
+          pip install -e libs/common
+          pip install -e pipeline
+          pip install -e eval
+          pip install -e ".[dev]"
+      - name: ruff
+        run: ruff check .
+      - name: pytest
+        # 连 PG/Milvus/本地 BGE-M3 的集成测试在 CI 无栈时自动 skip(见 tests/conftest.py)。
+        run: pytest -q

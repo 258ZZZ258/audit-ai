@@ -11,5 +11,20 @@ _web_uploads/
 # fixtures 可由 tools/build_fixtures.py 重建,不入库(二进制语料)
 /fixtures/
 
-# report JSON 快照(生成物,不入库)
+# report JSON 快照(生成物,不入库;config 在 repo 根 → reports 落 repo 根)
 /reports/
+
+# codegraph 本地索引(各自本地建,不入库;配置 .mcp.json/.claude/settings.json 共享入库)
+.codegraph/
+# Claude Code 个人本地设置(不共享;团队共享配置走 .claude/settings.json)
+.claude/settings.local.json
+
+# 升格过渡期临时渲染/重存目录(工作树杂物,不入库)
+/rendered_fusion*/
+/lo_resave/
+/.understand-anything/
+
+# 用户意留未跟踪(不入库):AGENTS.md / cursor 本地设置 / Office 临时锁文件
+/AGENTS.md
+/.cursor/settings.json
+~$*

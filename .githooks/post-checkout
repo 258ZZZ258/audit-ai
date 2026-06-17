@@ -1,0 +1,4 @@
+#!/bin/sh
+# codegraph 增量同步:切分支/检出后刷新索引。codegraph 未装则静默跳过。
+command -v codegraph >/dev/null 2>&1 || exit 0
+codegraph sync . >/dev/null 2>&1 || true
