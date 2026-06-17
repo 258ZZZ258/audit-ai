@@ -11,7 +11,7 @@ _web_uploads/
 # fixtures 可由 tools/build_fixtures.py 重建,不入库(二进制语料)
 /fixtures/
 
-# report JSON 快照(生成物,不入库)
+# report JSON 快照(生成物,不入库;config 在 repo 根 → reports 落 repo 根)
 /reports/
 
 # codegraph 本地索引(Step 6 接入,不入库)

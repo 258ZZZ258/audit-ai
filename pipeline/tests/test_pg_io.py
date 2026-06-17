@@ -17,7 +17,7 @@ from pipeline.config import load_config
 from pipeline.index.pg_io import PgIO
 from pipeline.states import PipelineState as PS
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]  # pipeline/tests/ → <repo>(seeds/ 在 repo 根)
 
 
 @pytest.fixture

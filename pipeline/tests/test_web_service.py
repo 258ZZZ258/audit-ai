@@ -65,7 +65,8 @@ def test_auto_manifest_uses_contract_columns(tmp_path):
 
 
 def test_static_bundle_exists():
-    root = Path(service.REPO_ROOT) / "src" / "pipeline" / "web" / "static"
+    # 静态资源随 web 包同迁;锚到 service 模块所在 web/ 目录(不写死树路径)
+    root = Path(service.__file__).resolve().parent / "static"
     assert (root / "index.html").exists()
     assert (root / "app.js").exists()
     assert (root / "styles.css").exists()

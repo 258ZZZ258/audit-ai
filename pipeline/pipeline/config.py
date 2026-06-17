@@ -14,7 +14,10 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel
 
-# config.py 位于 <repo>/src/pipeline/config.py → parents[2] = <repo>
+# config.py 位于 <repo>/pipeline/pipeline/config.py → parents[2] = <repo>。
+# config/ 留 repo 根(非 pipeline 成员目录内):flat 布局下成员目录 pipeline/ 名同 import 包 pipeline,
+# 若置于 pipeline/ 内,则 cwd=repo 根在 sys.path 时 pipeline/config 作命名空间包遮蔽 pipeline.config
+# 模块(实测 break `python -m alembic`)。故 config/seeds 作 workspace 级置根(决策⑤修订,见 CP-009)。
 DEFAULT_CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 
 
