@@ -17,8 +17,10 @@ jobs:
       - name: install
         run: |
           python -m pip install -U pip
-          # 过渡期:root demo 包(src-layout)。Step 3 后改为:
-          #   pip install -e libs/common -e pipeline -e eval -e pipeline[dev]
+          # workspace 成员各自 editable(顺序敏感:先 common,pipeline/eval 依赖它)+ 根 dev 工具。
+          pip install -e libs/common
+          pip install -e pipeline
+          pip install -e eval
           pip install -e ".[dev]"
       - name: ruff
         run: ruff check .

@@ -1,55 +1,32 @@
-# ── audit-ai workspace 根(原地升格中,分支 migrate/audit-ai-skeleton)──────────────────
-# 本仓正从单包 demo 升格为 audit-ai monorepo。workspace 成员**只此三个**(严禁新增
-# libs/rag|orchestration|doc_compare|report_gen 或 services/*——它们仅为 CP-009 约定,
-# 待第一份真实代码/第二个消费方出现再创建):
+# ── audit-ai workspace 根 ──────────────────────────────────────────────────────────
+# 本仓为 audit-ai monorepo。workspace 成员**只此三个**(严禁新增 libs/rag|orchestration|
+# doc_compare|report_gen 或 services/*——仅 CP-009 约定,待第一份真实代码/第二个消费方出现再建):
 [tool.audit_workspace]
 members = ["libs/common", "pipeline", "eval"]
 # 依赖方向:pipeline → common;eval → pipeline → common;common 不依赖任何上层。
-# setuptools 无原生 workspace,成员各自 `pip install -e <member>`(见各成员 pyproject)。
-# 过渡:源码暂仍在 src/pipeline(Step 2–4 用 git mv 入各成员);下面的 [project] 暂保 src-layout
-# 让现有套件可装可测,Step 3 源码就位后翻为聚合根。详见 docs/migration-manifest.md。
+# setuptools 无原生 workspace;开发安装(顺序敏感,先 common):
+#   pip install -e libs/common && pip install -e pipeline && pip install -e eval && pip install -e ".[dev]"
+# 运行时包(demo / demo-web 脚本、运行依赖)见各成员 pyproject;根仅聚合 dev 工具 + 运维(alembic)。
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "audit-doc-pipeline-demo"
+name = "audit-ai"
 version = "0.1.0"
-description = "文档处理管线 · 本地 Demo(M1)"
+description = "audit-ai monorepo workspace 根(聚合 dev 工具与共享配置;运行时包见 libs/common·pipeline·eval)"
 requires-python = ">=3.11"
 dependencies = [
-    "pydantic>=2.5",
-    "pyyaml>=6.0",
-    "typer>=0.12",
-    "sqlalchemy>=2.0",
-    "alembic>=1.13",
-    "psycopg[binary]>=3.1",
-    "pymilvus>=2.4,<2.5",
-    "python-docx>=1.1",
-    "pdfplumber>=0.11",
-    "rapidfuzz>=3.6",
-    "openpyxl>=3.1",
-    "python-ulid>=2.2",
-    "setuptools>=68,<81",  # 提供 pkg_resources(pymilvus 2.4 运行期需要;81+ 已移除 pkg_resources)
+    "alembic>=1.13",  # DB 迁移(运维工具,留 repo 根,决策⑧;env.py import 改向 common.pg_models)
 ]
 
 [project.optional-dependencies]
-# 本地嵌入(torch,重)——仅运行 local 模式时需要;endpoint 模式不需
-embed = ["FlagEmbedding>=1.2"]
-# Pillow:仅测试 + tools/build_fixtures.py 构造 fixture 用(src/ 运行期不依赖);
-# 此前靠 pdfplumber 传递引入,显式声明避免隐式依赖断裂。
 dev = ["ruff>=0.4", "pytest>=8.0", "pypdf>=4.0", "Pillow>=10.0"]
 
-[project.scripts]
-demo = "pipeline.cli:app"
-demo-web = "pipeline.web.app:main"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-"pipeline.web" = ["static/*"]
+[tool.setuptools]
+# 根不分发任何包(成员各自打包);显式空,阻止 setuptools 自动发现 pipeline/libs/eval/tests。
+packages = []
 
 [tool.ruff]
 line-length = 100
@@ -69,6 +46,7 @@ extend-immutable-calls = ["typer.Argument", "typer.Option"]
 known-first-party = ["common", "pipeline", "eval"]
 
 [tool.pytest.ini_options]
-# 过渡期:pipeline 在 src/(Step 3 后移 pipeline/),契约层 common 在 libs/common/。
-pythonpath = ["src", "libs/common"]
+# pipeline 包在 pipeline/(import 名 pipeline);契约层 common 在 libs/common/。
+# 过渡:pipeline 单测暂留 tests/(Step 4 与 verify 一起共置到各包);契约 pin 在 libs/common/tests。
+pythonpath = ["pipeline", "libs/common"]
 testpaths = ["tests", "libs/common/tests"]
