@@ -1,0 +1,42 @@
+# audit-pipeline —— 文档处理管线(S0–S5 + finalize、富集 E1、机制、两个接缝、web 工作台)。
+# 依赖方向:pipeline → common(契约层)。import 包名 = pipeline(发行名 audit-pipeline)。
+# 源码在 Step 3 由 git mv 从 src/pipeline/ 填入 pipeline/。
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audit-pipeline"
+version = "0.1.0"
+description = "audit-ai 文档处理管线:S0–S5/finalize、富集 E1、编排/解析接缝、web 工作台"
+requires-python = ">=3.11"
+dependencies = [
+    "audit-common",        # 契约层(依赖方向:pipeline → common)
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "pymilvus>=2.4,<2.5",
+    "python-docx>=1.1",
+    "pdfplumber>=0.11",
+    "rapidfuzz>=3.6",
+    "openpyxl>=3.1",
+    "python-ulid>=2.2",
+    "pydantic>=2.5",
+    "setuptools>=68,<81",
+]
+
+[project.optional-dependencies]
+# 本地嵌入(torch,重)——仅 local 模式需要,endpoint 模式不需。
+embed = ["FlagEmbedding>=1.2"]
+
+[project.scripts]
+demo = "pipeline.cli:app"
+demo-web = "pipeline.web.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pipeline*"]
+
+[tool.setuptools.package-data]
+"pipeline.web" = ["static/*"]

@@ -1,0 +1,21 @@
+# audit-eval —— 验证组件套件(T2 冒烟 / T4 锚点回放 / 对账 / 重建 / 幂等 / 批次报告)。
+# 依赖方向:eval → pipeline → common(verify/* 实 import StageContext / MilvusIO / corpus_rows,
+# 故 eval 依赖 pipeline,经 pipeline 间接依赖 common)。import 包名 = eval(发行名 audit-eval)。
+# 源码在 Step 4 由 git mv 从 src/pipeline/verify/ 填入 eval/。
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audit-eval"
+version = "0.1.0"
+description = "audit-ai 验证组件:T2 冒烟 / T4 锚点回放 / reconcile / rebuild / idempotency / report"
+requires-python = ">=3.11"
+dependencies = [
+    "audit-pipeline",   # 依赖方向:eval → pipeline → common
+    "rapidfuzz>=3.6",   # T4 锚点回放模糊匹配
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["eval*"]

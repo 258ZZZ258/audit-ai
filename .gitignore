@@ -13,3 +13,16 @@ _web_uploads/
 
 # report JSON 快照(生成物,不入库)
 /reports/
+
+# codegraph 本地索引(Step 6 接入,不入库)
+.codegraph/
+
+# 升格过渡期临时渲染/重存目录(工作树杂物,不入库)
+/rendered_fusion*/
+/lo_resave/
+/.understand-anything/
+
+# 用户意留未跟踪(不入库):AGENTS.md / cursor 本地设置 / Office 临时锁文件
+/AGENTS.md
+/.cursor/settings.json
+~$*

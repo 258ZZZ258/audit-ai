@@ -1,3 +1,14 @@
+# ── audit-ai workspace 根(原地升格中,分支 migrate/audit-ai-skeleton)──────────────────
+# 本仓正从单包 demo 升格为 audit-ai monorepo。workspace 成员**只此三个**(严禁新增
+# libs/rag|orchestration|doc_compare|report_gen 或 services/*——它们仅为 CP-009 约定,
+# 待第一份真实代码/第二个消费方出现再创建):
+[tool.audit_workspace]
+members = ["libs/common", "pipeline", "eval"]
+# 依赖方向:pipeline → common;eval → pipeline → common;common 不依赖任何上层。
+# setuptools 无原生 workspace,成员各自 `pip install -e <member>`(见各成员 pyproject)。
+# 过渡:源码暂仍在 src/pipeline(Step 2–4 用 git mv 入各成员);下面的 [project] 暂保 src-layout
+# 让现有套件可装可测,Step 3 源码就位后翻为聚合根。详见 docs/migration-manifest.md。
+
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
