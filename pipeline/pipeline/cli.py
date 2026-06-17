@@ -41,12 +41,9 @@ from pipeline.stage_base import StageContext, StageResult
 from pipeline.stages import finalize, s1_parse, s2_qc, s3_structure, s4_meta, s5_embed_index
 from pipeline.stages.s0_register import register_batch
 from pipeline.states import REPROCESS_RESET_FROM, PipelineState
-from pipeline.verify.anchor_replay import run_replay
-from pipeline.verify.idempotency import check_idempotency
-from pipeline.verify.rebuild import run_rebuild
-from pipeline.verify.reconcile import run_reconcile
-from pipeline.verify.report import build_report
-from pipeline.verify.smoke import run_smoke
+
+# 注:eval 验证组件(smoke/replay/reconcile/rebuild/idempotency/report)在各命令处理函数内**懒导入**,
+# 而非模块级——避免 pipeline 在 import 期依赖 eval(eval→pipeline,模块级反向会成包级环)。见 CP-009。
 
 #: 推进到此类终态(且带 supersedes)即自动版本切换(D1)。
 _INDEXED_STATES = frozenset({PipelineState.INDEXED.value, PipelineState.DEGRADED_INDEXED.value})
@@ -771,6 +768,8 @@ def verify_idempotency(
     manifest: Path | None = typer.Option(None, "--manifest", "-m", help="默认 <dir>/manifest.xlsx"),
 ) -> None:
     """V5:对已入库批次重复 ingest,断言 chunk_id 集合 + Milvus 实体数不变、第二次有去重留痕。"""
+    from eval.idempotency import check_idempotency  # 懒导入(避免 pipeline 模块级依赖 eval)
+
     pg, ctx = _pg_milvus_context()  # 需 milvus(count);走 s0 去重、不重嵌入 → 不构造模型
     report = check_idempotency(ctx, directory, manifest or (directory / "manifest.xlsx"))
     for line in report.lines:
@@ -804,6 +803,8 @@ def _indexed_dvids(pg: PgIO, batch: str | None, *, effective_only: bool = False)
 @verify_app.command("smoke")
 def verify_smoke(batch: str | None = _BATCH_OPT) -> None:
     """T2 批次冒烟(V7):每件合成查询命中 + 携带 status 过滤位;通过率 100% 即过,有失败非零退出。"""
+    from eval.smoke import run_smoke  # 懒导入
+
     pg, ctx = _worker_context()  # 需 embedding 编码合成查询 + milvus 检索
     dvids = _indexed_dvids(pg, batch, effective_only=True)  # superseded 默认不可见,排除
     if not dvids:
@@ -822,6 +823,8 @@ def verify_smoke(batch: str | None = _BATCH_OPT) -> None:
 @verify_app.command("replay")
 def verify_replay(batch: str | None = _BATCH_OPT) -> None:
     """T4 锚点回放(V3):逐 chunk 在原件页定位;表格/降级豁免;100% 即过,有未匹配非零退出。"""
+    from eval.anchor_replay import run_replay  # 懒导入
+
     pg, ctx = _context()  # replay 比对 chunk 文本 vs 原件页:只需 PG + object_store(无 milvus/模型)
     dvids = _indexed_dvids(pg, batch)
     if not dvids:
@@ -838,6 +841,8 @@ def verify_replay(batch: str | None = _BATCH_OPT) -> None:
 @verify_app.command("reconcile")
 def verify_reconcile(batch: str | None = _BATCH_OPT) -> None:
     """对账:逐 doc PG 块数 vs Milvus,不平以 PG 重灌;全部一致即过,否则非零退出。"""
+    from eval.reconcile import run_reconcile  # 懒导入
+
     pg, ctx = _pg_milvus_context()  # 需 milvus(count/回灌);不编码 → 不构造模型
     with pg.session() as s:
         q = select(Chunk.doc_version_id).distinct()
@@ -861,6 +866,8 @@ def verify_reconcile(batch: str | None = _BATCH_OPT) -> None:
 @app.command()
 def rebuild() -> None:
     """V6:drop Milvus collection → 从 PG chunks + bytea 冷备零编码全量重灌。"""
+    from eval.rebuild import run_rebuild  # 懒导入
+
     pg, ctx = _pg_milvus_context()  # 冷备零编码回灌:需 milvus,不构造模型
     r = run_rebuild(ctx)
     typer.echo(
@@ -880,6 +887,8 @@ def report(batch: str = typer.Argument(..., help="批次 id")) -> None:
 
     输出控制台摘要 + JSON,并把快照落库到 import_batches.report。
     """
+    from eval.report import build_report  # 懒导入
+
     pg, ctx = _pg_milvus_context()  # 仅探 retrieval_mode:需 milvus,不构造模型
     rep = build_report(ctx, batch)
     if rep["doc_count"] == 0:

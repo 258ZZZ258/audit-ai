@@ -26,6 +26,7 @@ from common.pg_models import (
     RemediationRecord,
     ReviewQueue,
 )
+from eval.idempotency import check_idempotency
 from pipeline import cli
 from pipeline.config import load_config
 from pipeline.index import corpus_rows
@@ -34,7 +35,6 @@ from pipeline.index.milvus_io import MilvusIO, dense_to_bytes, sparse_to_bytes
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
 from pipeline.stage_base import StageContext
-from pipeline.verify.idempotency import check_idempotency
 
 runner = CliRunner()
 

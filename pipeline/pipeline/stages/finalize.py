@@ -73,8 +73,8 @@ def _run_verify(ctx: StageContext, dvid: str) -> None:
     t4_rate = None
     error = None
     try:
-        from pipeline.verify.anchor_replay import run_replay
-        from pipeline.verify.smoke import run_smoke
+        from eval.anchor_replay import run_replay
+        from eval.smoke import run_smoke
 
         t4 = run_replay(ctx, [dvid])
         t4_pass, t4_rate = t4.passed, t4.pass_rate

@@ -75,7 +75,7 @@ def test_finalize_records_t4_failure(indexed_doc, monkeypatch):
     def _boom(*a, **k):
         raise FileNotFoundError("rendition missing")
 
-    monkeypatch.setattr("pipeline.verify.anchor_replay.run_replay", _boom)
+    monkeypatch.setattr("eval.anchor_replay.run_replay", _boom)
     finalize._run_verify(ctx, dvid)  # 不应抛(异常被吞为失败留痕)
 
     v = _latest_verify(pg, dvid)
@@ -94,14 +94,14 @@ def test_finalize_preserves_t4_when_t2_errors(indexed_doc, monkeypatch):
         embedding=object(), milvus=object(),
     )
     monkeypatch.setattr(
-        "pipeline.verify.anchor_replay.run_replay",
+        "eval.anchor_replay.run_replay",
         lambda *a, **k: SimpleNamespace(passed=True, pass_rate=1.0),
     )
 
     def _boom(*a, **k):
         raise RuntimeError("milvus search failed")
 
-    monkeypatch.setattr("pipeline.verify.smoke.run_smoke", _boom)
+    monkeypatch.setattr("eval.smoke.run_smoke", _boom)
     finalize._run_verify(ctx, dvid)
 
     v = _latest_verify(pg, dvid)

@@ -19,14 +19,14 @@ from common.pg_models import (
     RemediationRecord,
     ReviewQueue,
 )
+from eval.report import build_report
+from eval.smoke import run_smoke
 from pipeline.config import load_config
 from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
 from pipeline.stage_base import StageContext
-from pipeline.verify.report import build_report
-from pipeline.verify.smoke import run_smoke
 
 
 @pytest.fixture(scope="module")

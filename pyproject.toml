@@ -48,5 +48,5 @@ known-first-party = ["common", "pipeline", "eval"]
 [tool.pytest.ini_options]
 # pipeline 包在 pipeline/(import 名 pipeline);契约层 common 在 libs/common/。
 # 过渡:pipeline 单测暂留 tests/(Step 4 与 verify 一起共置到各包);契约 pin 在 libs/common/tests。
-pythonpath = ["pipeline", "libs/common"]
-testpaths = ["tests", "libs/common/tests"]
+pythonpath = ["pipeline", "libs/common", "eval"]
+testpaths = ["tests", "libs/common/tests", "eval/tests"]

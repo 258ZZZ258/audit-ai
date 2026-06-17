@@ -1,7 +1,8 @@
-"""A3 · 对账 reconcile 测试(连 PG + Milvus,**免模型**,合成向量)。
+"""A4 · rebuild 测试(连 PG + Milvus,**免模型**,合成向量)。
 
-seed 一个"已索引"件(chunks + 冷备 + Milvus effective)→ 删部分 Milvus 实体造不平 →
-`run_reconcile` 检出 E701 + 以 PG 冷备重灌 → 复检一致;已一致时 reconciled=False(no-op)。
+seed 一个"已索引"件(chunks + 冷备 + Milvus)→ 记 drop 前对该件向量的 top 查命中 → `run_rebuild`
+(drop 全集 + 从 PG 冷备零编码全量重灌)→ 断言该件 count 恢复、全集 count == PG 全量、同查询命中集一致
+(向量 bit 一致 → 重建无漂移,即 V6 "top10 一致")。注:rebuild 全局,亦把库内其他 PG 件一并回灌。
 """
 
 import pytest
@@ -9,16 +10,17 @@ from sqlalchemy import delete, text
 from ulid import ULID
 
 from common.pg_models import Chunk, Document, DocVersion, ImportBatch, PipelineEvent
+from eval.rebuild import run_rebuild
 from pipeline.config import load_config
 from pipeline.index import corpus_rows
 from pipeline.index.milvus_io import MilvusIO, dense_to_bytes, sparse_to_bytes
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
 from pipeline.stage_base import StageContext
-from pipeline.verify.reconcile import run_reconcile
 
-DENSE = [float((i * 5) % 11) + 0.3 for i in range(1024)]
-SPARSE = {"2": 0.8, "7": 0.4}
+# 唯一向量(区别于库内真实 BGE-M3 向量,使本件块在自查询中稳居 top)
+DENSE = [float((i * 3) % 7) + 0.11 for i in range(1024)]
+SPARSE = {"3": 0.9, "11": 0.5}
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +46,7 @@ def stack():
 @pytest.fixture
 def seeded(stack):
     pg, mio, ctx = stack
-    bid, lid, dvid = "rc_" + str(ULID()), str(ULID()), str(ULID())
+    bid, lid, dvid = "rb_" + str(ULID()), str(ULID()), str(ULID())
     n = 3
     with pg.session() as s:
         s.add(ImportBatch(batch_id=bid, source_dir="x"))
@@ -67,7 +69,7 @@ def seeded(stack):
                     dense_vec_cold=dense_to_bytes(DENSE), sparse_vec_cold=sparse_to_bytes(SPARSE),
                 )
             )
-    mio.upsert(corpus_rows.rows_from_cold(pg, dvid))  # status=None → 按存储 effective
+    mio.upsert(corpus_rows.rows_from_cold(pg, dvid))
     mio.flush()
     yield pg, mio, ctx, dvid, n
     mio.delete(dvid)
@@ -80,34 +82,34 @@ def seeded(stack):
         s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
 
 
-def test_reconcile_detects_mismatch_and_reloads(seeded):
+def _topk_ids(mio, dvid, k=10):
+    # 限本件向量自查询,取命中里属本件的 chunk_id 集(避开库内其他件干扰)
+    res = mio.search(DENSE, SPARSE, topk=k)
+    return {h["chunk_id"] for h in res.hits if h["doc_version_id"] == dvid}
+
+
+def test_rebuild_reloads_from_cold_zero_encode(seeded):
     pg, mio, ctx, dvid, n = seeded
-    assert mio.count(dvid) == n  # 初始一致
-    mio.delete(dvid)  # 造不平:Milvus 少了
-    mio.flush()
-    assert mio.count(dvid) == 0
+    before_ids = _topk_ids(mio, dvid)
+    assert before_ids and mio.count(dvid) == n
 
-    r = run_reconcile(ctx, [dvid])
-    rec = next(d for d in r.per_doc if d["dvid"] == dvid)
-    assert rec["pg"] == n and rec["milvus"] == 0  # 检出不平
-    assert rec["error_code"] == "E701" and rec["reconciled"] and rec["after"] == n  # 以 PG 重灌
-    assert r.consistent
-    assert mio.count(dvid) == n  # 复检一致
+    result = run_rebuild(ctx)
+    assert result.after_count == result.chunks_reloaded  # 纯 insert,计数干净
+    assert result.docs >= 1 and result.chunks_reloaded >= n
 
-
-def test_reconcile_consistent_is_noop(seeded):
-    pg, mio, ctx, dvid, n = seeded
-    r = run_reconcile(ctx, [dvid])
-    rec = next(d for d in r.per_doc if d["dvid"] == dvid)
-    assert rec["pg"] == n and rec["milvus"] == n and rec["reconciled"] is False
-    assert r.consistent
+    # 该件恢复 + 同查询命中集一致(向量 bit 一致 → 无漂移,V6)
+    assert mio.count(dvid) == n
+    assert _topk_ids(mio, dvid) == before_ids
+    # 全集 == PG 全量可回灌块(rebuild 后 Milvus = PG 权威;未嵌入 staging 块本就无投影,排除)
+    pg_total = sum(len(corpus_rows.reloadable_chunks(pg, d)) for d in pg.chunk_doc_version_ids())
+    assert mio.count() == pg_total
 
 
 @pytest.fixture
 def staging_doc(stack):
-    """META_REVIEW 态件:有非 parent chunk 但 chunk_status=staging、无冷备、无 Milvus 投影。"""
+    """META_REVIEW 态件:有非 parent chunk 但 chunk_status=staging、**无冷备**、无 Milvus 投影。"""
     pg, mio, ctx = stack
-    bid, lid, dvid = "rc_st_" + str(ULID()), str(ULID()), str(ULID())
+    bid, lid, dvid = "rb_st_" + str(ULID()), str(ULID()), str(ULID())
     n = 3
     with pg.session() as s:
         s.add(ImportBatch(batch_id=bid, source_dir="x"))
@@ -139,14 +141,36 @@ def staging_doc(stack):
         s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
 
 
-def test_reconcile_skips_unembedded_intermediate(staging_doc):
-    """回归(P1b):META_REVIEW 件 PG 有块、Milvus 本就该空——应判一致、**不**误当缺失走重灌
-    (旧实现以 indexable 计 pg=n≠milvus=0 → 进 rows_from_cold,对 None 冷备反序列化崩)。"""
-    pg, mio, ctx, dvid, n = staging_doc
-    assert mio.count(dvid) == 0  # 未嵌入 → 本就无投影
-    r = run_reconcile(ctx, [dvid])  # 不应抛
-    rec = next(d for d in r.per_doc if d["dvid"] == dvid)
-    assert rec["pg"] == 0 and rec["milvus"] == 0  # 应有投影=reloadable(非 parent 且冷备齐全)=0
-    assert rec["reconciled"] is False  # 一致 → 不重灌
-    assert r.consistent
-    assert mio.count(dvid) == 0  # 未被误灌
+def test_rows_from_cold_strict_vs_skip(staging_doc):
+    """P2:有非 parent 块但冷备缺失时,strict 抛(s5/finalize 用),跳过式返 []（维护用)。"""
+    from pipeline.index.corpus_rows import (
+        ColdBackupIncomplete,
+        rows_from_cold,
+        rows_from_cold_strict,
+    )
+    pg, _mio, _ctx, sdvid, _n = staging_doc
+    assert rows_from_cold(pg, sdvid) == []  # 跳过式:无冷备块跳过,不崩
+    with pytest.raises(ColdBackupIncomplete):  # 严格式:有非 parent 块却缺冷备 → 抛
+        rows_from_cold_strict(pg, sdvid, "effective")
+
+
+def test_rebuild_skips_unembedded_without_data_loss(seeded, staging_doc):
+    """回归(P1a):库内有 META_REVIEW 件(有块无冷备)时,rebuild 不得在 drop 后对 None 冷备反序列化崩。
+
+    旧实现先 drop 全集再遍历,崩在半路 = 集合已空丢数据。应:不抛、已索引件块全恢复、未嵌入件零回灌。
+    """
+    pg, mio, ctx, dvid, n = seeded
+    _pg, _mio, _ctx, sdvid, _sn = staging_doc
+    before_ids = _topk_ids(mio, dvid)
+    assert before_ids and mio.count(dvid) == n
+
+    run_rebuild(ctx)  # 不应抛(旧实现遇 staging 件在 drop 后崩)
+
+    # 已索引件:块全恢复、同查询命中一致(未因另一件缺冷备而被半路清空丢失)
+    assert mio.count(dvid) == n
+    assert _topk_ids(mio, dvid) == before_ids
+    # 未嵌入件:无冷备 → 零回灌、Milvus 无该件投影
+    assert mio.count(sdvid) == 0
+    # 全集 == PG 可回灌块(staging 件的块被排除)
+    pg_total = sum(len(corpus_rows.reloadable_chunks(pg, d)) for d in pg.chunk_doc_version_ids())
+    assert mio.count() == pg_total

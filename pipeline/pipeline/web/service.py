@@ -30,11 +30,9 @@ from common.pg_models import (
 from pipeline import cli
 from pipeline.queue import dispose
 from pipeline.stages.s0_register import register_batch
-from pipeline.verify.anchor_replay import run_replay
-from pipeline.verify.rebuild import run_rebuild
-from pipeline.verify.reconcile import run_reconcile
-from pipeline.verify.report import build_report
-from pipeline.verify.smoke import run_smoke
+
+# 注:eval 验证组件在 run_verify / batch_report 内**懒导入**,避免 pipeline.web 模块级依赖 eval
+# (eval→pipeline,模块级反向会成包级环)。见 CP-009。
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 UPLOAD_ROOT = REPO_ROOT / "_web_uploads"
@@ -636,6 +634,11 @@ def reprocess_doc(doc_version_id: str, operator: str = "web") -> dict[str, Any]:
 
 
 def run_verify(name: str, batch_id: str | None = None) -> dict[str, Any]:
+    from eval.anchor_replay import run_replay  # 懒导入(避免 pipeline.web 模块级依赖 eval)
+    from eval.rebuild import run_rebuild
+    from eval.reconcile import run_reconcile
+    from eval.smoke import run_smoke
+
     if name == "rebuild":
         _pg, ctx = _pgm()
         return {"result": asdict(run_rebuild(ctx))}
@@ -659,6 +662,8 @@ def run_verify(name: str, batch_id: str | None = None) -> dict[str, Any]:
 
 
 def batch_report(batch_id: str) -> dict[str, Any]:
+    from eval.report import build_report  # 懒导入
+
     pg, ctx = _pgm()
     rep = build_report(ctx, batch_id)
     if rep["doc_count"] == 0:

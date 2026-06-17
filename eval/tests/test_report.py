@@ -22,12 +22,12 @@ from common.pg_models import (
     PipelineEvent,
     ReviewQueue,
 )
+from eval.report import build_report
 from pipeline import cli
 from pipeline.config import load_config
 from pipeline.index.milvus_io import MilvusIO
 from pipeline.index.pg_io import PgIO
 from pipeline.stage_base import StageContext
-from pipeline.verify.report import build_report
 
 runner = CliRunner()
 

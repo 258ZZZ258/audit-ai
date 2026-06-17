@@ -18,6 +18,12 @@ from common.pg_models import (
     PipelineEvent,
     ReviewQueue,
 )
+from eval.anchor_replay import (
+    _matches,
+    _strip_breadcrumb,
+    _window_text,
+    run_replay,
+)
 from pipeline.cli import _build_stages
 from pipeline.config import load_config
 from pipeline.index.object_store import ObjectStore
@@ -25,12 +31,6 @@ from pipeline.index.pg_io import PgIO
 from pipeline.orchestrator import Orchestrator
 from pipeline.stage_base import StageContext
 from pipeline.stages.s0_register import register_batch
-from pipeline.verify.anchor_replay import (
-    _matches,
-    _strip_breadcrumb,
-    _window_text,
-    run_replay,
-)
 
 
 # ── 纯核(always-run)─────────────────────────────────────────────
