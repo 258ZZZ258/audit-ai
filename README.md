@@ -7,7 +7,7 @@
 **制度查询 / 制度比对等智能体代码后续加入本仓**(布局约定与抽包触发见 CP-009)。
 
 > 架构与硬契约见 `CLAUDE.md`(底部「模块开发记忆索引」→ 各包内 `*_devlog.md`);文档处理子系统规格见
-> `SPEC*.md` / `PLAN*.md` / `TASKS*.md`;设计依据 `docs/文档处理与语料库构建_技术框架设计_v1.6.md`、
+> `docs/file-processing-workflow-docs/SPEC*.md` / `docs/file-processing-workflow-docs/PLAN*.md` / `docs/file-processing-workflow-docs/TASKS*.md`;设计依据 `docs/文档处理与语料库构建_技术框架设计_v1.6.md`、
 > `docs/制度查询与制度比对智能体_RAG技术框架设计_v1.5.md`。本文件只讲怎么跑起来。
 
 ## 仓库结构(workspace)

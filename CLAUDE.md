@@ -5,7 +5,7 @@
 
 > **本文件只放"始终要遵守的核心"——契约、架构、约定。** 各模块的**开发记忆 / 决策 / 踩坑**已拆到
 > 各包内 `*_devlog.md`(见底部「模块开发记忆索引」),**改某模块前按需读对应 devlog**(lazy,不全量进 context)。
-> 时间轴全叙事在 `docs/devlog.md`。改契约前先读 `SPEC*.md`("裁机制不裁契约":cut mechanisms, never cut contracts)。
+> 时间轴全叙事在 `docs/devlog.md`。改契约前先读 `docs/file-processing-workflow-docs/SPEC*.md`("裁机制不裁契约":cut mechanisms, never cut contracts)。
 
 ## 项目状态
 
@@ -122,5 +122,5 @@ T2 冒烟(V7)· T4 锚点回放(V3)· reconcile(PG↔Milvus 对账)· rebuild(V6
 | Web 工作台 | `pipeline/pipeline/web/` | `pipeline/pipeline/web/web_devlog.md` |
 | audit-ai 升格 | (全仓) | `docs/migration_devlog.md` + `docs/CP-009-仓库与升格规范.md` |
 
-> 时间轴全叙事(按阶段 A/B/C/D/M2/M3/W/升格):`docs/devlog.md`。规格:`SPEC*.md` / `PLAN*.md` / `TASKS*.md`;
+> 时间轴全叙事(按阶段 A/B/C/D/M2/M3/W/升格):`docs/devlog.md`。规格:`docs/file-processing-workflow-docs/SPEC*.md` / `docs/file-processing-workflow-docs/PLAN*.md` / `docs/file-processing-workflow-docs/TASKS*.md`;
 > 上游生产设计:`docs/文档处理与语料库构建_技术框架设计_v1.6.md`、`docs/制度查询与制度比对智能体_RAG技术框架设计_v1.5.md`。
