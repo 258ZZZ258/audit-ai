@@ -1,14 +1,19 @@
 """version_chain 单测(纯逻辑,无 PG)。"""
 
+import datetime
+
 from pipeline.meta.version_chain import (
     SUPPORTED,
     classify,
     detect_split_targets,
+    live_status,
     parse_supersedes,
 )
 from pipeline.meta.version_chain import (
     RelationType as RT,
 )
+
+_TODAY = datetime.date(2026, 6, 18)
 
 
 def test_parse_none():
@@ -52,3 +57,17 @@ def test_classify_split_upgrade():
 def test_supported_set():
     assert SUPPORTED == {RT.REVISE_REPLACE, RT.ABOLISH_ONLY}
     assert RT.MERGE not in SUPPORTED and RT.SPLIT_REPLACE not in SUPPORTED
+
+
+def test_live_status_future_is_upcoming():
+    assert live_status(_TODAY + datetime.timedelta(days=1), _TODAY) == "upcoming"
+    assert live_status(datetime.date(2099, 1, 1), _TODAY) == "upcoming"
+
+
+def test_live_status_past_or_today_is_effective():
+    assert live_status(_TODAY - datetime.timedelta(days=1), _TODAY) == "effective"
+    assert live_status(_TODAY, _TODAY) == "effective"  # 当日生效 = effective(非未来)
+
+
+def test_live_status_none_is_effective():
+    assert live_status(None, _TODAY) == "effective"  # 无生效日 → 立即 effective

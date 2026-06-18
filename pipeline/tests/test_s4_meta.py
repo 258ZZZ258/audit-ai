@@ -7,7 +7,14 @@ from sqlalchemy import delete, select, text
 from ulid import ULID
 
 from common.ir import Block, BlockType, IRDocument, SourceFormat
-from common.pg_models import Document, DocVersion, ImportBatch, PipelineEvent, ReviewQueue
+from common.pg_models import (
+    Case,
+    Document,
+    DocVersion,
+    ImportBatch,
+    PipelineEvent,
+    ReviewQueue,
+)
 from pipeline.config import load_config
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
@@ -39,6 +46,7 @@ def env(pg, tmp_path):
         if dvids:
             s.execute(delete(ReviewQueue).where(ReviewQueue.doc_version_id.in_(dvids)))
             s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id.in_(dvids)))
+            s.execute(delete(Case).where(Case.doc_version_id.in_(dvids)))
             s.execute(delete(DocVersion).where(DocVersion.doc_version_id.in_(dvids)))
         if lids:
             s.execute(delete(Document).where(Document.logical_id.in_(lids)))
@@ -138,3 +146,75 @@ def test_conflict_enqueues_meta_confirm(env):
     assert res.queue is not None and res.queue.queue_type == "meta_confirm"
     fields = [c["field"] for c in res.queue.evidence["conflicts"]]
     assert "doc_number" in fields
+
+
+def _seed_case(ctx, bids) -> str:
+    """落 P-CASE 决定书(STRUCTURING)+ put_ir(头部机构 + 文号 + 当事人 + 金额 + 落款日期)。"""
+    bid, lid, dvid = "s4_" + str(ULID()), str(ULID()), str(ULID())
+    bids.append(bid)
+    p = BlockType.PARAGRAPH
+    ir = IRDocument(
+        doc_version_id=dvid, source_format=SourceFormat.DOCX, title="某某行政处罚决定书",
+        blocks=[
+            Block(index=0, type=p, text="北京证监局", page=1),
+            Block(index=1, type=p, text="京证监〔2024〕5号", page=1),
+            Block(index=2, type=p, text="当事人:某某证券有限公司,住所地北京市。", page=1),
+            Block(index=3, type=p, text="经查,该公司存在违规行为。", page=1),
+            Block(index=4, type=p, text="现决定:对当事人处以罚款50万元。", page=1),
+            Block(index=5, type=p, text="2024年3月15日", page=1),
+        ],
+    )
+    ctx.db.add(ImportBatch(batch_id=bid, source_dir="x"))
+    ctx.db.add(Document(logical_id=lid, corpus_type="P-CASE"))
+    ctx.db.add(
+        DocVersion(
+            doc_version_id=dvid, logical_id=lid, batch_id=bid, source_format="docx",
+            source_hash="h" + dvid[:8], raw_object_key="k", pipeline_status=PS.STRUCTURING.value,
+            issuer="北京证监局", title="某某行政处罚决定书",
+        )
+    )
+    ctx.object_store.put_ir(ir)
+    return dvid
+
+
+def test_pcase_s4_writes_case_row(env):
+    # P-CASE 件经 s4 后写一行 cases(规则抽取);P-INT/P-EXT/P-QA 不写。
+    # 常规闸行为不变:无冲突无 supersedes 件按 config 默认(auto_confirm)放行 EMBEDDING。
+    ctx, bids = env
+    dvid = _seed_case(ctx, bids)
+    res = s4.run(ctx, dvid)
+    assert res.next_state in (PS.EMBEDDING, PS.META_REVIEW)  # 案例抽取不改 s4 闸语义
+    row = ctx.db.get_case(dvid)
+    assert row is not None
+    assert row.penalty_org == "北京证监局"
+    assert row.doc_number == "京证监[2024]5号"
+    assert row.penalty_date == date(2024, 3, 15)
+    assert row.respondent == "某某证券有限公司" and row.respondent_type == "机构"
+    assert row.amount_wan == 50.0
+    assert "罚款" in row.penalty_type
+    # L2 字段留空
+    assert row.violation_category is None and row.cited_regulations == []
+    assert row.ref_unresolved is False
+
+
+def test_pint_s4_writes_no_case_row(env):
+    # P-INT 件 s4 不触 cases 表(P-INT/P-EXT/P-QA 行为不变)。
+    ctx, bids = env
+    dvid = _seed(
+        ctx, bids, doc_number="京证监〔2024〕5号", issue_date=date(2024, 1, 1), title="某办法"
+    )
+    s4.run(ctx, dvid)
+    assert ctx.db.get_case(dvid) is None
+
+
+def test_upsert_case_get_case_round_trip(env):
+    # pg_io.upsert_case/get_case 直连 PG 往返(upsert 覆盖安全)。
+    ctx, bids = env
+    dvid = _seed_case(ctx, bids)
+    ctx.db.upsert_case(dvid, {"penalty_org": "甲局", "amount_wan": 10.0, "respondent_type": "个人"})
+    row = ctx.db.get_case(dvid)
+    assert row.penalty_org == "甲局" and row.amount_wan == 10.0
+    # 再次 upsert 覆盖(merge 幂等)
+    ctx.db.upsert_case(dvid, {"penalty_org": "乙局", "amount_wan": 20.0})
+    row2 = ctx.db.get_case(dvid)
+    assert row2.penalty_org == "乙局" and row2.amount_wan == 20.0

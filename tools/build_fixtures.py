@@ -340,21 +340,26 @@ def _verify_bad() -> None:
 BATCH02 = ROOT / "fixtures" / "batch02_revision"
 BATCH02_SOURCES = Path(__file__).resolve().parent / "fixtures_batch02_sources.csv"
 
-#: manifest 9 必填列契约(B2 s0 解析须一致;后续可上提到 pipeline 作为单一来源)
+#: manifest 必填列契约(§3.1;B2 s0 解析须一致)。V1.6 增 sub_type + effective_date。
 MANIFEST_COLS = [
     "filename", "title", "doc_number", "issuer", "perm_tag",
-    "corpus_type", "biz_domain", "issue_date", "supersedes",
+    "corpus_type", "biz_domain", "issue_date", "supersedes", "sub_type", "effective_date",
 ]
 
 
 def _row(
     filename: str, title: str, doc_number: str, issuer: str, perm_tag: str,
     corpus_type: str, biz_domain: str, issue_date: str = "", supersedes: str = "",
+    sub_type: str = "", effective_date: str = "",
 ) -> dict[str, str]:
+    # V1.6:sub_type 缺省按 corpus_type 派生;effective_date 缺省取 issue_date(生效=发布)
+    sub_type = sub_type or ("内规" if corpus_type == "P-INT" else "部门规章")
+    effective_date = effective_date or issue_date
     return {
         "filename": filename, "title": title, "doc_number": doc_number, "issuer": issuer,
         "perm_tag": perm_tag, "corpus_type": corpus_type, "biz_domain": biz_domain,
         "issue_date": issue_date, "supersedes": supersedes,
+        "sub_type": sub_type, "effective_date": effective_date,
     }
 
 

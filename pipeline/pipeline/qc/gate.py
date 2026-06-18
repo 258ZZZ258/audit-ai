@@ -1,4 +1,7 @@
-"""QC gate:跑全部七指标 → QcReport(任一不达标即 failed;任一落边缘带即 marginal)。"""
+"""QC gate:按 profile 选指标集 → QcReport(任一不达标即 failed;任一落边缘带即 marginal)。
+
+P-INT/P-EXT 跑条款树全七项;P-QA 跑问答四项(见 ``indicators.indicators_for``)。
+"""
 
 from __future__ import annotations
 
@@ -6,7 +9,7 @@ from dataclasses import dataclass
 
 from common.ir import IRDocument
 from pipeline.config import QcThresholds
-from pipeline.qc.indicators import ALL_INDICATORS, IndicatorResult
+from pipeline.qc.indicators import IndicatorResult, indicators_for
 
 
 @dataclass
@@ -35,5 +38,8 @@ class QcReport:
         }
 
 
-def evaluate(ir: IRDocument, thresholds: QcThresholds) -> QcReport:
-    return QcReport([fn(ir, thresholds) for fn in ALL_INDICATORS])
+def evaluate(
+    ir: IRDocument, thresholds: QcThresholds, corpus_type: str = "P-INT"
+) -> QcReport:
+    """按 corpus_type 选指标集跑 QC;P-INT/P-EXT/未知 → 条款树全七项,P-QA → 问答四项。"""
+    return QcReport([fn(ir, thresholds) for fn in indicators_for(corpus_type)])

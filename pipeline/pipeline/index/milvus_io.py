@@ -37,19 +37,25 @@ _OUTPUT_FIELDS = [
 
 @dataclass
 class CorpusRow:
-    """一条待 upsert 的语料行(s5 从 chunk + 嵌入 + 文档元数据组装)。"""
+    """一条待 upsert 的语料行(s5 从 chunk + 嵌入 + 文档元数据组装)。字段对齐生产 §8.2。"""
 
     chunk_id: str
     dense: list[float]
     sparse: dict[str, float]  # token_id(str)→权重;upsert 内转 {int: float}
+    doc_id: str  # 逻辑文档 ID(跨版本)
     doc_version_id: str
     corpus_type: str
-    status: str  # staging | effective | superseded
-    perm_tag: str
-    biz_domain: str
-    issuer_level: str
+    sub_type: str
+    status: str  # staging | effective | superseded | abolished | upcoming
+    perm_tag: list[str]  # ARRAY(§8.2);demo 单值包成单元素 list
+    biz_domain: list[str]  # ARRAY(§8.2)
+    issuer_level: int  # INT8(§8.2);文本分层经 corpus_rows 映射
+    entity_type: list[str]  # ARRAY(§8.2;CP-007,E2 富集,预留)
+    chunk_type: str  # clause | table | …
     clause_path: str
     page_start: int
+    effective_date: int  # yyyymmdd(0=未知)
+    text: str  # 截断文本(检索-重排一跳;展示回查 PG)
     degraded: bool
 
 
@@ -86,14 +92,20 @@ def _to_milvus_dict(r: CorpusRow) -> dict:
         "chunk_id": r.chunk_id,
         "dense_vec": r.dense,
         "sparse_vec": _sparse_for_milvus(r.sparse),
+        "doc_id": r.doc_id,
         "doc_version_id": r.doc_version_id,
         "corpus_type": r.corpus_type,
+        "sub_type": r.sub_type,
         "status": r.status,
         "perm_tag": r.perm_tag,
         "biz_domain": r.biz_domain,
         "issuer_level": r.issuer_level,
+        "entity_type": r.entity_type,
+        "chunk_type": r.chunk_type,
         "clause_path": r.clause_path,
         "page_start": r.page_start,
+        "effective_date": r.effective_date,
+        "text": r.text,
         "degraded": r.degraded,
     }
 

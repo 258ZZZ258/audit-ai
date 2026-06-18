@@ -37,7 +37,7 @@ from pipeline.stages.s0_register import register_batch
 
 _MANIFEST_COLS = [
     "filename", "title", "doc_number", "issuer", "perm_tag",
-    "corpus_type", "biz_domain", "issue_date", "supersedes",
+    "corpus_type", "biz_domain", "issue_date", "supersedes", "sub_type", "effective_date",
 ]
 
 
@@ -62,7 +62,9 @@ def _clean_docx(tmp_path):
     wb.active.append(_MANIFEST_COLS)
     # doc_number 设值但 body 无可抽文号 → meta.doc_numbers 空 → 不冲突(同 unique_docx 套路)
     dn = f"测试第{tag[:6]}号"
-    wb.active.append([fn, title, dn, "INTERNAL", "内部", "P-INT", "LEGAL", None, None])
+    wb.active.append(
+        [fn, title, dn, "INTERNAL", "内部", "P-INT", "LEGAL", None, None, "内规", None]
+    )
     mp = d / "manifest.xlsx"
     wb.save(mp)
     return d, mp

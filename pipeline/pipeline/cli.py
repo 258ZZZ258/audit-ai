@@ -28,7 +28,8 @@ from common.pg_models import (
     ReviewQueue,
 )
 from pipeline.config import load_config
-from pipeline.enrich import e1_obligation
+from pipeline.enrich import e1_obligation, e2_tag
+from pipeline.index import corpus_rows
 from pipeline.index.corpus_rows import ColdBackupIncomplete
 from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
@@ -78,8 +79,8 @@ def up() -> None:
     _migrate()
     cfg = load_config()
     # seeds 随 config 入 pipeline(决策⑤);锚到 config 同级的 seeds/(与 reports 同口径,不随 cwd 漂移)
-    n_iss, n_dom = PgIO.from_config(cfg).seed_dicts(cfg.config_dir.parent / "seeds")
-    typer.echo(f"→ seed 字典:issuers={n_iss} biz_domains={n_dom}")
+    counts = PgIO.from_config(cfg).seed_dicts(cfg.config_dir.parent / "seeds")
+    typer.echo("→ seed 字典:" + " ".join(f"{k}={v}" for k, v in counts.items()))
     mio = MilvusIO(cfg)
     mio.connect()
     mio.create_collection()
@@ -113,20 +114,37 @@ def _safe_e1(fn, ctx: StageContext, dvid: str) -> None:
         logger.warning("E1 义务打标 %s(%s)失败(不阻断):%s", fn.__name__, dvid, e)
 
 
+def _safe_e2(ctx: StageContext, dvid: str) -> None:
+    """跑 E2 LLM 打标,LLMError / 任何异常吞掉记日志。
+
+    同 E1:富集无终态阻断权,不阻断 _structuring。
+    """
+    try:
+        e2_tag.run_e2(ctx, dvid)
+    except Exception as e:  # noqa: BLE001 E2(含 LLMError / 网络失败)不阻断管线
+        logger.warning("E2 条款级打标(%s)失败(不阻断):%s", dvid, e)
+
+
 def _structuring(ctx: StageContext, doc_version_id: str) -> StageResult:
     """STRUCTURING 复合(在装配层组合,守 CLAUDE.md「stage 之间不得互相 import」约束):
 
-    E1 富集(可选)→ s3 切块 → E1 打标 → s4 元数据。`e1_enabled` 时:**先 `clear`(在 s3
-    `replace_chunks` 删 chunk 之前,避 `clause_tags` 外键)→ s3 → `tag`**;E1 异常不阻断(`_safe_e1`)。
+    E1/E2 富集(可选)→ s3 切块 → E1/E2 打标 → s4 元数据。`e1_enabled`/`e2_enabled` 时:**先 `clear`
+    (在 s3 `replace_chunks` 删 chunk 之前,避 `clause_tags` 外键)→ s3 → `tag`/`run_e2`**;
+    E1/E2 异常不阻断(`_safe_e1`/`_safe_e2`)。E2 默认关 → 默认路径零 LLM(不构造 client)。
     s3 切块副作用写 chunks(StageResult 弃用)→ s4 交叉校验定 META_REVIEW(冲突时 meta_confirm 队列)。
-    s3/s4/e1 互不依赖、各自可测;最终态由 s4 决定。
+    s3/s4/e1/e2 互不依赖、各自可测;最终态由 s4 决定。
     """
     e1_on = ctx.config.toggles.e1_enabled
+    e2_on = ctx.config.toggles.e2_enabled
     if e1_on:
         _safe_e1(e1_obligation.clear, ctx, doc_version_id)  # 先于 s3 删 chunk,避 clause_tags FK
+    if e2_on:
+        _safe_e1(e2_tag.clear, ctx, doc_version_id)  # 同理:先清 E2 行再删 chunk(scope 限 E2)
     s3_structure.run(ctx, doc_version_id)
     if e1_on:
         _safe_e1(e1_obligation.tag, ctx, doc_version_id)
+    if e2_on:
+        _safe_e2(ctx, doc_version_id)  # 默认关 → 零 LLM;开时 run_e2 内含 clear 再打,异常吞掉
     return s4_meta.run(ctx, doc_version_id)
 
 
@@ -211,7 +229,8 @@ def _finalize_if_indexed(pg: PgIO, ctx: StageContext, dvid: str) -> str | None:
     try:
         result = finalize.run(ctx, dvid)
         if result.switched:
-            typer.echo(f"  版本切换:旧版 {result.old_dvid} → superseded")
+            old_status = "abolished" if dv.version_relation == "abolish_only" else "superseded"
+            typer.echo(f"  版本切换:旧版 {result.old_dvid} → {old_status}")
     except ColdBackupIncomplete as e:  # 旧版冷备缺失:已 INDEXED 但切换未完成 → 回带 error
         typer.echo(f"  ✗ 版本切换失败(旧版冷备缺失,可重试):{e}")
         return str(e)
@@ -754,6 +773,47 @@ def reprocess(
         typer.echo(f"✗ {e}")
         raise typer.Exit(1) from e
     typer.echo(f"✓ reprocess 完成 → {final}")
+
+
+# ── activate(upcoming → effective 手动上线)──────────────────────
+@app.command()
+def activate(
+    doc_version_id: str = typer.Argument(..., help="待上线的 doc_version_id(须为 upcoming)"),
+    operator: str = _OPERATOR,
+) -> None:
+    """手动把 upcoming 版本翻为 effective(夜间调度 trigger-driven/裁切,故手动)。
+
+    ① PG 翻 version_status + chunk_status → effective ② 从冷备重 upsert Milvus 行(status=effective)
+    翻可见 ③ 跑 finalize:此时 version_status==effective,其延后的 supersede 块触发(置旧版
+    superseded/abolished)。非 upcoming → 报错非零退出(无可上线)。
+    """
+    # 从冷备零编码回灌(re-upsert):需 milvus、不构造模型(同 rebuild/reconcile)。
+    pg, ctx = _pg_milvus_context()
+    dv = pg.get(DocVersion, doc_version_id)
+    if dv is None:
+        typer.echo(f"✗ 文档不存在: {doc_version_id}")
+        raise typer.Exit(1)
+    if dv.version_status != "upcoming":
+        typer.echo(f"✗ {doc_version_id} 非 upcoming(version_status={dv.version_status}),无可上线")
+        raise typer.Exit(1)
+    # PG 先翻 effective(version + chunk),再从冷备重 upsert Milvus(写序 PG→Milvus)。
+    pg.set_version_status(doc_version_id, "effective")
+    pg.set_chunk_status(doc_version_id, "effective")
+    if ctx.milvus is not None:
+        try:
+            rows = corpus_rows.rows_from_cold_strict(pg, doc_version_id, "effective")
+        except ColdBackupIncomplete as e:
+            typer.echo(f"✗ 上线失败(冷备缺失,可重试):{e}")
+            raise typer.Exit(1) from e
+        if rows:
+            ctx.milvus.upsert(rows)
+            ctx.milvus.flush()
+    typer.echo(f"✓ activate: {doc_version_id}  upcoming → effective")
+    # 跑延后的 supersede(现 version_status==effective,finalize 切换块触发;无 supersedes 则仅留痕)
+    err = _finalize_if_indexed(pg, ctx, doc_version_id)
+    if err is not None:
+        typer.echo(f"✗ activate 后版本切换失败,文档 {doc_version_id} 未完成切换")
+        raise typer.Exit(1)
 
 
 # ── verify(M1:idempotency;smoke/replay/reconcile 属 M2,D5 占位)──

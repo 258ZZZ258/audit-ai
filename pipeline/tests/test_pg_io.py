@@ -59,8 +59,9 @@ def doc_version(pg):
 
 
 def test_seed_dicts(pg):
-    n_iss, n_dom = pg.seed_dicts(REPO / "seeds")
-    assert n_iss >= 1 and n_dom >= 1
+    counts = pg.seed_dicts(REPO / "seeds")
+    assert counts["issuers"] >= 1 and counts["biz_domains"] >= 1
+    assert counts["entity_types"] >= 1 and counts["departments"] >= 1
     assert pg.get(DictIssuer, "CSRC").name == "中国证券监督管理委员会"
 
 

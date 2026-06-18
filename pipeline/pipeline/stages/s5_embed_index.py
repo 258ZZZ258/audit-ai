@@ -8,9 +8,12 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from common.pg_models import DocVersion
 from pipeline.index.corpus_rows import build_rows, indexable_chunks, rows_from_cold_strict
 from pipeline.index.milvus_io import dense_to_bytes, sparse_to_bytes
+from pipeline.meta.version_chain import live_status
 from pipeline.stage_base import StageContext, StageResult
 from pipeline.states import PipelineState
 
@@ -34,17 +37,23 @@ def embed(ctx: StageContext, doc_version_id: str) -> StageResult:
 
 
 def index(ctx: StageContext, doc_version_id: str) -> StageResult:
-    """INDEXING:flush → 全块就绪(count==)→ 从冷备重 upsert effective + flush + 翻状态 → 终态。"""
+    """INDEXING:flush → 全块就绪(count==)→ 从冷备重 upsert 上线态 + flush + 翻状态 → 终态。
+
+    上线态由 ``live_status`` 定(§1.1/§7.2):生效日在未来 → upcoming(默认检索不可见、不替代旧版,
+    待 ``demo activate`` 翻 effective),否则 effective。version_status 同步翻同值。
+    """
     dv = ctx.db.get(DocVersion, doc_version_id)
+    live = live_status(dv.effective_date, date.today())
     ctx.milvus.flush()  # 封 embed 的 staging upsert
     chunks = indexable_chunks(ctx.db, doc_version_id)
     indexed = ctx.milvus.count(doc_version_id)
     if indexed != len(chunks):  # 文档级全块就绪校验(写序不变量)
         raise RuntimeError(f"索引不齐:PG {len(chunks)} != Milvus {indexed}({doc_version_id})")
-    if chunks:  # 从 PG 冷备重建 effective 行 upsert(零重编码)→ 翻转可见
-        # 严格:任一块缺冷备即抛 → 文档不进 INDEXED(不可在缺投影下翻 effective)。维护命令才用跳过式。
-        ctx.milvus.upsert(rows_from_cold_strict(ctx.db, doc_version_id, "effective"))
+    if chunks:  # 从 PG 冷备重建上线行 upsert(零重编码)→ 翻转可见/暂不可见
+        # 严格:任一块缺冷备即抛 → 文档不进 INDEXED(不可在缺投影下翻状态)。维护命令才用跳过式。
+        ctx.milvus.upsert(rows_from_cold_strict(ctx.db, doc_version_id, live))
         ctx.milvus.flush()
-    ctx.db.set_chunk_status(doc_version_id, "effective")
+    ctx.db.set_chunk_status(doc_version_id, live)
+    ctx.db.set_version_status(doc_version_id, live)
     terminal = PipelineState.DEGRADED_INDEXED if dv.degraded else PipelineState.INDEXED
     return StageResult(next_state=terminal)

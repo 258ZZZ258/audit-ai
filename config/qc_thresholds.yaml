@@ -6,4 +6,5 @@ page_anchor_complete_min: 1.0   # 指标4 页码锚点完整率 = 100%
 table_empty_max: 0.05           # 指标5 空表占比 ≤5%
 text_garbled_max: 0.01          # 指标6 非 CJK 乱码占比 ≤1%
 extraction_sufficiency_min: 0.7 # 指标7 抽取充分性(字符数 / (页数×中位密度))≥0.7
+qa_pair_completeness_min: 0.95  # P-QA 专属:问答对完整率(完整对数 ÷ 问标记数)≥95%
 edge_band_epsilon: 0.02         # 边缘通过带 ε:落 [阈值, 阈值+ε] → qc_marginal 标记

@@ -13,6 +13,7 @@ demo 编码约定(生产语义见 V1.5,不在 repo):
 
 from __future__ import annotations
 
+import datetime
 import re
 from collections import Counter
 from enum import StrEnum
@@ -68,3 +69,14 @@ def classify(cell: str | None, *, split_targets: set[str]) -> tuple[RelationType
     if rel is RelationType.REVISE_REPLACE and targets and targets[0] in split_targets:
         return RelationType.SPLIT_REPLACE, targets
     return rel, targets
+
+
+def live_status(effective_date: datetime.date | None, today: datetime.date) -> str:
+    """上线时版本生命周期标量(§1.1/§7.2):生效日在 ``today`` 之后 → "upcoming",否则 "effective"。
+
+    ``today`` 显式入参(确定性可测);生产调用方传 ``datetime.date.today()``。未来生效件 INDEXED 后置
+    upcoming(默认检索不可见、不替代旧版),到生效日由 ``demo activate`` 手动翻 effective(夜间调度切)。
+    """
+    if effective_date is not None and effective_date > today:
+        return "upcoming"
+    return "effective"

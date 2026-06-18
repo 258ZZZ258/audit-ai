@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 _DIGITS = {
     "〇": 0,
@@ -48,6 +49,19 @@ def to_halfwidth(s: str) -> str:
 def strip_ws(s: str) -> str:
     """去掉所有空白(含逐字加空格的排版)。"""
     return re.sub(r"\s+", "", s)
+
+
+def normalize_radicals(s: str) -> str:
+    """康熙部首(U+2F00–2FDF)→ 等价 CJK(NFKC)。
+
+    pdfplumber 对某些 CID 字体会把 月/日/行/人/十 等抽成康熙部首字形(⽉⽇⾏⼈⼗),
+    令下游正则(段首/日期/义务词)失配。仅对该区段逐字 NFKC 映射,不动其余字符。
+    """
+    if not s:
+        return s
+    return "".join(
+        unicodedata.normalize("NFKC", ch) if 0x2F00 <= ord(ch) <= 0x2FDF else ch for ch in s
+    )
 
 
 def cn_to_int(s: str) -> int:
