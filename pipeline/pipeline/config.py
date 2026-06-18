@@ -52,7 +52,14 @@ class ObjectStoreConfig(BaseModel):
 class TogglesConfig(BaseModel):
     l2_enabled: bool  # M1 默认 false(零 LLM)
     e1_enabled: bool
+    e2_enabled: bool = False  # E2 LLM 打标(事项/部门/实体类型);默认关 → 零 LLM
     auto_confirm_meta_no_conflict: bool = False
+
+
+class LlmConfig(BaseModel):
+    """E2/L2 LLM 辅助(默认关)。key/base_url 走 env(OPENAI_API_KEY/OPENAI_BASE_URL),不入库。"""
+
+    model: str = "gpt-5.4-nano"  # ⚠ env OPENAI_MODEL 可覆盖
 
 
 class AlignConfig(BaseModel):
@@ -84,6 +91,7 @@ class QcThresholds(BaseModel):
     table_empty_max: float  # 指标5 空表占比上限
     text_garbled_max: float  # 指标6 非 CJK 乱码占比上限
     extraction_sufficiency_min: float  # 指标7 抽取充分性
+    qa_pair_completeness_min: float = 0.95  # P-QA 专属:问答对完整率(完整对数 ÷ 问标记数)≥
     edge_band_epsilon: float  # 边缘通过带 ε
 
 
@@ -115,6 +123,7 @@ class Settings(BaseModel):
     embedding: EmbeddingConfig
     object_store: ObjectStoreConfig
     toggles: TogglesConfig
+    llm: LlmConfig = LlmConfig()
     align: AlignConfig
     parse: ParseConfig
     chunk: ChunkConfig
@@ -143,6 +152,8 @@ def _apply_env(raw: dict) -> None:
         emb["endpoint_api_key"] = env["OPENAI_API_KEY"]
     if "HF_HOME" in env:
         emb["cache_dir"] = env["HF_HOME"]
+    if "OPENAI_MODEL" in env:  # E2/L2 LLM 模型名 env 覆盖
+        raw.setdefault("llm", {})["model"] = env["OPENAI_MODEL"]
 
 
 def load_config(config_dir: str | os.PathLike | None = None) -> Settings:
@@ -167,6 +178,7 @@ def load_config(config_dir: str | os.PathLike | None = None) -> Settings:
         embedding=EmbeddingConfig(**settings_raw["embedding"]),
         object_store=ObjectStoreConfig(**settings_raw["object_store"]),
         toggles=TogglesConfig(**settings_raw["toggles"]),
+        llm=LlmConfig(**settings_raw.get("llm", {})),
         align=AlignConfig(**settings_raw["align"]),
         parse=ParseConfig(**settings_raw["parse"]),
         chunk=ChunkConfig(**settings_raw["chunk"]),

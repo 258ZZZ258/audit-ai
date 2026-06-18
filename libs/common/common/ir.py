@@ -66,6 +66,7 @@ class Block(BaseModel):
 
     index: int  # 文档序(0-based,严格升序):单调对齐与 seq 的根据
     type: BlockType
+    level: int | None = None  # 标题层级(heading 时;生产 §4.2)。light 按样式推断,无则 None
     text: str = ""  # 表格块为空
     page: int | None = None  # page_start;对齐回填前/未命中为 None
     page_end: int | None = None  # 跨页块的结束页;不跨页时 None(== page)

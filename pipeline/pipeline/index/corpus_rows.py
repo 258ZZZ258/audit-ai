@@ -32,15 +32,29 @@ def reloadable_chunks(db: PgIO, dvid: str) -> list[Chunk]:
     ]
 
 
-def _issuer_level(db: PgIO, dv: DocVersion) -> str:
-    """dv.issuer(code 或 name)→ 字典 issuer_level;解析不出为空串(Milvus VARCHAR 不收 None)。"""
+#: issuer_level 文本 → INT8 分层序(§8.2;序值越大权威越高)。⚠ 口径随生产标定。
+_ISSUER_LEVEL_RANK = {"内部": 1, "自律组织": 2, "部级": 3}
+
+
+def _issuer_level(db: PgIO, dv: DocVersion) -> int:
+    """dv.issuer(code 或 name)→ 字典 issuer_level 文本 → INT8 序(§8.2);解析不出为 0。"""
     v = (dv.issuer or "").strip()
     if not v:
-        return ""
+        return 0
     for i in db.get_issuers():
         if i.code == v or i.name == v:
-            return i.issuer_level or ""
-    return ""
+            return _ISSUER_LEVEL_RANK.get((i.issuer_level or "").strip(), 0)
+    return 0
+
+
+def _yyyymmdd(d) -> int:
+    """date → INT64 yyyymmdd(Milvus 时间窗过滤);None → 0。"""
+    return d.year * 10000 + d.month * 100 + d.day if d else 0
+
+
+def _truncate_text(s: str, max_bytes: int = 2000) -> str:
+    """按 UTF-8 字节截断 ≤ max_bytes(稳过 Milvus VARCHAR 长度上限,不论按字符/字节计)。"""
+    return s.encode("utf-8")[:max_bytes].decode("utf-8", "ignore")
 
 
 def build_rows(
@@ -59,14 +73,20 @@ def build_rows(
     doc = db.get(Document, dv.logical_id)
     corpus = (doc.corpus_type if doc else "") or ""  # corpus_type 在 Document(逻辑文档)
     issuer_level = _issuer_level(db, dv)
+    eff = _yyyymmdd(dv.effective_date)
+    perm = [dv.perm_tag] if dv.perm_tag else []  # 单值 → ARRAY(§8.2)
+    biz = [dv.biz_domain] if dv.biz_domain else []
     return [
         CorpusRow(
             chunk_id=c.chunk_id, dense=dense, sparse=sparse,
-            doc_version_id=dvid, corpus_type=corpus,
+            doc_id=dv.logical_id, doc_version_id=dvid, corpus_type=corpus,
+            sub_type=dv.sub_type or "",
             status=(status if status is not None else c.chunk_status),
-            perm_tag=dv.perm_tag or "", biz_domain=dv.biz_domain or "",
-            issuer_level=issuer_level, clause_path=c.clause_path or "",
-            page_start=c.page_start or 0, degraded=bool(c.degraded),
+            perm_tag=perm, biz_domain=biz, issuer_level=issuer_level,
+            entity_type=list(c.entity_type or []),
+            chunk_type=c.chunk_type or "", clause_path=c.clause_path or "",
+            page_start=c.page_start or 0, effective_date=eff,
+            text=_truncate_text(c.text or ""), degraded=bool(c.degraded),
         )
         for c, (dense, sparse) in zip(chunks, vectors, strict=True)
     ]

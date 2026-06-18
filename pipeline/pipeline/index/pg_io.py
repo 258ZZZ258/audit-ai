@@ -17,8 +17,11 @@ from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from common.pg_models import (
+    Case,
     Chunk,
     DictBizDomain,
+    DictDepartment,
+    DictEntityType,
     DictIssuer,
     DocVersion,
     PipelineEvent,
@@ -152,28 +155,38 @@ class PgIO:
                     c.sparse_vec_cold = sparse_b
 
     def set_chunk_status(self, doc_version_id: str, status: str) -> None:
-        """翻转某文档全部 chunk 的 chunk_status(s5 index:staging→effective)。"""
+        """翻转某文档全部 chunk 的 chunk_status(s5 index:staging→effective/upcoming)。"""
         with self.session() as s:
             for c in s.scalars(select(Chunk).where(Chunk.doc_version_id == doc_version_id)):
                 c.chunk_status = status
 
-    def supersede_version(self, old_dvid: str, *, new_dvid: str) -> None:
-        """版本原子切换(PG 侧,D1):单事务内把旧版及其全部 chunk 置 superseded、新版置 effective。
+    def set_version_status(self, doc_version_id: str, status: str) -> None:
+        """翻转某文档 version_status(s5 index 写 effective/upcoming;activate 翻 upcoming)。"""
+        with self.session() as s:
+            dv = s.get(DocVersion, doc_version_id)
+            if dv is not None:
+                dv.version_status = status
 
-        - 旧版 ``DocVersion.version_status`` → superseded;其 ``chunks.chunk_status`` → superseded
-          (与 Milvus 标量一致,且 rebuild 从 PG 重建时不会把旧版误标回 effective)。
+    def supersede_version(
+        self, old_dvid: str, *, new_dvid: str, old_status: str = "superseded"
+    ) -> None:
+        """版本原子切换(PG 侧,D1):单事务内把旧版及其全部 chunk 置 ``old_status``、新版置 effective。
+
+        - 旧版 ``DocVersion.version_status`` → ``old_status``;其 ``chunks.chunk_status`` → 同值
+          (与 Milvus 标量一致,且 rebuild 从 PG 重建时不会把旧版误标回 effective)。``old_status``
+          默认 superseded(revise_replace);abolish_only 件传 "abolished"(§1.1/§7.2 废止终态)。
         - 新版 ``version_status`` → effective(幂等;新版 INDEXED 时已是 effective)。
-        单事务使切换在 PG 侧原子、可重放安全(旧版已 superseded 时重跑等价无副作用)。
+        单事务使切换在 PG 侧原子、可重放安全(旧版已置 ``old_status`` 时重跑等价无副作用)。
         """
         with self.session() as s:
             old = s.get(DocVersion, old_dvid)
             if old is not None:
-                old.version_status = "superseded"
+                old.version_status = old_status
             new = s.get(DocVersion, new_dvid)
             if new is not None:
                 new.version_status = "effective"
             for c in s.scalars(select(Chunk).where(Chunk.doc_version_id == old_dvid)):
-                c.chunk_status = "superseded"
+                c.chunk_status = old_status
 
     def chunk_doc_version_ids(self) -> list[str]:
         """有 chunk 的全部 doc_version_id(去重)——供 rebuild 遍历全量重灌。"""
@@ -193,12 +206,41 @@ class PgIO:
         with self.session() as s:
             return list(s.scalars(select(DictIssuer)))
 
+    # ── cases(P-CASE 案例要素)──────────────────────────────────
+    def upsert_case(self, doc_version_id: str, fields: dict) -> None:
+        """按 doc_version_id upsert 一行 ``cases``(merge 即 upsert,reprocess 重跑覆盖安全)。"""
+        with self.session() as s:
+            s.merge(Case(doc_version_id=doc_version_id, **fields))
+
+    def get_case(self, doc_version_id: str) -> Case | None:
+        with self.session() as s:
+            return s.get(Case, doc_version_id)
+
     # ── 字典 seed ─────────────────────────────────────────────
-    def seed_dicts(self, seeds_dir: str | Path) -> tuple[int, int]:
-        """从 CSV 导入 dict_issuers / dict_biz_domains(merge 即 upsert,可重复执行)。"""
+    def get_entity_types(self) -> list[DictEntityType]:
+        with self.session() as s:
+            return list(s.scalars(select(DictEntityType)))
+
+    def get_departments(self) -> list[DictDepartment]:
+        with self.session() as s:
+            return list(s.scalars(select(DictDepartment)))
+
+    def get_biz_domains(self) -> list[DictBizDomain]:
+        """业务域/涉及事项字典(E2 打标「涉及事项」约束空间,§19.2)。"""
+        with self.session() as s:
+            return list(s.scalars(select(DictBizDomain)))
+
+    def seed_dicts(self, seeds_dir: str | Path) -> dict[str, int]:
+        """从 CSV 导入字典表(merge 即 upsert,可重复执行)。返回 {表名: 行数}。
+
+        含 dict_issuers / dict_biz_domains + V1.6 新增 dict_entity_types / dict_departments
+        (E2 打标约束字典,§19.2;带 dict_version)。
+        """
         seeds_dir = Path(seeds_dir)
         issuers = _read_csv(seeds_dir / "dict_issuers.csv")
         domains = _read_csv(seeds_dir / "dict_biz_domains.csv")
+        entity_types = _read_csv(seeds_dir / "dict_entity_types.csv")
+        departments = _read_csv(seeds_dir / "dict_departments.csv")
         with self.session() as s:
             for r in issuers:
                 s.merge(
@@ -212,7 +254,24 @@ class PgIO:
                         code=r["code"], name=r["name"], parent_code=r.get("parent_code") or None
                     )
                 )
-        return len(issuers), len(domains)
+            for r in entity_types:
+                s.merge(
+                    DictEntityType(
+                        code=r["code"], name=r["name"], dict_version=r.get("dict_version") or None
+                    )
+                )
+            for r in departments:
+                s.merge(
+                    DictDepartment(
+                        code=r["code"], name=r["name"], dict_version=r.get("dict_version") or None
+                    )
+                )
+        return {
+            "issuers": len(issuers),
+            "biz_domains": len(domains),
+            "entity_types": len(entity_types),
+            "departments": len(departments),
+        }
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:

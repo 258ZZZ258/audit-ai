@@ -85,9 +85,12 @@ def _row(dvid: str, suffix: str, *, status: str = "effective") -> CorpusRow:
     return CorpusRow(
         chunk_id=(dvid[:22] + suffix)[:24],
         dense=DENSE, sparse=SPARSE,
-        doc_version_id=dvid, corpus_type="P-INT", status=status,
-        perm_tag="内部", biz_domain="DISCLOSURE", issuer_level="部级",
-        clause_path="第一章/第一条", page_start=1, degraded=False,
+        doc_id=dvid, doc_version_id=dvid, corpus_type="P-INT", sub_type="内规",
+        status=status,
+        perm_tag=["内部"], biz_domain=["DISCLOSURE"], issuer_level=3,
+        entity_type=[], chunk_type="clause",
+        clause_path="第一章/第一条", page_start=1, effective_date=20240101,
+        text="第一条 测试正文", degraded=False,
     )
 
 

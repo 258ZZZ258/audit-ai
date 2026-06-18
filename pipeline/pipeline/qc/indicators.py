@@ -17,6 +17,7 @@ from pipeline.chunking.clause_tree import (
     iter_articles,
 )
 from pipeline.chunking.normalize import strip_ws, to_halfwidth
+from pipeline.chunking.qa_chunker import detect_qa_pairs
 from pipeline.config import QcThresholds
 
 _LOOSE_ARTICLE = re.compile(r"^第[〇零一二三四五六七八九十百千两\dA-Za-z.]+条")
@@ -181,6 +182,18 @@ def extraction_sufficiency(ir: IRDocument, th: QcThresholds) -> IndicatorResult:
     )
 
 
+def qa_pair_completeness(ir: IRDocument, th: QcThresholds) -> IndicatorResult:
+    """P-QA 专属:完整问答对数 ÷ 检测到的「问」标记数(边界识别失败 = 漏对,计入此指标)。"""
+    scan = detect_qa_pairs(ir)
+    markers = scan.question_markers
+    value = len(scan.pairs) / markers if markers else 0.0
+    passed, marginal = _ge(value, th.qa_pair_completeness_min, th.edge_band_epsilon)
+    return IndicatorResult(
+        "qa_pair_completeness", 8, "问答对完整率", value, th.qa_pair_completeness_min,
+        passed, marginal, {"pairs": len(scan.pairs), "question_markers": markers},
+    )
+
+
 ALL_INDICATORS = [
     clause_coverage,
     clause_continuity,
@@ -190,3 +203,26 @@ ALL_INDICATORS = [
     text_quality,
     extraction_sufficiency,
 ]
+
+# profile → 该 corpus_type 应跑的指标集。
+# P-INT/P-EXT(制度):条款树全七项。
+# P-QA/P-CASE(短、结构天然不均的非制度内容):跳过条款树四项(1/2/3/5),**也跳过抽取充分性(7)**——
+# 指标7 量的是"页间密度均匀度"(均值/中位每页字数),假定制度满版页;问答/处罚决定书正文页满、
+# 落款/尾页稀疏会被误判,故不适用。P-QA 跑 qa_pair_completeness + 锚点(4)/文本质量(6);
+# P-CASE 只跑锚点(4)/文本质量(6),其质量闸是 §9 字段完整率(从 cases 表算,批次度量,非 s2 拦截)。
+_CLAUSE_INDICATORS = ALL_INDICATORS
+_QA_INDICATORS = [
+    qa_pair_completeness,
+    page_anchor_complete,
+    text_quality,
+]
+_CASE_INDICATORS = [
+    page_anchor_complete,
+    text_quality,
+]
+_PROFILE_INDICATORS = {"P-QA": _QA_INDICATORS, "P-CASE": _CASE_INDICATORS}
+
+
+def indicators_for(corpus_type: str) -> list:
+    """按 corpus_type 选指标集;未登记的(P-INT/P-EXT/未知/空)走条款树全七项。"""
+    return _PROFILE_INDICATORS.get(corpus_type, _CLAUSE_INDICATORS)

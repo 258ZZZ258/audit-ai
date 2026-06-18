@@ -16,7 +16,7 @@ from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
 
 from common.ir import Block, BlockType, Table, TableCell
-from pipeline.chunking.normalize import strip_ws
+from pipeline.chunking.normalize import normalize_radicals, strip_ws
 from pipeline.parsing.adapter import ParserAdapter, ParseResult
 from pipeline.states import ErrorCode
 
@@ -72,7 +72,7 @@ def _pdf_result(data: bytes, scanned_max: int) -> ParseResult:
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         npages = len(pdf.pages)
         for pno, page in enumerate(pdf.pages, start=1):
-            txt = page.extract_text() or ""
+            txt = normalize_radicals(page.extract_text() or "")  # 康熙部首字形伪影 → CJK
             total_chars += len(strip_ws(txt))
             for line in txt.split("\n"):
                 if line.strip():

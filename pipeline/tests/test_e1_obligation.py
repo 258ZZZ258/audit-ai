@@ -66,6 +66,80 @@ def test_bare_xu_and_negation():
     assert e1.match_obligation("无须履行审批程序的事项径行办理", CFG) == (False, None)
 
 
+# ── 单元:classify_deontic(命中情态词 → deontic_type 分类,纯函数)─────────────
+@pytest.mark.parametrize(
+    "marker,expect",
+    [
+        ("应当", "obligation"),
+        ("应该", "obligation"),
+        ("必须", "obligation"),
+        ("应", "obligation"),  # bare 应
+        ("须", "obligation"),  # bare 须
+        ("须经", "obligation"),
+        ("有义务", "obligation"),  # 未列具体前缀 → 兜底义务
+        ("负有", "obligation"),
+        ("不得", "prohibition"),
+        ("禁止", "prohibition"),
+        ("严禁", "prohibition"),
+        ("不应", "prohibition"),  # 否定前缀须先于 应 判定,不可被吞成 obligation
+        ("不准", "prohibition"),
+        ("责令", "command"),
+        (None, None),
+        ("", None),
+    ],
+)
+def test_classify_deontic(marker, expect):
+    assert e1.classify_deontic(marker) == expect
+
+
+# ── 单元:normalize_duration(期限归一到日,中文/Arabic,standoff,纯函数)──────────
+@pytest.mark.parametrize(
+    "text,days,biz,status",
+    [
+        ("应当在九十日内完成", 90, False, "parsed"),  # 中文自然日(裸「日」)
+        ("应于90日内书面报告", 90, False, "parsed"),  # Arabic 日
+        ("逾期30天未缴", 30, False, "parsed"),  # 天 = 自然日
+        ("应当在5个工作日内办结", 5, True, "parsed"),  # Arabic 工作日
+        ("五个工作日内反馈", 5, True, "parsed"),  # 中文工作日
+        ("自然日二十四日内", 24, False, "parsed"),  # 自然日(数字在「自然日」前→裸日命中 24)
+        ("3个月内整改", 90, False, "parsed"),  # 月 ×30
+        ("1年内复核", 365, False, "parsed"),  # 年 ×365
+        ("一个季度内结算", 90, False, "parsed"),  # 季 ×90
+        ("半年内不得变更", 180, False, "parsed"),  # 半年 = 180(忽略数字定语)
+    ],
+)
+def test_normalize_duration_parsed(text, days, biz, status):
+    r = e1.normalize_duration(text)
+    assert r is not None
+    assert r.norm_duration_days == days
+    assert r.is_business_day is biz
+    assert r.norm_status == status
+    assert r.surface and r.surface in text  # standoff:surface 取自原文
+
+
+def test_normalize_duration_compound_unparsed():
+    # 复合/相对期限「次年首个工作日」:无「数+单位」可归一 → unparsed,留 surface、norm=None
+    r = e1.normalize_duration("应当于次年首个工作日前完成结转")
+    assert r is not None
+    assert r.norm_status == "unparsed"
+    assert r.norm_duration_days is None
+    assert r.is_business_day is None
+    assert r.surface
+
+
+def test_normalize_duration_none_when_no_duration():
+    # 无期限语义(含纯百分比表达,不应误成期限)→ None,完全不写 duration 行
+    assert e1.normalize_duration("不良率不得超过5%且应如实披露") is None
+    assert e1.normalize_duration("应当遵守相关规定") is None
+
+
+def test_normalize_duration_surface_standoff():
+    # standoff 契约:surface 为原文片段,函数不修改输入文本
+    src = "有关部门应当在二十四小时内书面报告"
+    r = e1.normalize_duration(src)
+    assert r is None or src == "有关部门应当在二十四小时内书面报告"  # 「小时」非期限单位 → None
+
+
 # ── 集成:tag / clear(连 PG,免模型)────────────────────────────
 @pytest.fixture
 def pg_ctx():

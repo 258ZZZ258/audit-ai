@@ -21,7 +21,13 @@ from dataclasses import dataclass
 
 from common.chunk_id import compute_chunk_id
 from common.ir import Block, BlockType, IRDocument, Table
-from pipeline.chunking.clause_tree import ClauseNode, NodeType, build_tree, iter_articles
+from pipeline.chunking.clause_tree import (
+    ClauseNode,
+    NodeType,
+    build_tree,
+    find_internal_refs,
+    iter_articles,
+)
 from pipeline.chunking.normalize import strip_ws, to_halfwidth
 from pipeline.config import ChunkConfig
 
@@ -41,6 +47,11 @@ class ChunkSpec:
     is_parent: bool = False
     is_table: bool = False
     oversize: bool = False  # 单段超长无语义边界,被字符硬切(质量信号)
+    # chunk_type: clause | table(§8.3;与 is_parent/is_table 并存,不替代)
+    chunk_type: str = "clause"
+    parent_chunk_id: str | None = None  # 子块指向其节级父块 chunk_id(无节则 None)
+    internal_refs: list[dict] | None = None  # 正文条款引用(前置信号);父/表块为 None
+    embed_status: str = "pending"  # pending | done | failed(建块即 pending)
 
 
 def count_tokens(text: str) -> int:
@@ -56,11 +67,22 @@ def build_chunks(doc: IRDocument, cfg: ChunkConfig) -> list[ChunkSpec]:
     for sec in _iter_by_type(root, NodeType.SECTION):
         out.append(_parent_chunk(doc.doc_version_id, sec, blocks, cfg))
     for art in iter_articles(root):
-        out.extend(_article_chunks(doc.doc_version_id, art, blocks, cfg))
+        parent_id = _section_parent_id(doc.doc_version_id, art)
+        out.extend(_article_chunks(doc.doc_version_id, art, blocks, cfg, parent_id))
     return out
 
 
 # ── 内部 ──────────────────────────────────────────────────────
+def _section_parent_id(dvid: str, art: ClauseNode) -> str | None:
+    """条所属节级父块的 chunk_id(父块用 sec.clause_path_norm()+seq 0);无节(虚拟根直条)→ None。"""
+    n: ClauseNode | None = art.parent
+    while n is not None:
+        if n.type is NodeType.SECTION:
+            return compute_chunk_id(dvid, n.clause_path_norm(), 0)
+        n = n.parent
+    return None
+
+
 def _iter_by_type(root: ClauseNode, ntype: NodeType) -> list[ClauseNode]:
     out: list[ClauseNode] = []
 
@@ -163,9 +185,17 @@ def _mk_chunk(
     is_table: bool = False,
     oversize: bool = False,
     content_tokens: int | None = None,
+    parent_chunk_id: str | None = None,
 ) -> ChunkSpec:
     text = f"{breadcrumb}\n{body}" if breadcrumb else body
     ps, pe = _page_span(page_blocks)
+    chunk_type = "table" if is_table else "clause"  # 父块亦 clause(is_parent 另记)
+    # internal_refs 仅条文(clause)子块跑;父块/表块留空(前者是大块供证、后者无条款引用)
+    refs = (
+        [{"level": r.level, "number": r.number, "surface": r.raw} for r in find_internal_refs(body)]
+        if not is_parent and not is_table
+        else None
+    )
     # token_count 量内容(默认 body,不含面包屑;拆分路径可显式传不含条头续接的内容数)
     return ChunkSpec(
         chunk_id=compute_chunk_id(dvid, cp_norm, seq),
@@ -181,6 +211,10 @@ def _mk_chunk(
         is_parent=is_parent,
         is_table=is_table,
         oversize=oversize,
+        chunk_type=chunk_type,
+        parent_chunk_id=parent_chunk_id,
+        internal_refs=refs,
+        embed_status="pending",
     )
 
 
@@ -202,7 +236,11 @@ def _parent_chunk(
 
 
 def _article_chunks(
-    dvid: str, art: ClauseNode, blocks: dict[int, Block], cfg: ChunkConfig
+    dvid: str,
+    art: ClauseNode,
+    blocks: dict[int, Block],
+    cfg: ChunkConfig,
+    parent_chunk_id: str | None = None,
 ) -> list[ChunkSpec]:
     art_blocks = [blocks[i] for i in art.collect_block_indices()]
     text_pairs = [
@@ -219,7 +257,10 @@ def _article_chunks(
     if text_pairs:
         if count_tokens(body_text) <= cfg.target_token_max:
             pblocks = [b for _, b in text_pairs]
-            out.append(_mk_chunk(dvid, cp_norm, seq, breadcrumb, body_text, pblocks))
+            out.append(_mk_chunk(
+                dvid, cp_norm, seq, breadcrumb, body_text, pblocks,
+                parent_chunk_id=parent_chunk_id,
+            ))
             seq += 1
         else:
             units = _decompose(text_pairs, cfg.target_token_max)  # 含单段超长拆分
@@ -232,12 +273,16 @@ def _article_chunks(
                     dvid, cp_norm, seq, breadcrumb, body, [u[1] for u in grp],
                     oversize=any(u[2] for u in grp),
                     content_tokens=count_tokens(content),
+                    parent_chunk_id=parent_chunk_id,
                 ))
                 seq += 1
 
     for tb in table_blocks:
         for seg in _table_segments(tb.table, cfg):
-            out.append(_mk_chunk(dvid, cp_norm, seq, breadcrumb, seg, [tb], is_table=True))
+            out.append(_mk_chunk(
+                dvid, cp_norm, seq, breadcrumb, seg, [tb], is_table=True,
+                parent_chunk_id=parent_chunk_id,
+            ))
             seq += 1
     return out
 

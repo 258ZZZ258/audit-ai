@@ -42,7 +42,7 @@ DENSE = [float((i * 7) % 13) + 0.5 for i in range(1024)]
 SPARSE = {"1": 0.9, "5": 0.3, "42": 0.6}
 _COLS = [
     "filename", "title", "doc_number", "issuer", "perm_tag",
-    "corpus_type", "biz_domain", "issue_date", "supersedes",
+    "corpus_type", "biz_domain", "issue_date", "supersedes", "sub_type", "effective_date",
 ]
 
 
@@ -96,7 +96,10 @@ def _write_manifest(path, filename: str) -> None:
     wb = Workbook()
     ws = wb.active
     ws.append(_COLS)
-    row = [filename, "幂等测试件", "测试第1号", "CSRC", "内部", "P-INT", "DISCLOSURE", None, None]
+    row = [
+        filename, "幂等测试件", "测试第1号", "CSRC", "内部", "P-INT", "DISCLOSURE",
+        None, None, "内规", None,
+    ]
     ws.append(row)
     wb.save(path)
 

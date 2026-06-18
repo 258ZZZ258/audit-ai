@@ -8,8 +8,9 @@ s5;``chunk_status`` 默认 staging(INDEXED 前对检索不可见)。状态机出
 
 from __future__ import annotations
 
-from common.pg_models import Chunk, DocVersion
-from pipeline.chunking.chunker import ChunkSpec, build_chunks
+from common.pg_models import Chunk, Document, DocVersion
+from pipeline.chunking.chunker import ChunkSpec
+from pipeline.chunking.profile_router import build_specs
 from pipeline.stage_base import StageContext, StageResult
 from pipeline.states import PipelineState
 
@@ -18,7 +19,9 @@ def run(ctx: StageContext, doc_version_id: str) -> StageResult:
     ir = ctx.object_store.load_ir(doc_version_id)
     dv = ctx.db.get(DocVersion, doc_version_id)
     degraded = bool(dv and dv.degraded)  # 降级件(degrade 处置重入)→ chunk 标 degraded
-    specs = build_chunks(ir, ctx.config.chunk)
+    doc = ctx.db.get(Document, dv.logical_id) if dv else None
+    corpus_type = (doc.corpus_type if doc else "") or "P-INT"  # 按 profile 选切块策略
+    specs = build_specs(ir, corpus_type, ctx.config.chunk)
     ctx.db.replace_chunks(doc_version_id, [_to_row(s, degraded) for s in specs])
     return StageResult(next_state=PipelineState.META_REVIEW)
 
@@ -37,6 +40,10 @@ def _to_row(spec: ChunkSpec, degraded: bool) -> Chunk:
         token_count=spec.token_count,
         is_parent=spec.is_parent,
         is_table=spec.is_table,
+        chunk_type=spec.chunk_type,  # clause | table(与 is_parent/is_table 并存)
+        parent_chunk_id=spec.parent_chunk_id,  # 子块指向节级父块(无节则 None)
+        internal_refs=spec.internal_refs,  # 正文条款引用(前置信号);父/表块为 None
+        embed_status=spec.embed_status,  # 建块即 pending(§8.1)
         oversize=spec.oversize,  # 单段超长字符硬切的质量信号
         degraded=degraded,  # 取自 dv.degraded;chunk_status 用模型默认 staging
     )

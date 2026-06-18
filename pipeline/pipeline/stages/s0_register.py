@@ -282,6 +282,8 @@ def _register_one(
                 issuer=str(row.get("issuer") or "") or None,
                 doc_number=doc_number or None,
                 issue_date=issue_date,
+                effective_date=_parse_issue_date(row.get("effective_date")),
+                sub_type=str(row.get("sub_type") or "") or None,
                 title=title or None,
                 version_relation=relation,
                 supersedes_version_id=supersedes_vid,

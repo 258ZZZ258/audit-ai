@@ -107,6 +107,7 @@ def _row(filename, **kw):
         "filename": filename, "title": f"标题-{filename}", "doc_number": f"令-{filename}",
         "issuer": "CSRC", "perm_tag": "公开", "corpus_type": "P-EXT",
         "biz_domain": "DISCLOSURE", "issue_date": "2024-01-01", "supersedes": "",
+        "sub_type": "部门规章", "effective_date": "2024-01-01",
     }
     base.update(kw)
     return base

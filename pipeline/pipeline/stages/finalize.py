@@ -4,14 +4,16 @@
 (effective↔superseded)这个独立标量,不动状态机硬契约。由 CLI 在文档推进到 INDEXED 后显式调用
 (自动触发),不被 orchestrator 轮询;不 import 其他 stage(走 index/ 共享层)。
 
-新版到 INDEXED 且带 ``supersedes_version_id`` → 把被替代的旧版置 superseded(三步,对齐 D1 验收):
+新版到 INDEXED、带 ``supersedes_version_id`` 且**自身已 effective** → 把被替代的旧版置 superseded
+(abolish_only 件置 abolished,§1.1/§7.2)(三步,对齐 D1 验收):
 1. **PG 原子事务**(``pg_io.supersede_version``):旧版 version_status + 其 chunks chunk_status →
-   superseded;新版置 effective(幂等)。
-2. **Milvus**:从 PG 冷备重建旧版 chunk 行(status=superseded)upsert + flush——零重编码、**不 delete**
+   old_status(superseded / abolished);新版置 effective(幂等)。
+2. **Milvus**:从 PG 冷备重建旧版 chunk 行(status=old_status)upsert + flush——零重编码、**不 delete**
    (旧版仍可被 ``--include-superseded`` 检索到)。写序 PG→Milvus,PG 侧原子使整体可重放安全。
 3. **下游通知**:打日志占位。
 
-幂等/可重放:旧版已 superseded 时重跑等价无副作用(PG 再置同值;Milvus 再 upsert 同 status)。
+upcoming 新版(未来生效)**暂不切换**:旧版保 effective,待 ``demo activate`` 翻新版 effective 再触发。
+幂等/可重放:旧版已置 old_status 时重跑等价无副作用(PG 再置同值;Milvus 再 upsert 同 status)。
 """
 
 from __future__ import annotations
@@ -38,25 +40,34 @@ class FinalizeResult:
 
 
 def run(ctx: StageContext, doc_version_id: str) -> FinalizeResult:
-    """INDEXED 后:① 带 supersedes 则版本切换 ② 总是跑 T2/T4 评测留痕(§9)。未到 INDEXED 则 no-op。"""
+    """INDEXED 后:① 带 supersedes 且新版已 effective 则版本切换 ② 总是跑 T2/T4 评测留痕(§9)。
+
+    切换被 ``version_status == "effective"`` 守卫:upcoming 新版(未来生效)**暂不替代旧版**,旧版
+    保持 effective 直至新版到生效日由 ``demo activate`` 翻 effective、再跑本 finalize 触发切换。
+    abolish_only 件把旧版置 "abolished"(§1.1/§7.2 废止终态),否则 "superseded"。
+    未到 INDEXED 则 no-op。
+    """
     dv = ctx.db.get(DocVersion, doc_version_id)
     if dv is None or dv.pipeline_status not in _INDEXED_STATES:
         return FinalizeResult(False, doc_version_id)
     old_dvid = dv.supersedes_version_id
+    # 废止件旧版置 abolished、修订件置 superseded(均不删 Milvus,--include-superseded 仍可见旧版)。
+    old_status = "abolished" if dv.version_relation == "abolish_only" else "superseded"
+    switched = bool(old_dvid) and dv.version_status == "effective"
 
-    if old_dvid:  # 版本原子切换(旧版置 superseded)
+    if switched:  # 版本原子切换(新版 effective 才触发;upcoming 新版延后到 activate)
         # 先严格组装旧版冷备行(任一块缺冷备即抛,此时 PG 未动 → 整体可重试、不留 PG 超前 Milvus
-        # 的残留)。冷备齐全才继续:PG 原子切换 → Milvus 旧版 chunk 标量改 superseded(零重编码,不删)。
-        rows = corpus_rows.rows_from_cold_strict(ctx.db, old_dvid, "superseded")
-        ctx.db.supersede_version(old_dvid, new_dvid=doc_version_id)
+        # 的残留)。冷备齐全才继续:PG 原子切换 → Milvus 旧版 chunk 标量改 old_status(零重编码,不删)。
+        rows = corpus_rows.rows_from_cold_strict(ctx.db, old_dvid, old_status)
+        ctx.db.supersede_version(old_dvid, new_dvid=doc_version_id, old_status=old_status)
         if rows:
             ctx.milvus.upsert(rows)
             ctx.milvus.flush()
         # 下游通知占位(生产:通知检索/比对下游旧版失效)
-        logger.info("版本切换:旧版 %s 经新版 %s 置 superseded", old_dvid, doc_version_id)
+        logger.info("版本切换:旧版 %s 经新版 %s 置 %s", old_dvid, doc_version_id, old_status)
 
     _run_verify(ctx, doc_version_id)  # T2 冒烟 + T4 回放,留痕入 pipeline_events(评测组件无阻断权)
-    return FinalizeResult(bool(old_dvid), doc_version_id, old_dvid)
+    return FinalizeResult(switched, doc_version_id, old_dvid)
 
 
 def _run_verify(ctx: StageContext, dvid: str) -> None:

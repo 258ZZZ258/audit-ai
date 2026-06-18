@@ -156,3 +156,65 @@ def test_oversize_no_boundary_hard_splits_and_marks():
     assert len(chunks) >= 2
     assert all(c.token_count <= cfg.target_token_max for c in chunks)
     assert any(c.oversize for c in chunks)
+
+
+# ── CP-007 §8.3 富集字段:chunk_type / parent_chunk_id / internal_refs / embed_status ──
+def _ref_doc() -> IRDocument:
+    P = BlockType.PARAGRAPH
+    return IRDocument(
+        doc_version_id="DVREF",
+        source_format=SourceFormat.DOCX,
+        blocks=[
+            Block(index=0, type=P, text="第一章 总则", page=1),
+            Block(index=1, type=P, text="第一节 一般规定", page=1),
+            Block(index=2, type=P, text="第一条 本条依照第十五条的规定执行。", page=1),
+        ],
+    )
+
+
+def test_chunk_type_clause_vs_table():
+    # (a) 条文块 chunk_type="clause";表格块 chunk_type="table"(is_table 并存不被替代)
+    chunks = build_chunks(make_doc(), BIG)
+    clause = _by_norm(chunks, "1/1/1")[0]
+    assert clause.chunk_type == "clause" and not clause.is_table
+    tables = [c for c in chunks if c.is_table]
+    assert tables and all(c.chunk_type == "table" for c in tables)
+    parents = [c for c in chunks if c.is_parent]
+    assert parents and all(c.chunk_type == "clause" for c in parents)  # 父块亦 clause
+
+
+def test_child_clause_carries_section_parent_chunk_id():
+    # (b) 节下子条块的 parent_chunk_id == 该节父块的 chunk_id
+    chunks = build_chunks(make_doc(), BIG)
+    parent = [c for c in chunks if c.is_parent and c.clause_path_norm == "1/1"][0]
+    child = _by_norm(chunks, "1/1/1")[0]
+    assert child.parent_chunk_id == parent.chunk_id
+    assert parent.parent_chunk_id is None  # 父块本身无父
+
+
+def test_chapterless_article_has_no_parent_chunk_id():
+    # 虚拟根直条(无节)→ parent_chunk_id None
+    chunks = build_chunks(_tail_doc(), BIG)  # DVMIN:无章无节,第一条直挂虚拟根
+    art = _by_norm(chunks, "1")[0]
+    assert art.parent_chunk_id is None
+
+
+def test_clause_internal_refs_captured():
+    # (c) 含「第十五条」引用的条文 → internal_refs 非空且捕获该引用
+    chunks = build_chunks(_ref_doc(), BIG)
+    clause = _by_norm(chunks, "1/1/1")[0]
+    assert clause.internal_refs
+    got = [(r["level"], r["number"]) for r in clause.internal_refs]
+    assert ("条", "15") in got
+    assert all("surface" in r for r in clause.internal_refs)
+    # 父块/表格块不跑 internal_refs
+    parents = [c for c in chunks if c.is_parent]
+    assert all(c.internal_refs is None for c in parents)
+    tables = [c for c in build_chunks(make_doc(), BIG) if c.is_table]
+    assert all(c.internal_refs is None for c in tables)
+
+
+def test_embed_status_pending_on_new_chunks():
+    # (d) 建块即 embed_status="pending"(父/条/表 全覆盖)
+    chunks = build_chunks(make_doc(), BIG)
+    assert chunks and all(c.embed_status == "pending" for c in chunks)

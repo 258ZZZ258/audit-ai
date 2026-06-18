@@ -1,6 +1,10 @@
-# P-INT(内规)/ P-EXT(外规)档案差异。
+# P-INT(内规)/ P-EXT(外规)/ P-QA(监管问答)/ P-CASE(案例)档案差异。
 # 抽检率(sampling_rate)为生产边缘抽检字段,M1 保留不消费。
 P-INT:
   sampling_rate: 1.0
 P-EXT:
+  sampling_rate: 1.0
+P-QA:
+  sampling_rate: 1.0
+P-CASE:
   sampling_rate: 1.0
