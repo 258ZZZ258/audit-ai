@@ -1,0 +1,26 @@
+# audit-query —— 制度查询智能体(功能1)。Chatbox 型 / 同步流式。
+# 依赖方向:query → pipeline → common(复用 pipeline 的混合检索/嵌入/Milvus I/O + common 契约)。
+# import 包名 = query(发行名 audit-query);成员 query/query/。
+# 本切片:R1 依据查询 + 覆盖感知拒答 + 八路路由/契约骨架(见 docs/query-agent-docs/SPEC.md)。
+# langgraph(编排)/ typer(CLI)等依赖随对应任务(T13/T14)再加,T1 仅建骨架。
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audit-query"
+version = "0.1.0"
+description = "audit-ai 制度查询智能体 MVP:R1 依据查询 + 覆盖感知拒答 + 八路路由/契约骨架"
+requires-python = ">=3.11"
+dependencies = [
+    "audit-pipeline",   # 依赖方向:query → pipeline → common
+    "langgraph>=1.0",   # 运行时编排(§1.2 状态机);节点纯函数,可换底座(PLAN §2.5-1)
+    "typer>=0.9",       # CLI(query ask / query route)
+]
+
+[project.scripts]
+query = "query.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["query*"]

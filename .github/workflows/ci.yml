@@ -17,10 +17,11 @@ jobs:
       - name: install
         run: |
           python -m pip install -U pip
-          # workspace 成员各自 editable(顺序敏感:先 common,pipeline/eval 依赖它)+ 根 dev 工具。
+          # workspace 成员各自 editable(顺序敏感:common → pipeline → eval → query)+ 根 dev 工具。
           pip install -e libs/common
           pip install -e pipeline
           pip install -e eval
+          pip install -e query
           pip install -e ".[dev]"
       - name: ruff
         run: ruff check .

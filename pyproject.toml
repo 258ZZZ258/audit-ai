@@ -1,11 +1,12 @@
 # ── audit-ai workspace 根 ──────────────────────────────────────────────────────────
-# 本仓为 audit-ai monorepo。workspace 成员**只此三个**(严禁新增 libs/rag|orchestration|
-# doc_compare|report_gen 或 services/*——仅 CP-009 约定,待第一份真实代码/第二个消费方出现再建):
+# 本仓为 audit-ai monorepo。workspace 成员四个:query 为制度查询智能体(功能1)——CP-009
+# 「成员待第一份真实代码/第二个消费方出现再建」条件已满足(query 即第二消费方)。仍严禁凭空
+# 新增 libs/rag|orchestration|doc_compare|report_gen 或 services/*(无真实代码不建):
 [tool.audit_workspace]
-members = ["libs/common", "pipeline", "eval"]
-# 依赖方向:pipeline → common;eval → pipeline → common;common 不依赖任何上层。
+members = ["libs/common", "pipeline", "eval", "query"]
+# 依赖方向:pipeline → common;eval → pipeline → common;query → pipeline → common;common 不依赖任何上层。
 # setuptools 无原生 workspace;开发安装(顺序敏感,先 common):
-#   pip install -e libs/common && pip install -e pipeline && pip install -e eval && pip install -e ".[dev]"
+#   pip install -e libs/common && pip install -e pipeline && pip install -e eval && pip install -e query && pip install -e ".[dev]"
 # 运行时包(demo / demo-web 脚本、运行依赖)见各成员 pyproject;根仅聚合 dev 工具 + 运维(alembic)。
 
 [build-system]
@@ -43,10 +44,10 @@ extend-immutable-calls = ["typer.Argument", "typer.Option"]
 
 [tool.ruff.lint.isort]
 # 升格后 workspace 三成员均为本仓首方包(否则 isort 误判 common/eval 为第三方,分组错乱)。
-known-first-party = ["common", "pipeline", "eval"]
+known-first-party = ["common", "pipeline", "eval", "query"]
 
 [tool.pytest.ini_options]
-# 三成员各自 import 根:pipeline/(pipeline)、libs/common/(common)、eval/(eval)。
-# 测试按包共置(决策⑦):pipeline/tests、libs/common/tests、eval/tests;共享 fixtures 在 repo 根 conftest.py。
-pythonpath = ["pipeline", "libs/common", "eval"]
-testpaths = ["pipeline/tests", "libs/common/tests", "eval/tests"]
+# 各成员 import 根:pipeline/(pipeline)、libs/common/(common)、eval/(eval)、query/(query)。
+# 测试按包共置(决策⑦):pipeline/tests、libs/common/tests、eval/tests、query/tests;共享 fixtures 在 repo 根 conftest.py。
+pythonpath = ["pipeline", "libs/common", "eval", "query"]
+testpaths = ["pipeline/tests", "libs/common/tests", "eval/tests", "query/tests"]

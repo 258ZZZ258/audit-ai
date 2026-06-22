@@ -3,7 +3,9 @@
 智能审计平台的代码仓库。**整个平台的 agent 相关代码都归集于此仓**(Python monorepo,由"文档处理管线 demo"
 原地升格而来——见 `docs/CP-009-仓库与升格规范.md` / `docs/migration_devlog.md`)。
 
-当前已落地 **文档处理与语料库构建** 子系统(S0–S5 管线 + 验证套件 + Web 工作台,生产设计主干的最小可运行实现);
+当前已落地 **文档处理与语料库构建** 子系统:S0–S5 管线(**内规 / 外规 / 监管问答 / 案例** 四类语料档案,
+按 `corpus_type` 路由不同切块策略)+ 富集层(E1 义务预打标 · E2 实体/部门/事项 LLM 打标,默认关)+ 验证套件 +
+Web 工作台,**契约对齐生产设计 v1.6**(CP-007 实体类型/期限归一、版本生命周期四态、案例要素抽取 `cases` 表);
 **制度查询 / 制度比对等智能体代码后续加入本仓**(布局约定与抽包触发见 CP-009)。
 
 > 架构与硬契约见 `CLAUDE.md`(底部「模块开发记忆索引」→ 各包内 `*_devlog.md`);文档处理子系统规格见
@@ -62,7 +64,7 @@ python3.11 -m venv .venv
 打开 http://127.0.0.1:8765。它是管线域逻辑的**薄壳**(PG 为权威、Milvus 为投影,复用与 CLI 同一套
 状态机 / 统一队列 / 检索):
 
-- **上传入管线**:拖拽 docx/pdf(可附 `manifest.xlsx`)→ S0 登记 → 自动推进
+- **上传入管线**:拖拽 docx/pdf(可附 `manifest.xlsx`)+ 选语料类型(内规 / 外规 / 监管问答 / 案例)→ S0 登记 → 自动推进
 - **统一人工复核队列**:`qc_fix` / `quarantine` / `meta_confirm` 三类在一处处置(修复重试 / 降级 / 驳回 / 放行 / 确认)
 - **检索**:混合查出四级引用(文档+文号 / 条款路径 / 页码 / 版本+状态),义务条款标 `[义务]`
 - **批次 / 文档详情**:管线节点状态、产物(原件 / 渲染件 / IR / 分块 / Milvus)、事件流、分块
@@ -74,8 +76,13 @@ python3.11 -m venv .venv
 ## 配置
 
 所有 ⚠ 可调值在 `config/`(`settings.toml` / `qc_thresholds.yaml` / `profiles.yaml`)。
-连接串与密钥可用环境变量覆盖:`PIPELINE_DB_DSN`、`PIPELINE_MILVUS_HOST`、
-`PIPELINE_EMBEDDING_MODE`、`OPENAI_BASE_URL`、`OPENAI_API_KEY`、`HF_HOME`。
+连接串与密钥可用环境变量覆盖:`PIPELINE_DB_DSN`、`PIPELINE_MILVUS_HOST`、`PIPELINE_EMBEDDING_MODE`、
+`PIPELINE_EMBEDDING_MODEL`、`OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL`、`HF_HOME`。
+
+**富集开关**(`[toggles]`):`e1_enabled` 义务预打标(零 LLM 正则,默认开)/ `e2_enabled` 实体·部门·事项 LLM
+打标(**默认关**,保零 LLM 默认路径)。开 E2:设 `e2_enabled=true` + 运行前 `export OPENAI_API_KEY=...`
+(`[llm] model` 默认 `gpt-5.4-nano`,可 env `OPENAI_MODEL` 覆盖;**密钥只走 env、绝不入库**)。字典约束来自
+`seeds/dict_entity_types.csv` / `dict_departments.csv`(初版占位,带 `dict_version`,评审后增量重打)。
 
 ## 离线嵌入缓存(驻场无外网)
 
