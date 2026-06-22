@@ -1,0 +1,12 @@
+---
+description: "代码审查完成后,将全部发现写入 .review/findings.json 供 Review Lens 插件消费"
+alwaysApply: false
+globs: ["**/*"]
+---
+- 每次代码审查完成后,除正文回复外,将全部发现写入 .review/findings.json,
+  schema 严格遵循:version=1、findings[] 含 file(相对路径)/start_line/end_line/
+  severity(critical|warning|suggestion)/rule_id/spec_ref/message/anchor_text
+- anchor_text 必须是你刚读取的目标文件中逐字存在的 1–10 行原文(含缩进),
+  禁止改写、禁止凭记忆;写入前重读文件核对行号
+- id 按 sha1(file + "|" + rule_id + "|" + 逐行trim后的anchor_text)[:12] 生成,可省略
+- 该文件整体覆盖写入(上次审查结果不保留),用户核销状态由插件维护,与你无关
