@@ -49,6 +49,11 @@ def _to_candidate(hit: dict, mode: str) -> Candidate:
     )
 
 
+def drop_degraded(candidates: list[Candidate]) -> list[Candidate]:
+    """剔除 degraded 候选——契约:degraded 块仅全文检索、不参与条款级引用(CLAUDE.md)。"""
+    return [c for c in candidates if not c.degraded]
+
+
 class Retriever:
     """混合检索器:持有查询嵌入 + Milvus 客户端(连真栈)。"""
 

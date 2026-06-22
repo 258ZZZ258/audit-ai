@@ -38,6 +38,15 @@ _PLACEHOLDER_NOTE = {
     RouteType.STATISTICAL: "统计型(R6)",
 }
 
+# 未识别具体业务事项时的确定性兜底,保覆盖拒答 exhausted_scope 非空(SPEC §8.2 可解释契约)。
+# ⚠ 临时:N2 未接 dict_biz_domains/dict_entity_types 加载(见 GAP §依赖缺口),接入后即命中真实事项。
+_FALLBACK_SCOPE = ["现行制度(未识别具体业务事项)"]
+
+
+def resolve_scope(matters) -> list[str]:
+    """覆盖拒答的 exhausted_scope 必非空(可解释)。识别到事项用之,否则确定性兜底。"""
+    return list(dict.fromkeys(matters)) or list(_FALLBACK_SCOPE)
+
 
 class QueryAgent:
     """编排门面:持检索 / PG / LLM 依赖,编译一次 LangGraph,``ask`` 跑一次问答。"""
@@ -79,14 +88,18 @@ class QueryAgent:
         return _TERMINAL.get(RouteType(state.route_type), "placeholder")
 
     def _evidence(self, state: QueryState) -> dict:
-        cands = self._retriever.retrieve(state.query)
+        from query.retrieve.hybrid import drop_degraded
+
+        # 契约:degraded 块仅全文检索、不参与条款级引用 → R1 充分性与生成只用非降级候选
+        cands = drop_degraded(self._retriever.retrieve(state.query))
         matters = (state.scene or {}).get("matters", [])
+        scope = resolve_scope(matters)  # exhausted_scope 必非空(可解释拒答)
         suff = assess(cands, matters, min_hits=self._qcfg.sufficiency_min_hits)
         if suff.sufficient:
-            res = generate_evidence(state.query, cands, self._pg, self._llm)
+            res = generate_evidence(state.query, cands, self._pg, self._llm, exhausted_scope=scope)
         else:
-            anchors = fetch_anchors(self._pg, [c.chunk_id for c in cands])
-            res = refuse_coverage(suff.exhausted_scope, list(anchors.values()))
+            closest = list(fetch_anchors(self._pg, [c.chunk_id for c in cands][:3]).values())
+            res = refuse_coverage(scope, closest)
         return {"result": res}
 
     def _clarify(self, state: QueryState) -> dict:

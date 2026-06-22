@@ -35,3 +35,25 @@ def test_agent_ask_r1_end_to_end(indexed_stack):
     assert res.citations[0].status == "effective"
     text = " ".join(b.content for b in res.answer_blocks)
     assert "违规" not in text and "合规" not in text
+
+
+class _NoCiteLLM:
+    """模拟网关 LLM 返回无忠实引用(cited 为空)——不可信输出边界测试。"""
+
+    def chat_json(self, system: str, user: str) -> dict:
+        return {"answer": "(无依据答复)", "cited_clause_ids": []}
+
+
+def test_agent_ungrounded_llm_refuses(indexed_stack):
+    # finding 2:检索到候选但 LLM 无忠实引用 → 绝不出 evidence 裸答 → 降级覆盖拒答
+    pg, mio, ctx, dvid, query = indexed_stack
+    agent = QueryAgent(
+        retriever=Retriever(ctx.embedding, mio, load_query_config()),
+        pg=pg,
+        llm=_NoCiteLLM(),
+        qcfg=load_query_config(),
+    )
+    res = agent.ask(query)
+    assert res.route_type is RouteType.REFUSE
+    assert res.exhausted_scope  # 非空(可解释)
+    assert res.citations == [] or all(c.clause_id for c in res.citations)
