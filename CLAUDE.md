@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-文档处理管线(内规 docx / 外规 pdf → IR → 质检 → 切块 → 嵌入 → Milvus 索引,PG 为权威)。
-本仓正从单包 demo 原地升格为 **audit-ai monorepo**(分支 `migrate/audit-ai-skeleton`)。
+文档处理管线(内规 / 外规 / 监管问答 / 案例 → IR → 质检 → 切块 → 嵌入 → Milvus 索引,PG 为权威)。
+单包 demo 已原地升格为 **audit-ai monorepo**;契约现按生产设计 **v1.6 保真**(不再裁为 v1.5 子集)。
 
 > **本文件只放"始终要遵守的核心"——契约、架构、约定。** 各模块的**开发记忆 / 决策 / 踩坑**已拆到
 > 各包内 `*_devlog.md`(见底部「模块开发记忆索引」),**改某模块前按需读对应 devlog**(lazy,不全量进 context)。
@@ -20,9 +20,12 @@
 
 ## 项目状态
 
-M1(检查点 D,V1/V2/V4/V5)+ M2 验证套件(检查点 M2,V3/V6/V7)+ M3 E1 义务打标 + report(检查点 M3,V1–V8 全过)
-+ Web 工作台,均完成。**audit-ai 升格 Step 0–7 完成**(全量 **282 passed / 0 failed**,本地 BGE-M3 真跑;
-契约 byte 守恒、接缝就位、依赖无环):见 `docs/migration_devlog.md` + `docs/CP-009-仓库与升格规范.md`(草稿)。
+M1–M3(V1–V8 全过)+ Web 工作台 + audit-ai 升格 Step 0–7,均完成。**阶段 V16(2026-06,PR #4)**:生产 v1.6
+契约保真 + **四类语料(内规/外规/监管问答/案例)按 `corpus_type` profile 路由入库** + **E2 LLM 条款级打标** +
+案例要素抽取(`cases` 表)。全量 **374 passed / 0 failed**(干净栈 + 本地 BGE-M3 真跑)。
+详见 `docs/devlog.md` 阶段 V16 + `docs/migration_devlog.md` + `docs/CP-009-仓库与升格规范.md`。
+**制度查询智能体(功能1)MVP** 已落地(`query/`:R1 依据查询 + 覆盖感知拒答 + 八路路由骨架,
+spec-driven 产出;见 `docs/query-agent-docs/`),全仓 **440 passed / 0 failed**(真 BGE-M3)。
 
 ## 架构(audit-ai monorepo)
 
@@ -39,6 +42,8 @@ eval         (audit-eval)     验证组件(T2/T4/reconcile/rebuild/idempotency/r
 - **PG 权威 / Milvus 投影 / 单进程轮询 worker**:Orchestrator 轮询可推进态 → 调 stage 纯函数 `(ctx, dvid)->StageResult`
   → 条件迁移 + 写 `pipeline_events`。人工等待态(QC_FAILED/META_REVIEW/QUARANTINED)不轮询,等 CLI 命令推进。
 - **stage 是纯函数,只经 PG 状态 + ObjectStore 通信,互不 import**(生产迁 Temporal activity 的前提)。
+- **s3 按 `corpus_type` 路由切块**(`chunking/profile_router`):内规/外规→条款树;监管问答→问答对切分;案例→要素分段
+  + `cases` 表(§9 L1 抽取)。富集层 E1(义务,零 LLM)/ E2(实体·部门·事项,LLM,默认关);QC 指标集按 profile 选。
 - **两个可替换接缝**(Protocol/ABC + demo 默认 + 读配置 factory + 生产 stub):编排 `WorkflowEngine`(demo=Orchestrator;
   生产=Temporal stub,`PIPELINE_WORKFLOW_BACKEND`)、解析 `ParserAdapter`(demo=light;生产=DeepDoc/MinerU/PaddleOCR stub,
   `PIPELINE_PARSER_BACKEND`)。Checkpointer/GraphStore **未建**(本仓无 demo 代码,仅 CP-009 约定)。
@@ -55,7 +60,8 @@ QUARANTINED(hash 疑重 / 缺密级 / 白名单外格式 / 扫描件)
 ```
 
 - 每次迁移写 `pipeline_events`(时间/actor[system 或 CLI 用户]/前后态/错误码 E1xx–E8xx,demo 专属带 `-DEMO`)。
-- `INDEXED` 后 `finalize`:带 `supersedes` 自动把旧版置 `superseded`(PG 原子事务 + Milvus 从冷备改标量不删)+ 跑 T2/T4 留痕。
+- `INDEXED` 后 `finalize`:带 `supersedes` 把旧版置 `superseded`(废止件 `abolished`;PG 原子事务 + Milvus 从冷备改标量不删)
+  + 跑 T2/T4 留痕。`version_status` **四态** effective/superseded/abolished/**upcoming**(生效日在未来;`demo activate` 手动上线、延后 supersede)。
 - `reprocess <dvid>` 替代生产 REPARSE:全重跑 + 按 dvid 清孤儿(确定性 chunk_id 使重跑覆盖安全)。
 - `DEGRADED_INDEXED`(`chunks.degraded=true`):仅全文检索、不参与条款级引用、T4 豁免。
 
@@ -63,19 +69,25 @@ QUARANTINED(hash 疑重 / 缺密级 / 白名单外格式 / 扫描件)
 
 - **`chunk_id` 公式**(`libs/common/common/chunk_id.py`):`sha1(doc_version_id + "|" + clause_path_norm + "|" + seq)[:24]`。
   幂等之根,一字不改(pin: `libs/common/tests/test_chunk_id.py`)。
-- **manifest 契约**(`libs/common/common/manifest.py`):9 必填列,导入校验,不匹配整批拒收。
+- **manifest 契约**(`libs/common/common/manifest.py`):**11 必填列**(V1.6 增 `sub_type` / `effective_date`),导入校验,不匹配整批拒收。
 - **PG 字段名/类型/枚举**(`libs/common/common/pg_models.py`,生产 §10):**add-only**(Alembic 强制,绝不改名/删)。
-- **Milvus `audit_corpus` schema**(`libs/common/common/milvus_schema.py`,生产 §4.1/§8.2):全字段含 `perm_tag`/`biz_domain`/
-  `issuer_level` + partition key。`perm_tag` 全链写入但**过滤逻辑有意不实现**(字段预留)。
+- **Milvus `audit_corpus` schema**(`libs/common/common/milvus_schema.py`,生产 §8.2,V1.6 已补齐全字段):`perm_tag`/
+  `biz_domain` **ARRAY** · `issuer_level` **INT8** · `doc_id`/`sub_type`/`effective_date`/`chunk_type`/`text`/`entity_type`
+  + partition key(`corpus_type`)。`perm_tag` 写入但**过滤逻辑有意不实现**;`entity_type` 由 E2 富集(默认关时为空)。
 - **IR schema**(`libs/common/common/ir.py`,生产 §4.2):blocks/tables/bbox/page 全保真,是解析器与下游的稳定边界。
 - **写序与一致性**:PG 先 → Milvus upsert → flush → 置 `INDEXED`。INDEXED 前 chunk `status=staging` 检索不可见。
 - **切块六规则 + 条款树正则**(§6.1–6.2)+ 小数编号 / 目录剥离 / 跨法引用过滤:细节见 `structuring_devlog.md`。
+- **V1.6 新列/表**(add-only,迁移 0005–0007):chunks +`chunk_type`/`parent_chunk_id`/`internal_refs`/`embed_status`/
+  `entity_type`;clause_tags +类型列(`deontic_type`/`norm_duration_days`/`entity_type`…);`cases`(案例要素,§9)、
+  `dict_entity_types`/`dict_departments`(E2 约束字典)。
 
 ## 配置(所有 ⚠ 可调值集中于此,绝不硬编码)
 
-- `config/settings.toml`(连接串、嵌入模式、L2/E1 开关、`auto_confirm_meta_no_conflict`)· `config/qc_thresholds.yaml`(7 指标 + 边带 ε)
-  · `config/profiles.yaml`(P-INT/P-EXT)· `config/obligation.yaml`(E1 词表)。
-- **LLM 默认全关**(默认路径零 LLM 调用);L2 元数据辅助是开关,开时用 LLM 工厂、prompt 在根 `PROMPTS.md`。
+- `config/settings.toml`(连接串、嵌入模式、`[toggles]` L2/E1/**E2** 开关、`[llm] model`、`auto_confirm_meta_no_conflict`)·
+  `config/qc_thresholds.yaml`(7 指标 + 边带 ε + 问答对完整率)· `config/profiles.yaml`(P-INT/P-EXT/**P-QA/P-CASE**)·
+  `config/obligation.yaml`(E1 词表)· `seeds/dict_entity_types.csv`/`dict_departments.csv`(E2 约束字典,v0-draft 待评审)。
+- **LLM 默认全关**(默认路径零 LLM);L2 元数据 / **E2 条款级打标**是开关,开时用 LLM client(OpenAI 兼容 `gpt-5.4-nano`,
+  key 走 env `OPENAI_API_KEY` **绝不入库**)、prompt 在根 `PROMPTS.md`。
 
 ## CLI(`demo` / `demo-web`)
 
@@ -86,7 +98,7 @@ demo status [batch] | report <batch>
 demo queue list|show|fix|degrade|reject|release <id>   # 统一人工队列(qc_fix/quarantine/meta_confirm 三类)
 demo meta list | confirm <id|--batch>                  # META_REVIEW 人工闸
 demo search "<q>" [--include-superseded][--corpus internal|external][--topk N]
-demo verify smoke|replay|reconcile|idempotency · demo rebuild · demo reprocess <dvid>
+demo verify smoke|replay|reconcile|idempotency · demo rebuild · demo reprocess <dvid> · demo activate <dvid>  # upcoming→effective
 demo-web --host 127.0.0.1 --port 8765   # Web 工作台(thin shell over 域函数)
 ```
 
@@ -111,8 +123,9 @@ T2 冒烟(V7)· T4 锚点回放(V3)· reconcile(PG↔Milvus 对账)· rebuild(V6
 
 ## 测试约定
 
-- `.venv/bin/python -m pytest -q`(testpaths = `pipeline/tests`/`libs/common/tests`/`eval/tests`,共享 fixtures 在 repo 根 `conftest.py`)。
-- `.venv/bin/ruff check .`(E/F/I/UP/B,行宽 100,`known-first-party=[common,pipeline,eval]`;CJK 注释易超行→独立行/缩短)。
+- `.venv/bin/python -m pytest -q`(testpaths = `pipeline/tests`/`libs/common/tests`/`eval/tests`/`query/tests`,共享 fixtures 在 repo 根 `conftest.py`)。
+  **测试文件基名须全仓唯一**(pytest prepend 模式 + tests 无 `__init__.py`,撞名致收集报错)。
+- `.venv/bin/ruff check .`(E/F/I/UP/B,行宽 100,`known-first-party=[common,pipeline,eval,query]`;CJK 注释易超行→独立行/缩短)。
 - 集成测连真栈、栈未起则 skip;各自按 batch_id 反 FK 序清理。迁移 add-only:autogenerate → upgrade → `alembic check` 无漂移;
   `alembic/versions` 纳入 lint(autogenerate 后 `ruff check --fix alembic/versions && ruff format alembic/versions`)。
 - **mini golden set**(`pipeline/tests/golden/`):条款树 F1=1.0(demo 集必须完美解析,parser-swap 准入门);E1 义务 golden P=1.0/R=1.0。
@@ -124,14 +137,14 @@ T2 冒烟(V7)· T4 锚点回放(V3)· reconcile(PG↔Milvus 对账)· rebuild(V6
 | 契约 | `libs/common/common/` | `libs/common/contracts_devlog.md` |
 | S1 解析 / 页码锚点 | `pipeline/pipeline/parsing/` | `pipeline/pipeline/parsing/parsing_devlog.md` |
 | S2 质检 | `pipeline/pipeline/qc/` | `pipeline/pipeline/qc/qc_devlog.md` |
-| S3 结构化(条款树/切块) | `pipeline/pipeline/chunking/` | `pipeline/pipeline/chunking/structuring_devlog.md` |
+| S3 结构化(条款树/切块/profile 路由·问答·案例) | `pipeline/pipeline/chunking/` | `pipeline/pipeline/chunking/structuring_devlog.md` |
 | S4 元数据 / 版本链 | `pipeline/pipeline/meta/` | `pipeline/pipeline/meta/metadata_devlog.md` |
 | S5 嵌入 / 索引 / 冷备 | `pipeline/pipeline/index/` | `pipeline/pipeline/index/index_devlog.md` |
 | 编排 / 状态机 / 队列 | `pipeline/pipeline/`(orchestrator/states/queue) | `pipeline/pipeline/orchestration_devlog.md` |
-| E1 富集 | `pipeline/pipeline/enrich/` | `pipeline/pipeline/enrich/enrich_devlog.md` |
+| E1/E2 富集(+ LLM client) | `pipeline/pipeline/enrich/` · `pipeline/pipeline/llm_client.py` | `pipeline/pipeline/enrich/enrich_devlog.md` |
 | 验证套件 | `eval/eval/` | `eval/eval_devlog.md` |
 | Web 工作台 | `pipeline/pipeline/web/` | `pipeline/pipeline/web/web_devlog.md` |
-| 制度查询智能体(功能1,MVP) | `query/query/` | `docs/query-agent-docs/query_devlog.md`(+ SPEC/PLAN/TASKS) |
+| 制度查询智能体(功能1,MVP) | `query/query/` | `docs/query-agent-docs/query_devlog.md`(+ SPEC/PLAN/TASKS/GAP) |
 | audit-ai 升格 | (全仓) | `docs/migration_devlog.md` + `docs/CP-009-仓库与升格规范.md` |
 
 > 时间轴全叙事(按阶段 A/B/C/D/M2/M3/W/升格):`docs/devlog.md`。规格:`docs/file-processing-workflow-docs/SPEC*.md` / `docs/file-processing-workflow-docs/PLAN*.md` / `docs/file-processing-workflow-docs/TASKS*.md`;
