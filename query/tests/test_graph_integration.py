@@ -57,3 +57,29 @@ def test_agent_ungrounded_llm_refuses(indexed_stack):
     assert res.route_type is RouteType.REFUSE
     assert res.exhausted_scope  # 非空(可解释)
     assert res.citations == [] or all(c.clause_id for c in res.citations)
+
+
+class _VerdictLLM:
+    """模拟网关 LLM 返回合法引用 + **裸结论**答复——不可信输出边界(no-bare-conclusion 后检)。"""
+
+    def chat_json(self, system: str, user: str) -> dict:
+        import re
+
+        ids = re.findall(r"\[\[clause_id:([^\]]+)\]\]", user)
+        return {"answer": "该行为违规,属于不合规操作。", "cited_clause_ids": ids[:1]}
+
+
+def test_agent_evidence_sanitizes_bare_conclusion(indexed_stack):
+    # 复审 finding:有忠实引用但 LLM 输出裸结论 → 出 evidence 但答复经后检替中性,绝不漏裸结论
+    pg, mio, ctx, dvid, query = indexed_stack
+    agent = QueryAgent(
+        retriever=Retriever(ctx.embedding, mio, load_query_config()),
+        pg=pg,
+        llm=_VerdictLLM(),
+        qcfg=load_query_config(),
+    )
+    res = agent.ask(query)
+    assert res.route_type is RouteType.EVIDENCE  # 有真实引用 → 仍是依据路径
+    assert res.citations  # 引用保留
+    text = " ".join(b.content for b in res.answer_blocks)
+    assert all(t not in text for t in ("违规", "违法", "合规", "合法"))  # 裸结论被后检剔除

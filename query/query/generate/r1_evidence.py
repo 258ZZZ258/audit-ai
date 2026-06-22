@@ -19,6 +19,11 @@ from query.refuse.coverage_refusal import refuse_coverage
 
 _CLOSEST_N = 3  # 无忠实引用降级拒答时,附最接近 N 条供人工核实
 
+# 裸结论判定词:LLM 答复(不可信边界)含之 → 按潜在裸结论处理。
+# ⚠ 钝兜底,宁过滤勿漏(保留引用、替中性文案);precise 版是 §9.2 多模型复核(本切片未实装)。
+_BARE_CONCLUSION = ("违规", "违法", "合规", "合法")
+_NEUTRAL_ANSWER = "根据检索到的现行制度条款,相关依据见所引条款原文(详见引用);具体认定请人工判断。"
+
 
 def select_faithful(cited_ids: Iterable[str], allowed_ids: Iterable[str]) -> list[str]:
     """只保留出现在上下文(allowed)里的引用 id(去重保序)——引用真实性的代码级兜底。"""
@@ -28,6 +33,11 @@ def select_faithful(cited_ids: Iterable[str], allowed_ids: Iterable[str]) -> lis
         if cid in allowed and cid not in out:
             out.append(cid)
     return out
+
+
+def sanitize_answer(answer: str) -> str:
+    """LLM 答复含裸结论词 → 替为中性文案(保留引用),守"无裸结论"红线(LLM 输出不可信)。"""
+    return _NEUTRAL_ANSWER if any(t in answer for t in _BARE_CONCLUSION) else answer
 
 
 def generate_evidence(
@@ -55,7 +65,8 @@ def generate_evidence(
     if not citations:
         closest = list(fetch_anchors(pg, ids[:_CLOSEST_N]).values())
         return refuse_coverage(exhausted_scope, closest)
-    answer = str(out.get("answer", ""))
+    # LLM 答复文本按不可信处理:含裸结论词 → 替中性文案(保留真实引用),守红线
+    answer = sanitize_answer(str(out.get("answer", "")))
     return QueryResult(
         route_type=RouteType.EVIDENCE,
         answer_blocks=[AnswerBlock(BlockType.TEXT, answer)],

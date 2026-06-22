@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from query.contract import RouteType
-from query.generate.r1_evidence import generate_evidence
+from query.generate.r1_evidence import generate_evidence, sanitize_answer
 from query.graph import resolve_scope
 from query.llm.stub import StubLLMClient
 from query.retrieve.hybrid import Candidate, drop_degraded
@@ -43,3 +43,17 @@ def test_resolve_scope_uses_matters_dedup():
 
 def test_resolve_scope_fallback_nonempty():
     assert resolve_scope([]) != []  # 未识别事项时确定性兜底,保可解释
+
+
+# ── 复审 finding:LLM 答复(不可信)含裸结论 → 代码级后检替中性 ──────────
+def test_sanitize_answer_strips_bare_conclusion():
+    for verdict in ("该行为违规", "属于合规操作", "构成违法", "完全合法"):
+        assert "违规" not in sanitize_answer(verdict)
+        assert "违法" not in sanitize_answer(verdict)
+        assert "合规" not in sanitize_answer(verdict)
+        assert "合法" not in sanitize_answer(verdict)
+
+
+def test_sanitize_answer_keeps_clean_text():
+    clean = "依据第三条,合同应当经法务审查并由授权人签署。"
+    assert sanitize_answer(clean) == clean
