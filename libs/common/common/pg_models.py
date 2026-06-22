@@ -217,6 +217,39 @@ class ClauseTag(AuditMixin, Base):
     entity_type: Mapped[list | None] = mapped_column(JSONB)  # CP-007 实体类型(E2 富集,预留)
 
 
+class ClauseReference(AuditMixin, Base):
+    """条款指代/引用 standoff 解析表(V1.6 §6.7,CP-001)。
+
+    ``chunks.text`` 保持逐字原文,引用解析结果存这里(独立表),带注释文本仅 S6 窗口装配时
+    临时渲染、不落库。解析的是条文里**字面写出的引用**四类(``ref_type``):R1 文档自指
+    (本办法)/ R2 相对条款(前款)/ R3 绝对条款(第十五条)/ R4 跨文档(《证券法》第196条 →
+    ``target_doc_version_id``)。**R4 才涉及外规,且仅解析正文已写出的引用——不是"内规覆盖了
+    哪条外规义务"的语义映射**(那属功能2 比对智能体「必要性覆盖」)。
+
+    状态:**表结构已建**(供查询侧 R1/R2 多跳确定性拦截开发起步);**填充逻辑 ref_resolver
+    尚未实现(§6.7,TODO 先不做)**。建表后 ``chunks.internal_refs[]`` 按 §6.7「保留不删、
+    停止新写」。``method`` 恒为 ``rule``——字段预留,禁止未来混入不可区分的 LLM 解析结果。
+    """
+
+    __tablename__ = "clause_references"
+
+    ref_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    chunk_id: Mapped[str] = mapped_column(ForeignKey("chunks.chunk_id"), index=True)
+    doc_version_id: Mapped[str] = mapped_column(
+        ForeignKey("doc_versions.doc_version_id"), index=True
+    )
+    span_start: Mapped[int | None] = mapped_column(Integer)  # 引用在 chunks.text 的字符跨度
+    span_end: Mapped[int | None] = mapped_column(Integer)
+    surface_text: Mapped[str] = mapped_column(String(256))  # 原文引用表面("前款""《证券法》第X条")
+    ref_type: Mapped[str] = mapped_column(String(8))  # R1 | R2 | R3 | R4
+    # 目标为应用层引用(非 FK):可 pending_target/unresolved,或指向尚未入库的外规
+    target_doc_version_id: Mapped[str | None] = mapped_column(String(26), index=True)
+    target_clause_path_norm: Mapped[str | None] = mapped_column(String(512))
+    # resolution_status: resolved | unresolved | ambiguous | pending_target
+    resolution_status: Mapped[str] = mapped_column(String(16), index=True, default="unresolved")
+    method: Mapped[str] = mapped_column(String(16), default="rule", server_default="rule")
+
+
 class DictIssuer(AuditMixin, Base):
     __tablename__ = "dict_issuers"
 
@@ -275,7 +308,8 @@ class Case(AuditMixin, Base):
 
 
 # ── 未建表(add-only 保留,后续触发式建设;见 SPEC §5 / V0.1 §1.3)──────────────
-# clause_references : ref_resolver 解析后的条款引用(图谱 POC 启动时)
+# 注:clause_references 表结构已建(见上 ClauseReference);但其填充逻辑 ref_resolver
+#     尚未实现(§6.7,TODO 先不做)——表已就位,resolver 落地时按 §6.7 R1–R4 补写。
 # quality_tickets  : 质量工单(试运行前)
 # doc_graph_stats  : 图谱探针统计(E3)
 # obligation_keywords : E1 词典表(随比对智能体建设;M1 用内置正则 + 配置词表)
