@@ -34,14 +34,14 @@ def test_ambiguous_routes_to_clarify(agent):
 @pytest.mark.parametrize(
     "query, route",
     [
-        ("合同管理办法什么时候修订的", RouteType.CHANGE),
+        # R2 变更已实装(走真栈,见 test_r2_change_integration);此处仅 R3–R6 仍占位
         ("有没有类似的处罚案例", RouteType.CASE),
         ("哪些制度规定了信息披露", RouteType.ENUMERATE),
         ("二维码介绍开户是否违规", RouteType.JUDGMENTAL),
         ("哪些板块处罚高发", RouteType.STATISTICAL),
     ],
 )
-def test_r2_to_r6_honest_placeholder(agent, query, route):
+def test_r3_to_r6_honest_placeholder(agent, query, route):
     res = agent.ask(query)
     assert res.route_type is route  # 正确打标
     assert "暂未实装" in res.answer_blocks[0].content  # 诚实占位,不裸答

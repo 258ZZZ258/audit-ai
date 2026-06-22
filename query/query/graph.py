@@ -24,7 +24,7 @@ _TERMINAL = {
     RouteType.EVIDENCE: "evidence",
     RouteType.CLARIFY: "clarify",
     RouteType.REFUSE: "refuse",
-    RouteType.CHANGE: "placeholder",
+    RouteType.CHANGE: "change",
     RouteType.CASE: "placeholder",
     RouteType.ENUMERATE: "placeholder",
     RouteType.JUDGMENTAL: "placeholder",
@@ -102,6 +102,11 @@ class QueryAgent:
             res = refuse_coverage(scope, closest)
         return {"result": res}
 
+    def _change(self, state: QueryState) -> dict:
+        from query.change.r2_change import answer_change  # 懒导入,避免 import 期拉 pipeline
+
+        return {"result": answer_change(state.query, self._retriever, self._pg)}
+
     def _clarify(self, state: QueryState) -> dict:
         blk = AnswerBlock(
             BlockType.CLARIFY_QUESTION,
@@ -125,6 +130,7 @@ class QueryAgent:
         g = StateGraph(QueryState)
         g.add_node("understand", self._understand)
         g.add_node("evidence", self._evidence)
+        g.add_node("change", self._change)
         g.add_node("clarify", self._clarify)
         g.add_node("refuse", self._refuse)
         g.add_node("placeholder", self._placeholder)
@@ -132,10 +138,10 @@ class QueryAgent:
         g.add_conditional_edges(
             "understand",
             self._route_edge,
-            {"evidence": "evidence", "clarify": "clarify",
+            {"evidence": "evidence", "change": "change", "clarify": "clarify",
              "refuse": "refuse", "placeholder": "placeholder"},
         )
-        for n in ("evidence", "clarify", "refuse", "placeholder"):
+        for n in ("evidence", "change", "clarify", "refuse", "placeholder"):
             g.add_edge(n, END)
         return g.compile()
 
