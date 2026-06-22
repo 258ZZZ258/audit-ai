@@ -16,6 +16,10 @@
   `incremental-implementation` + `test-driven-development`(逐任务 TDD 落地)。每阶段门控待人工批准再进。
 - **Codex(代码审查)**:负责开发生命周期中的代码审查,用 skills `code-review-and-quality` + `security-and-hardening`。
 - 故 **Claude Code 默认不自评 / 不代行审查**——交付后交 Codex 审;除非用户明确要求自查。
+- **审查修复闭环**:Codex 审查 → 发现写 `.review/findings.json`(按 `.cursor/rules/review-output.mdc`)→
+  **由 Claude Code(原作者)逐条修复,或带 `spec_ref` 理由反驳**(审查意见非总对)→ Codex **复审**,
+  直至无 critical/warning。**修复归实现侧(Claude),审查者(Codex)不自改**——保审查独立性(改动也须被独立验证);
+  纯机械项(格式 / lint)交 `ruff --fix` 等工具,不劳代理。
 - SDD 产物落 `docs/<模块>-docs/`(SPEC / PLAN / TASKS / devlog / GAP),如 `docs/query-agent-docs/`。
 
 ## 项目状态
