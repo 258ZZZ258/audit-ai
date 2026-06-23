@@ -71,3 +71,76 @@ def test_case_routes_to_r3_node():
 
 def test_route_only_no_retrieval(agent):
     assert agent.route_only("费用报销三个月的规定在哪里") is RouteType.EVIDENCE
+
+
+# ── 附挂门控(§6.3 适用边界):仅充分 evidence + 非概念判断型;拒答/关闭不挂(零栈)──────
+class _OneCaseRetr:
+    def retrieve_cases(self, q, *, include_superseded=False):
+        from query.retrieve.hybrid import Candidate
+
+        return [Candidate("c1", 1.0, "P-CASE", "DV1", None, None, False, "hybrid")]
+
+
+class _OneCasePg:
+    def get_case(self, dvid):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            doc_version_id=dvid, penalty_org="XX证监局", penalty_date=None, respondent="XX公司",
+            penalty_type="罚款", amount_wan=None, violation_category=None, cited_regulations=[],
+        )
+
+    def get(self, model, pk):
+        return None
+
+    def session(self):  # 精确反查走 fake;citations=[] 时不触达
+        raise AssertionError("不应触达 PG session")
+
+
+def _agent(attach_cases=True):
+    qcfg = load_query_config().model_copy(update={"attach_cases": attach_cases})
+    return QueryAgent(_OneCaseRetr(), _OneCasePg(), StubLLMClient(), qcfg)
+
+
+def _evidence_res():
+    from query.contract import AnswerBlock, QueryResult
+
+    return QueryResult(RouteType.EVIDENCE, answer_blocks=[AnswerBlock(BlockType.TEXT, "答")])
+
+
+def _cards(res):
+    return [b for b in res.answer_blocks if b.type is BlockType.CASE_CARD]
+
+
+def test_attach_on_evidence_non_definition():
+    from query.state import QueryState
+
+    st = QueryState("q", scene={"scene_type": "evidence"})
+    res = _agent()._maybe_attach_cases(st, _evidence_res())
+    assert len(_cards(res)) == 1   # 充分 evidence + 非 definition → 附挂
+
+
+def test_no_attach_definition_scene():
+    from query.state import QueryState
+
+    st = QueryState("q", scene={"scene_type": "definition"})
+    res = _agent()._maybe_attach_cases(st, _evidence_res())
+    assert _cards(res) == []   # 概念判断型不附挂(§6.3 适用边界)
+
+
+def test_no_attach_when_refuse_route():
+    from query.contract import AnswerBlock, QueryResult
+    from query.state import QueryState
+
+    refuse = QueryResult(RouteType.REFUSE, answer_blocks=[AnswerBlock(BlockType.TEXT, "拒")])
+    res = _agent()._maybe_attach_cases(QueryState("q", scene={"scene_type": "evidence"}), refuse)
+    assert _cards(res) == []   # 拒答/降级不附挂
+
+
+def test_no_attach_when_toggle_off():
+    from query.state import QueryState
+
+    res = _agent(attach_cases=False)._maybe_attach_cases(
+        QueryState("q", scene={"scene_type": "evidence"}), _evidence_res()
+    )
+    assert _cards(res) == []   # 开关关闭 → 不附挂
