@@ -16,23 +16,21 @@ from query.llm import LLMClient
 from query.refuse.coverage_refusal import refuse_coverage, refuse_out_of_domain
 from query.retrieve.sufficiency import assess
 from query.state import QueryState
-from query.understand.classify import classify
+from query.understand.classify import SceneType, classify
 from query.understand.router import route
 
-# route_type → 终端节点名(R2–R6 收敛到 placeholder)
+# route_type → 终端节点名(R4–R6 收敛到 placeholder)
 _TERMINAL = {
     RouteType.EVIDENCE: "evidence",
     RouteType.CLARIFY: "clarify",
     RouteType.REFUSE: "refuse",
     RouteType.CHANGE: "change",
-    RouteType.CASE: "placeholder",
+    RouteType.CASE: "r3_case",
     RouteType.ENUMERATE: "placeholder",
     RouteType.JUDGMENTAL: "placeholder",
     RouteType.STATISTICAL: "placeholder",
 }
 _PLACEHOLDER_NOTE = {
-    RouteType.CHANGE: "变更查询(R2)",
-    RouteType.CASE: "相似案例(R3)",
     RouteType.ENUMERATE: "多文档列举(R4)",
     RouteType.JUDGMENTAL: "判定型(R5)",
     RouteType.STATISTICAL: "统计型(R6)",
@@ -100,12 +98,27 @@ class QueryAgent:
         else:
             closest = list(fetch_anchors(self._pg, [c.chunk_id for c in cands][:3]).values())
             res = refuse_coverage(scope, closest)
-        return {"result": res}
+        return {"result": self._maybe_attach_cases(state, res)}
+
+    def _maybe_attach_cases(self, state: QueryState, res: QueryResult) -> QueryResult:
+        """§6.3 附挂通道:仅**充分 evidence** 答复、**非概念判断型**附挂;拒答/降级不挂、可关。"""
+        if not self._qcfg.attach_cases or res.route_type is not RouteType.EVIDENCE:
+            return res  # 关 / 拒答降级 → 不挂
+        if (state.scene or {}).get("scene_type") == SceneType.DEFINITION.value:
+            return res  # 概念判断型不附挂(§6.3 适用边界)
+        from query.case.r3_case import attach_cases  # 懒导入,避免 import 期拉 pipeline
+
+        return attach_cases(res, state.query, res.citations, self._retriever, self._pg, self._qcfg)
 
     def _change(self, state: QueryState) -> dict:
         from query.change.r2_change import answer_change  # 懒导入,避免 import 期拉 pipeline
 
         return {"result": answer_change(state.query, self._retriever, self._pg)}
+
+    def _r3_case(self, state: QueryState) -> dict:
+        from query.case.r3_case import answer_case  # 懒导入,避免 import 期拉 pipeline
+
+        return {"result": answer_case(state.query, self._retriever, self._pg, self._qcfg)}
 
     def _clarify(self, state: QueryState) -> dict:
         blk = AnswerBlock(
@@ -131,6 +144,7 @@ class QueryAgent:
         g.add_node("understand", self._understand)
         g.add_node("evidence", self._evidence)
         g.add_node("change", self._change)
+        g.add_node("r3_case", self._r3_case)
         g.add_node("clarify", self._clarify)
         g.add_node("refuse", self._refuse)
         g.add_node("placeholder", self._placeholder)
@@ -138,10 +152,10 @@ class QueryAgent:
         g.add_conditional_edges(
             "understand",
             self._route_edge,
-            {"evidence": "evidence", "change": "change", "clarify": "clarify",
-             "refuse": "refuse", "placeholder": "placeholder"},
+            {"evidence": "evidence", "change": "change", "r3_case": "r3_case",
+             "clarify": "clarify", "refuse": "refuse", "placeholder": "placeholder"},
         )
-        for n in ("evidence", "change", "clarify", "refuse", "placeholder"):
+        for n in ("evidence", "change", "r3_case", "clarify", "refuse", "placeholder"):
             g.add_edge(n, END)
         return g.compile()
 

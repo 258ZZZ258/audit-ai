@@ -23,6 +23,8 @@ class QueryConfig(BaseModel):
     topk: int = 8                  # ⚠ 送生成的最终上下文条数(§5.5 top8)
     partition_topk: int = 25       # ⚠ 内规/外规各分区召回条数(§5.2 top25)
     sufficiency_min_hits: int = 1  # ⚠ 事项分区内充分判据最少命中(§8.1 务实版)
+    attach_cases: bool = True      # ⚠ R1 依据答复尾挂相关案例卡(§6.3 附挂通道);可关
+    attach_topk: int = 3           # ⚠ 附挂案例卡条数(§6.3 top3)
     llm_backend: Literal["stub", "gateway"] = "stub"   # QUERY_LLM_BACKEND 覆盖
     rerank_backend: Literal["none", "bge"] = "none"    # QUERY_RERANK_BACKEND 覆盖
     llm_model: str = "gpt-5.4-nano"  # ⚠ gateway 时模型名;env OPENAI_MODEL 可覆盖
