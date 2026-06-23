@@ -9,12 +9,22 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from common.pg_models import Case
 from query.case.bridge import cases_for_clauses, norm_ref
 from query.case.r3_case import answer_case
 from query.config import load_query_config
 from query.contract import BlockType, RouteType
 from query.retrieve.hybrid import Retriever
+
+
+@pytest.fixture(autouse=True)
+def _ensure_milvus_connected(case_stack):
+    """重连 Milvus(幂等):pymilvus 全局 "default" 连接被 test_r2 模块级 stack teardown 的
+    ``mio.disconnect()`` 断开;本文件按字母序在 r2 之后跑,检索前须重连,否则 ConnectionNotExist。
+    """
+    case_stack.mio.connect()
 
 
 def _answer(case_stack):
