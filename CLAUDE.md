@@ -2,9 +2,11 @@
 
 文档处理管线(内规 / 外规 / 监管问答 / 案例 → IR → 质检 → 切块 → 嵌入 → Milvus 索引,PG 为权威)。
 单包 demo 已原地升格为 **audit-ai monorepo**;契约现按生产设计 **v1.6 保真**(不再裁为 v1.5 子集)。
+**生产保真指令:一律按 v1.6 生产设计评判,不以"这只是 demo / demo 消费者够用"为由放水**——red-line / 契约 /
+富集(E1/E2/cases/四类语料)按生产标准实现与验证(QA/案例/E2 已在 PR #4 落地)。
 
 > **本文件只放"始终要遵守的核心"——契约、架构、约定。** 各模块的**开发记忆 / 决策 / 踩坑**已拆到
-> 各包内 `*_devlog.md`(见底部「模块开发记忆索引」),**改某模块前按需读对应 devlog**(lazy,不全量进 context)。
+> `docs/devlogs/*_devlog.md`(见底部「模块开发记忆索引」),**改某模块前按需读对应 devlog**(lazy,不全量进 context)。
 > 时间轴全叙事在 `docs/devlog.md`。改契约前先读 `docs/file-processing-workflow-docs/SPEC*.md`("裁机制不裁契约":cut mechanisms, never cut contracts)。
 
 ## 开发协作流程(分工 — 始终遵守)
@@ -86,7 +88,7 @@ QUARANTINED(hash 疑重 / 缺密级 / 白名单外格式 / 扫描件)
   + partition key(`corpus_type`)。`perm_tag` 写入但**过滤逻辑有意不实现**;`entity_type` 由 E2 富集(默认关时为空)。
 - **IR schema**(`libs/common/common/ir.py`,生产 §4.2):blocks/tables/bbox/page 全保真,是解析器与下游的稳定边界。
 - **写序与一致性**:PG 先 → Milvus upsert → flush → 置 `INDEXED`。INDEXED 前 chunk `status=staging` 检索不可见。
-- **切块六规则 + 条款树正则**(§6.1–6.2)+ 小数编号 / 目录剥离 / 跨法引用过滤:细节见 `structuring_devlog.md`。
+- **切块六规则 + 条款树正则**(§6.1–6.2)+ 小数编号 / 目录剥离 / 跨法引用过滤:细节见 `docs/devlogs/structuring_devlog.md`。
 - **V1.6 新列/表**(add-only,迁移 0005–0007):chunks +`chunk_type`/`parent_chunk_id`/`internal_refs`/`embed_status`/
   `entity_type`;clause_tags +类型列(`deontic_type`/`norm_duration_days`/`entity_type`…);`cases`(案例要素,§9)、
   `dict_entity_types`/`dict_departments`(E2 约束字典)。
@@ -144,16 +146,16 @@ T2 冒烟(V7)· T4 锚点回放(V3)· reconcile(PG↔Milvus 对账)· rebuild(V6
 
 | 模块 | 代码位置 | 开发记忆(决策/踩坑) |
 |---|---|---|
-| 契约 | `libs/common/common/` | `libs/common/contracts_devlog.md` |
-| S1 解析 / 页码锚点 | `pipeline/pipeline/parsing/` | `pipeline/pipeline/parsing/parsing_devlog.md` |
-| S2 质检 | `pipeline/pipeline/qc/` | `pipeline/pipeline/qc/qc_devlog.md` |
-| S3 结构化(条款树/切块/profile 路由·问答·案例) | `pipeline/pipeline/chunking/` | `pipeline/pipeline/chunking/structuring_devlog.md` |
-| S4 元数据 / 版本链 | `pipeline/pipeline/meta/` | `pipeline/pipeline/meta/metadata_devlog.md` |
-| S5 嵌入 / 索引 / 冷备 | `pipeline/pipeline/index/` | `pipeline/pipeline/index/index_devlog.md` |
-| 编排 / 状态机 / 队列 | `pipeline/pipeline/`(orchestrator/states/queue) | `pipeline/pipeline/orchestration_devlog.md` |
-| E1/E2 富集(+ LLM client) | `pipeline/pipeline/enrich/` · `pipeline/pipeline/llm_client.py` | `pipeline/pipeline/enrich/enrich_devlog.md` |
-| 验证套件 | `eval/eval/` | `eval/eval_devlog.md` |
-| Web 工作台 | `pipeline/pipeline/web/` | `pipeline/pipeline/web/web_devlog.md` |
+| 契约 | `libs/common/common/` | `docs/devlogs/contracts_devlog.md` |
+| S1 解析 / 页码锚点 | `pipeline/pipeline/parsing/` | `docs/devlogs/parsing_devlog.md` |
+| S2 质检 | `pipeline/pipeline/qc/` | `docs/devlogs/qc_devlog.md` |
+| S3 结构化(条款树/切块/profile 路由·问答·案例) | `pipeline/pipeline/chunking/` | `docs/devlogs/structuring_devlog.md` |
+| S4 元数据 / 版本链 | `pipeline/pipeline/meta/` | `docs/devlogs/metadata_devlog.md` |
+| S5 嵌入 / 索引 / 冷备 | `pipeline/pipeline/index/` | `docs/devlogs/index_devlog.md` |
+| 编排 / 状态机 / 队列 | `pipeline/pipeline/`(orchestrator/states/queue) | `docs/devlogs/orchestration_devlog.md` |
+| E1/E2 富集(+ LLM client) | `pipeline/pipeline/enrich/` · `pipeline/pipeline/llm_client.py` | `docs/devlogs/enrich_devlog.md` |
+| 验证套件 | `eval/eval/` | `docs/devlogs/eval_devlog.md` |
+| Web 工作台 | `pipeline/pipeline/web/` | `docs/devlogs/web_devlog.md` |
 | 制度查询智能体(功能1,MVP) | `query/query/` | `docs/query-agent-docs/query_devlog.md`(+ SPEC/PLAN/TASKS/GAP) |
 | audit-ai 升格 | (全仓) | `docs/migration_devlog.md` + `docs/CP-009-仓库与升格规范.md` |
 
