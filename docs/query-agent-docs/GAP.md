@@ -6,7 +6,7 @@
 > 图例:✅ 已实现 · 🟡 部分(骨架/接缝/占位/务实版)· ❌ 未实现。
 
 ## 一句话
-三条红线已在 **R1 闭环**(无编造引用 / 无裸结论 / 可解释拒答);但八路里**只有 R1/R7/R8 实装,R2–R6 仅占位**;
+三条红线已在 **R1 闭环**(无编造引用 / 无裸结论 / 可解释拒答);八路里 **R1/R2/R3/R7/R8 实装,R4–R6 仅占位**;
 查询理解前端(HyDE/多轮/分解)与横切能力(多模型复核/权限/观测/流式/导出)大部分未做。
 
 ---
@@ -25,16 +25,16 @@
 
 | 路由 | 状态 | 说明 |
 |---|---|---|
-| R1 依据查询(§6.1) | 🟡 大部分 | 混合检索✅ 充分性自检✅(务实) 引用约束生成✅ 四级锚点✅;缺:案例附挂❌、sparse 发文字号提权❌、entity_type 强过滤❌ |
+| R1 依据查询(§6.1) | 🟡 大部分 | 混合检索✅ 充分性自检✅(务实) 引用约束生成✅ 四级锚点✅ **案例附挂✅**(R3,可关);缺:sparse 发文字号提权❌、entity_type 强过滤❌ |
 | R2 变更查询(§6.2) | ✅ 实装 | 版本链回查 + 条款级 diff + 修订原因回查(缺失明示、不推测)+ §6.2 四栏;背景栏/多跳/字句级 diff 留后续(见 SPEC-R2 §0) |
-| R3 相似案例 + 案例桥接(§6.3) | ❌ 占位 | case 分区检索 / 要素回填 / 桥接通道 / 附挂 全未做(依赖 `cases` 表) |
+| R3 相似案例 + 案例桥接(§6.3) | ✅ 实装 | case 分区检索✅ + 要素回填卡片✅(一案一卡)+ 附挂到 R1✅(语义∪精确反查)+ 精确反查桥接原语✅(`cited_regulations` **consumed-when-present**,默认空降级语义-only);桥接-as-入口(behavior→R5)留后续(R5 占位)、L2 `cited_regulations` 生产/`case_summary` 强过滤留后续 |
 | R4 多文档列举(§6.4) | ❌ 占位 | 枚举模式高 k / E1∩E2∩biz_domain∩entity_type 全未做 |
 | R5 判定型(§6.5) | ❌ 占位 | 构成要件框定 / 三段式 / 多模型复核 全未做(P0,§15-④) |
 | R6 统计型(§6.6) | ❌ 占位 | 维度抽取 / cases 参数化 SQL 全未做 |
 | R7 需澄清(§6.7) | 🟡 | 触发✅ + 纯对话澄清块✅;缺澄清后回 N0 重新归并(N0 未做) |
 | R8 兜底拒答(§6.8) | ✅ | `refuse_out_of_domain` |
 
-> R2–R6 均已正确打标 route_type(诚实占位、不裸答),二次开发 = 往既有图挂节点 + 填 handler。
+> R4–R6 均已正确打标 route_type(诚实占位、不裸答),二次开发 = 往既有图挂节点 + 填 handler。
 
 ## 3. 检索与重排(§5)
 
@@ -93,7 +93,7 @@
 |---|---|---|
 | `audit_corpus` 混合检索 | ✅ | R1 消费 |
 | PG `chunks` 四级回查 | ✅ | anchors |
-| `cases` | ❌ | R3/R6 未实装,未消费 |
+| `cases` | 🟡 | **R3 已消费**(要素回填卡片 + `cited_regulations` 精确反查);R6 未实装 |
 | `clause_references` | ❌ | 空表(无 resolver),R1/R2 多跳未用 |
 | `clause_tags` E1/E2 | 🟡 | 分类用词典,未真做义务/期限过滤 |
 | `dict_*` | 🟡 | entity_types/biz_domains/departments 存在;scenario_terms / intent_routes 未建 |
@@ -117,7 +117,7 @@
 3. **§9.3 权限 Casbin + 操作日志** — 权限/安全验收
 
 ### P1 — 核心功能路由
-4. ~~R2 变更查询~~ ✅ 已实装(SPEC/PLAN/TASKS-R2)/ R3 相似案例+案例桥接 / R4 多文档列举 / R6 统计型(R3–R6 仍占位)
+4. ~~R2 变更查询~~ ✅(SPEC/PLAN/TASKS-R2)/ ~~R3 相似案例+案例桥接~~ ✅(SPEC/PLAN/TASKS-R3)/ R4 多文档列举 / R6 统计型(R4–R6 仍占位)
 5. §5.5 重排(bge-reranker)/ §5.4 sparse 精确通道提权
 
 ### P2 — 查询理解前端
@@ -128,7 +128,7 @@
 8. §13 V0 评估(RAGAS / 术语断层率 / HyDE A/B / 合成评估集)
 
 ### 依赖资产缺口(可并行补)
-9. `cases` 消费(R3/R6 前提)
+9. ~~`cases` 消费(R3 前提)~~ ✅ R3 已消费(要素回填 + 精确反查);R6 统计型 SQL 消费待补
 10. `clause_references` resolver(R1/R2 多跳;表已建,数据/逻辑待补,见 `libs/common/common/pg_models.py` TODO)
 11. `dict_scenario_terms` / `dict_intent_routes` 建表 + 灌种子(18 问 + 应用场景 + 真实日志)
 12. entity_type / biz_domain 检索前置过滤 → 需扩 `pipeline.index.milvus_io.search` 接受附加 expr / output_fields

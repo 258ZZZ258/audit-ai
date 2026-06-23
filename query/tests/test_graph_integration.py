@@ -5,11 +5,13 @@ gate 见 conftest.indexed_stack(PIPELINE_EMBEDDING_MODEL + PG + Milvus + soffice
 
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import select
 
 from common.pg_models import Chunk
 from query.config import load_query_config
-from query.contract import RouteType
+from query.contract import BlockType, RouteType
 from query.graph import QueryAgent
 from query.llm.stub import StubLLMClient
 from query.retrieve.hybrid import Retriever
@@ -83,3 +85,38 @@ def test_agent_evidence_sanitizes_bare_conclusion(indexed_stack):
     assert res.citations  # 引用保留
     text = " ".join(b.content for b in res.answer_blocks)
     assert all(t not in text for t in ("违规", "违法", "合规", "合法"))  # 裸结论被后检剔除
+
+
+# ── R3 附挂(§6.3 后置):依据答复尾挂相关案例卡;开关可关 ─────────────────────────
+def _case_cards(res):
+    return [json.loads(b.content) for b in res.answer_blocks if b.type is BlockType.CASE_CARD]
+
+
+def test_agent_evidence_attaches_case_card(case_stack):
+    # 依据问句充分答复 → 尾挂语义检索到的案例卡(默认 attach_cases=on)
+    agent = QueryAgent(
+        retriever=Retriever(case_stack.ctx.embedding, case_stack.mio, load_query_config()),
+        pg=case_stack.pg,
+        llm=StubLLMClient(),
+        qcfg=load_query_config(),
+    )
+    res = agent.ask(case_stack.query)
+    assert res.route_type is RouteType.EVIDENCE
+    cards = _case_cards(res)
+    assert cards, "依据答复应尾挂相关案例卡(§6.3 附挂通道)"
+    assert case_stack.case_dvid in {c["doc_version_id"] for c in cards}
+    # 追加块:既有 evidence 引用不变(不污染 R1 核心)
+    assert res.citations and all(c.clause_id for c in res.citations)
+
+
+def test_agent_evidence_no_attach_when_off(case_stack):
+    qcfg = load_query_config().model_copy(update={"attach_cases": False})
+    agent = QueryAgent(
+        retriever=Retriever(case_stack.ctx.embedding, case_stack.mio, qcfg),
+        pg=case_stack.pg,
+        llm=StubLLMClient(),
+        qcfg=qcfg,
+    )
+    res = agent.ask(case_stack.query)
+    assert res.route_type is RouteType.EVIDENCE
+    assert _case_cards(res) == []   # 开关关闭 → 不附挂
