@@ -388,6 +388,36 @@ P-QA→`qa_chunker`(一问一答=1 chunk + 问答对完整率 QC)、P-CASE→`ca
 **待裁决/后续**:实体/部门字典 v0 占位待张老师评审(§16-7)、E1 期限口径待甲方(§16-8);P-CASE"处罚依据"段在依据
 埋于段落中间时未单独切出;DeepDoc/OCR 仍搁置。
 
+## 阶段 Q:制度查询智能体 R1+R2 + 协作流程/记忆收口(2026-06-22~23)
+
+摄取侧之上起**功能1 制度查询智能体**(独立 `query/` 包,只读消费 V1.6 产物;DAG `query→pipeline→common` 无环)。
+全程 **spec-driven 四阶段门控**(SPEC/PLAN/TASKS/IMPLEMENT,产物入 `docs/query-agent-docs/`)+ **Codex 审查修复闭环**。
+
+- **契约补**:`clause_references` 表 + 迁移 0008 + fixture(R1/R2 多跳预留;**ref_resolver 填充逻辑仍 TODO**,见 pg_models 注释)。
+- **R1 依据查询 MVP**(PR #5):混合检索(复用 `milvus_io`/`embedding_client`)→ **引用 ID 注入生成**(`select_faithful` 代码级
+  兜底,无忠实引用降级拒答)→ **四级锚点 PG 回查** → §10 契约;**覆盖感知拒答**(exhausted_scope)+ **八路路由分满**
+  (R1/R7/R8 实装,R2–R6 诚实占位)+ LangGraph 编排(节点纯函数可换底座)+ LLM 可配置工厂(默认 stub 零网络)。
+  Codex 审 4 项 finding(degraded 引用 / 无引用裸答 / scope 空 / 裸结论代码级后检)全修。
+- **R2 变更查询**(PR #6):定位 → 版本链回查(logical 的 effective + supersedes 前驱)→ **条款级 diff**(同 clause_path_norm
+  多子块按 seq 聚合)→ **修订原因回查**(`revision_notes`,缺失明示、**绝不 LLM 推测**)→ §6.2 四栏。全程零 LLM。
+  Codex 审 2 项(条款多子块聚合 / 引用断言强化)全修。
+- **协作流程固化(CLAUDE.md)**:Claude 规划+实现 ↔ Codex 审查;审查修复闭环(Codex 审→Claude 改/反驳→复审,
+  Codex 不自改);**测试职责分工**(Claude 拥 TDD+模型门控/集成+合并前全仓门一次,Codex/CI 独立单元校验)+ 节流。
+- **agent 记忆结构收口**(PR #7):AGENTS.md 入库、10 个模块 devlog 归 `docs/devlogs/`、删升格专用 skill、
+  production-fidelity 指令升为 CLAUDE.md 仓库共享。
+
+**状态快照**:八路 4 路实装(R1 依据 / R2 变更 / R7 澄清 / R8 兜底),红线由代码级兜底守(select_faithful/sanitize/覆盖拒答)。
+全仓 **458 passed / 0 failed**(本地 BGE-M3 真栈)· CI 绿(已补 `pip install -e query`)· ruff 全仓绿 · DAG 无环 · 迁移至 0008 无漂移。
+PR #5/#6/#7 已合入 main。
+
+**踩坑(非显然)**:① **测试文件基名须全仓唯一**(pytest prepend + tests 无 `__init__.py`,撞名致收集报错)·
+② CI 安装步骤须加 `pip install -e query`(否则 langgraph 缺失收集报错)· ③ 仓库改名后 `.venv/bin/*` shebang 失效,
+用 `python -m` 或重写 shebang · ④ flat 布局下从仓库根 cwd `import query` 解析为 namespace 包(`__file__=None`),与 pipeline/eval 同,非 bug。
+
+**后续 backlog**(`docs/query-agent-docs/GAP.md`):P0 — R5 判定型 / §9.2 多模型复核 / §9.3 权限;P1 — R3 案例桥接 / R4 列举 /
+R6 统计 + 重排;依赖缺口 — dict 加载让 N2 真识别事项(清 resolve_scope 兜底)/ clause_references resolver / cases 消费 /
+entity_type·biz_domain 检索前置过滤(需扩 milvus_io)。
+
 ## 已建链路与下一步
 
 全链路:`demo ingest`(s0 登记+版本关系+去重审计)→ s1(渲染+解析+对齐)→ s2(七指标质检)→ STRUCTURING 复合
