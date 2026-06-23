@@ -9,6 +9,7 @@
 {"query": "营业部代客理财能不能做", "route": "judgmental"}
 {"query": "哪些板块处罚高发", "route": "statistical"}
 {"query": "2024年以来监管处罚有多少起", "route": "statistical"}
+{"query": "2024年以来的处罚有哪些", "route": "statistical"}
 {"query": "它呢", "route": "clarify"}
 {"query": "这个", "route": "clarify"}
 {"query": "今天天气怎么样", "route": "refuse"}

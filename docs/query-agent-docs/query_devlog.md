@@ -114,3 +114,11 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
   - **`func.extract('year', date)`** 跨方言:单测只断言编译 SQL 结构/params(postgresql dialect),真值跑留集成连真 PG。
 - **未做(SPEC-R6 §0)**:LLM 维度抽取、违规类别字典评审(§6.6 前提,consumed-when-present 不阻塞)、`org_like` 从 NL 抽取
   (sql_builder 支持、dimensions 暂不填)、列表型标题外的下钻链接、占比/多 metric 组合、场景 5 舆情后台报告。
+- **Codex 复审修复(3 warning,均实 bug、测试漏覆盖)**:
+  - **列表型统计未进 STATISTICAL 路由**:`classify._STATISTICAL` 缺"处罚有哪些"类列表触发词 → "2024年以来的处罚有哪些"
+    误落 evidence/R1(R6 单测直调 `answer_stats` 绕过路由,漏检)。修:加列表统计触发词 + golden + `test_router` 回归。
+  - **缺可见性过滤**:R6 直聚合 `cases`,未 join `doc_versions` 过滤 `pipeline_status==INDEXED ∧ version_status==effective`
+    → 把 META_REVIEW(cases 在 S4 即 upsert)/superseded/upcoming 计入,绕过查询侧 `status=effective` 强过滤。修:聚合+列表
+    两路统一 join 可见性条件;集成 fixture 补不可见哨兵断言排除。**集成 fixture 原 `doc_versions` 默认 `REGISTERED` 故须显式置 INDEXED**。
+  - **YEAR 聚合 Decimal 序列化崩**:PG `EXTRACT(year)` 返 `Decimal`,`json.dumps` 抛 TypeError(逐年路径无集成测,漏检)。
+    修:`cast(extract..., Integer)` + `_fmt` Decimal 兜底 + 逐年集成测。

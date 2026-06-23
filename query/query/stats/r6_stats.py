@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from decimal import Decimal
 
 from query.contract import AnswerBlock, BlockType, QueryResult, RouteType
 from query.stats.dimensions import GroupBy, StatSpec, extract_stat_spec
@@ -27,8 +28,12 @@ _CATEGORY_NOTE = "部分/全部案例的违规事由未标注(L2 默认关),按�
 
 
 def _fmt(v):
-    """date → ISO;其余原样(None 保留为 JSON null)。"""
-    return v.isoformat() if isinstance(v, date) else v
+    """date → ISO;Decimal → int/float(PG EXTRACT/聚合返 Decimal,JSON 不可序列化);其余原样。"""
+    if isinstance(v, date):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        return int(v) if v == v.to_integral_value() else float(v)
+    return v
 
 
 def _table_block(spec: StatSpec, rows: list) -> AnswerBlock:
