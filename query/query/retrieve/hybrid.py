@@ -89,3 +89,21 @@ class Retriever:
                     merged[cand.chunk_id] = cand
         ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)
         return ranked[: self._qcfg.topk]
+
+    def retrieve_cases(self, query: str, *, include_superseded: bool = False) -> list[Candidate]:
+        """§6.3 案例分区(P-CASE)语义检索 → 按分降序的 chunk 级候选(``partition_topk`` 条)。
+
+        一案多 chunk(case_summary + case_section)由上层按 ``doc_version_id`` 去重为"一案一卡";
+        故此处**不截 topk、不按 dvid 去重**,留足头部供上层去重后仍有足够 distinct 案例。
+        ``status==effective`` 前置 + degraded 由上层 ``drop_degraded`` 剔除(沿用 R1 契约)。
+        """
+        emb = self._embed.embed([query])[0]
+        res = self._milvus.search(
+            emb.dense,
+            emb.sparse,
+            topk=self._qcfg.partition_topk,
+            include_superseded=include_superseded,
+            corpus="P-CASE",
+        )
+        cands = [_to_candidate(hit, res.retrieval_mode) for hit in res.hits]
+        return sorted(cands, key=lambda c: c.score, reverse=True)
