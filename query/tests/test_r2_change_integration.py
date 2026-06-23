@@ -126,7 +126,14 @@ def test_r2_change_end_to_end(stack, tmp_path, mini_batch, ingest_index):
         assert new_dvid in full and old_dvid in full       # 版本对
         assert "条款变更" in full                            # diff 段
         assert REVISION_TEXT in full                         # 修订原因回查(非推测)
-        assert isinstance(res.citations, list)               # 变更条款四级引用
+        # 变更条款带四级引用(SC5,R2-CITATION-ASSERTION):非空 + 关键锚点字段
+        assert res.citations, "变更条款应带四级引用"
+        assert all(c.clause_id for c in res.citations)
+        c0 = res.citations[0]
+        assert c0.clause_path                       # 条款路径
+        assert c0.doc_title or c0.doc_no            # 文档级(标题/文号至少其一)
+        assert c0.status == "effective"             # 状态:现行版本
+        assert c0.page_start is not None            # 页码锚点
 
         # graph 端到端:变更问句 → route_type=change
         agent = QueryAgent(
