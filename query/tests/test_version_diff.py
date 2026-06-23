@@ -5,8 +5,8 @@ from __future__ import annotations
 from query.change.version_diff import ClauseChange, diff_clauses
 
 
-def _c(path: str, text: str) -> dict:
-    return {"clause_path_norm": path, "text": text}
+def _c(path: str, text: str, seq: int = 0) -> dict:
+    return {"clause_path_norm": path, "text": text, "seq": seq}
 
 
 def test_added_removed_changed_unchanged():
@@ -26,10 +26,22 @@ def test_empty_sides():
     assert diff_clauses([], []) == []
 
 
-def test_dedup_same_path_takes_first():
-    old = [_c("第一条", "X1"), _c("第一条", "X2")]  # 同 path 取首条 X1
-    new = [_c("第一条", "X1")]
-    assert diff_clauses(old, new) == []  # X1 == X1 → unchanged
+def test_aggregates_subchunks_by_path():
+    # R2-CLAUSE-DIFF-COMPLETE:同 path 多子块(切块器拆超长条款)→ 聚合比较,后续子块差异不漏
+    old = [_c("第一条", "A", 0), _c("第一条", "B旧", 1)]
+    new = [_c("第一条", "A", 0), _c("第一条", "B新", 1)]
+    changes = diff_clauses(old, new)
+    assert len(changes) == 1 and changes[0].kind == "changed"
+    assert "B旧" in changes[0].old_text and "B新" in changes[0].new_text
+
+
+def test_aggregation_respects_seq_order():
+    # 子块乱序输入 → 按 seq 拼接,聚合一致,不因输入顺序误判
+    out = diff_clauses(
+        [_c("第一条", "P1", 0), _c("第一条", "P2", 1)],
+        [_c("第一条", "P2", 1), _c("第一条", "P1", 0)],
+    )
+    assert out == []
 
 
 def test_output_sorted_deterministic():

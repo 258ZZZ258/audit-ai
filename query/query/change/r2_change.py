@@ -49,15 +49,22 @@ def fetch_clause_chunks(pg, dvid: str) -> list[dict]:
     """某版本的条款级块(非 parent / 非 degraded / clause_path_norm 非空)。"""
     with pg.session() as s:
         rows = s.scalars(
-            select(Chunk).where(
+            select(Chunk)
+            .where(
                 Chunk.doc_version_id == dvid,
                 Chunk.is_parent.is_(False),
                 Chunk.degraded.is_(False),
                 Chunk.clause_path_norm.is_not(None),
             )
+            .order_by(Chunk.seq)  # 稳定序:同条款多子块按 seq 聚合(version_diff)
         )
         return [
-            {"clause_path_norm": c.clause_path_norm, "text": c.text, "chunk_id": c.chunk_id}
+            {
+                "clause_path_norm": c.clause_path_norm,
+                "text": c.text,
+                "chunk_id": c.chunk_id,
+                "seq": c.seq,
+            }
             for c in rows
         ]
 
@@ -134,8 +141,10 @@ def answer_change(query: str, retriever, pg) -> QueryResult:
     new_chunks = fetch_clause_chunks(pg, current.doc_version_id)
     changes = diff_clauses(fetch_clause_chunks(pg, predecessor.doc_version_id), new_chunks)
     reason = format_reason(fetch_revision(pg, current.doc_version_id))
-    # 新增/修改条款 → 当前版本 chunk_id → 四级引用
-    path_to_cid = {c["clause_path_norm"]: c["chunk_id"] for c in new_chunks}
+    # 新增/修改条款 → 当前版本该条款首子块(按 seq)chunk_id → 四级引用
+    path_to_cid: dict[str, str] = {}
+    for c in new_chunks:  # new_chunks 已按 seq 升序
+        path_to_cid.setdefault(c["clause_path_norm"], c["chunk_id"])
     cited = [
         path_to_cid[ch.clause_path_norm]
         for ch in changes
