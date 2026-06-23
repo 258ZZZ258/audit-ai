@@ -24,7 +24,7 @@ _web_uploads/
 /lo_resave/
 /.understand-anything/
 
-# 用户意留未跟踪(不入库):AGENTS.md / cursor 本地设置 / Office 临时锁文件
-/AGENTS.md
+# AGENTS.md 已入库(Codex 指令,团队共享;见 CLAUDE.md 开发协作流程)。
+# 用户意留未跟踪(不入库):cursor 本地设置 / Office 临时锁文件
 /.cursor/settings.json
 ~$*

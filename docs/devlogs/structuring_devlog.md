@@ -16,5 +16,5 @@
 - **单段超长(决策 10)**:语义边界(项（N）/句末；。)拆 + 字符硬切兜底(标 `oversize`);`token_count` 改**量内容**(不含面包屑/条头续接,使「≤target_max」为干净不变量)。
 - **C1 s3**:载 IR → `build_chunks` → `pg_io.replace_chunks`(同事务删旧插新,确定性 id 重跑幂等)。chunk_status=staging;父/表格块仅 PG;`oversize` 落库(迁移 0004)。
 
-> chunk_id 公式本体是契约,在 `libs/common`(见 `../../../libs/common/contracts_devlog.md`)。
+> chunk_id 公式本体是契约,在 `libs/common/common/`(见同目录 `contracts_devlog.md`)。
 > 时间轴:`docs/devlog.md` 并行流 L(L1/L2/L3)、阶段 C(C1)、检查点 D(发现 2)、阶段 W(目录区域化)。
