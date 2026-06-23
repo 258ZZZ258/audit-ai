@@ -89,3 +89,28 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     幂等 `mio.connect()` 重连。**系统性脆弱**(共享全局别名 + 模块级 disconnect),后续 query 集成新增检索用例须注意。
 - **未做(SPEC-R3 §0)**:桥接-as-入口(behavior→R5 检索入口,R5 占位/§15-④ 阻塞)、L2 `cited_regulations` 生产、
   bge-reranker、`cited_regulations`→四级 `citations` 解析(Q6,默认空路径本就不加)、R6 统计型 cases SQL。
+
+## R6 统计型(第四轮 spec-driven,SPEC/PLAN/TASKS-R6)
+
+- **切片**:R6 实装(替占位)——`route_type=statistical`:**规则维度抽取**(`stats/dimensions`)→ **参数化 SQL**
+  (`stats/sql_builder`,白名单 + bound params)over `cases` → **TABLE** 输出(`stats/r6_stats`)。两模式:聚合(GROUP BY
+  维度 → count/sum(amount) 降序)+ 列表(date 过滤 → 按 `penalty_date` 降序列案例)。**全程零 LLM、不走向量检索**(§6.6)。
+- **决策**:
+  - **防注入(红线)**:聚合/过滤列**只来自 `GroupBy` 白名单枚举 → 真实 Column**(`_GROUP_COL` dict);过滤值经
+    SQLAlchemy 算子**自动绑定为 bound params**;用户问句只经规则映射到枚举/标量,**绝不拼接进 SQL**。`test_sql_builder`
+    编译断言 parametrized + 恶意输入(`"; DROP TABLE"`)落默认枚举不进 SQL 结构。**拒任意 SQL / 拒 LLM 生成 SQL**。
+  - **规则维度抽取**(Q1):聚合词优先于列表词、歧义默认聚合(Q8);group_by 按序匹配(RESPONDENT_TYPE 的"对象类型"
+    先于 ORG 的"机构",避免误吞);metric count / "金额·罚款·罚没·总额"→sum_amount(Q6);年过滤 regex + "以来"判 from/eq。
+  - **`violation_category` consumed-when-present**(Q2):L2 默认空 → 聚合 over present;含 NULL 桶 → 表注"违规事由未标注
+    (L2 默认关)",**不臆造**;L1 维度(年/机构/对象/金额)有真数据。
+  - **TABLE content** = 结构化 JSON `{columns, rows[, note]}`(`stream=False`,沿用 R3 Q4);`route_type=statistical`、citations 空。
+  - **配置归位**:R6 无新 config(维度/metric 规则固定、`_LIST_CAP` 模块常量)。
+- **踩坑**:
+  - **集成 PG-only**:R6 不需 Milvus/embedding → gate 仅 PG(比 R3 轻、0.16s)。合成 cases 用**哨兵未来年 2098/2099 + 唯一名**,
+    所有测试问句带年过滤 → 经 `func.extract('year')` 与全表其它 cases **隔离**,计数/排序确定(否则全表聚合会被残留数据污染)。
+  - **FK 链 fixture**:`cases`→`doc_versions`→`documents`→`import_batches`;直插需按 FK 序 + `s.flush()`(无 relationship,
+    SQLAlchemy 仍按 FK 依赖排序,但逐 flush 最稳),反序清(Case→DocVersion→Document→ImportBatch)。`DocVersion` 必填
+    `source_format`/`source_hash`/`raw_object_key`(无默认)。
+  - **`func.extract('year', date)`** 跨方言:单测只断言编译 SQL 结构/params(postgresql dialect),真值跑留集成连真 PG。
+- **未做(SPEC-R6 §0)**:LLM 维度抽取、违规类别字典评审(§6.6 前提,consumed-when-present 不阻塞)、`org_like` 从 NL 抽取
+  (sql_builder 支持、dimensions 暂不填)、列表型标题外的下钻链接、占比/多 metric 组合、场景 5 舆情后台报告。
