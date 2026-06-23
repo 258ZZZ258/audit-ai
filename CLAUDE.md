@@ -156,7 +156,7 @@ T2 冒烟(V7)· T4 锚点回放(V3)· reconcile(PG↔Milvus 对账)· rebuild(V6
 | E1/E2 富集(+ LLM client) | `pipeline/pipeline/enrich/` · `pipeline/pipeline/llm_client.py` | `docs/devlogs/enrich_devlog.md` |
 | 验证套件 | `eval/eval/` | `docs/devlogs/eval_devlog.md` |
 | Web 工作台 | `pipeline/pipeline/web/` | `docs/devlogs/web_devlog.md` |
-| 制度查询智能体(功能1,MVP) | `query/query/` | `docs/query-agent-docs/query_devlog.md`(+ SPEC/PLAN/TASKS/GAP) |
+| 制度查询智能体(功能1,MVP) | `query/query/` | `docs/query-agent-docs/query_devlog.md`(+ SPEC/PLAN/TASKS/GAP/RTM) |
 | audit-ai 升格 | (全仓) | `docs/migration_devlog.md` + `docs/CP-009-仓库与升格规范.md` |
 
 > 时间轴全叙事(按阶段 A/B/C/D/M2/M3/W/升格):`docs/devlog.md`。规格:`docs/file-processing-workflow-docs/SPEC*.md` / `docs/file-processing-workflow-docs/PLAN*.md` / `docs/file-processing-workflow-docs/TASKS*.md`;
