@@ -83,5 +83,9 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
   - **`upsert_case` 是 `s.merge`** → 传部分字段会把其余列 **NULL 掉**;手插 `cited_regulations` 改用
     `session.get(Case, dvid).cited_regulations = [...]` 直改单列(非 merge),并 finally 复位 `[]` 不污染会话级 fixture。
   - **P-CASE QC** 只跑锚点(4)/文本质量(6),`cases` 字段完整率是**批次度量非 s2 拦截**(`qc/indicators.py`)→ 案例件易自动放行。
+  - **pymilvus 全局连接顺序依赖**:`test_r2_change_integration` 的**模块级** `stack` fixture teardown `mio.disconnect()`
+    断开全局 `default` 别名连接(与会话级 `indexed_stack`/`case_stack` 共享);R3 集成按字母序在 r2 **之后**跑、
+    是首个在该断开后检索 Milvus 的用例 → `ConnectionNotExist`(单跑/r3 先跑则不暴露)。修:R3 集成文件 autouse
+    幂等 `mio.connect()` 重连。**系统性脆弱**(共享全局别名 + 模块级 disconnect),后续 query 集成新增检索用例须注意。
 - **未做(SPEC-R3 §0)**:桥接-as-入口(behavior→R5 检索入口,R5 占位/§15-④ 阻塞)、L2 `cited_regulations` 生产、
   bge-reranker、`cited_regulations`→四级 `citations` 解析(Q6,默认空路径本就不加)、R6 统计型 cases SQL。
