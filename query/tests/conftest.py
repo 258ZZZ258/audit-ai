@@ -16,6 +16,7 @@ from sqlalchemy import delete, select, text
 from ulid import ULID
 
 from common.pg_models import (
+    Case,
     Chunk,
     ClauseTag,
     Document,
@@ -50,8 +51,12 @@ _MANIFEST_COLS = [
 
 #: 稳定查询词(命中 ingest 件第三条「合同应当经法务审查并由授权人签署」)
 QUERY_TEXT = "合同应当经法务审查并由授权人签署"
+#: R3 案例问句(classify → CASE scene:含「处罚案例」关键词)
+CASE_QUERY = "有没有微信二维码违规开户的处罚案例"
 
 IndexedStack = namedtuple("IndexedStack", "pg mio ctx dvid query")
+#: R3 案例栈(复用 indexed_stack 的内规件 + 额外一件 P-CASE 处罚决定书)
+CaseStack = namedtuple("CaseStack", "pg mio ctx internal_dvid case_dvid query case_query")
 
 
 def _clean_internal_docx(tmp_path):
@@ -85,6 +90,48 @@ def _clean_internal_docx(tmp_path):
             None,
             None,
             "内规",
+            None,
+        ]
+    )
+    mp = d / "manifest.xlsx"
+    wb.save(mp)
+    return d, mp
+
+
+def _penalty_case_docx(tmp_path):
+    """唯一无冲突 P-CASE 处罚决定书:首段=manifest 标题、body 无可抽文号 → L1 零冲突 → B 模式放行。
+
+    L1 案例要素(case_extract):penalty_org=北京证监局(头部抬头)/ respondent / penalty_date /
+    penalty_type / amount_wan;cited_regulations 为 L2 字段默认空(精确反查由集成测手插验证)。
+    """
+    tag = str(ULID())
+    d = tmp_path / ("qc_" + tag[:8])
+    d.mkdir()
+    fn, title = "penalty.docx", "北京证监局行政处罚决定书"
+    doc = Docx()
+    doc.add_paragraph(title)  # 首段=manifest 标题(避免 title 冲突)
+    doc.add_paragraph("当事人:某某证券有限公司,住所地北京市朝阳区。")
+    doc.add_paragraph(
+        f"经查,该公司存在以下违规行为:通过微信发送开户推广二维码违规招揽客户编号{tag}。"
+    )
+    doc.add_paragraph("处罚依据:依据《证券法》第一百九十七条的规定。")
+    doc.add_paragraph("现决定:对当事人给予警告,并处以罚款50万元。")
+    doc.add_paragraph("2024年3月15日")
+    doc.save(d / fn)
+    wb = Workbook()
+    wb.active.append(_MANIFEST_COLS)
+    wb.active.append(
+        [
+            fn,
+            title,
+            f"案例第{tag[:6]}号",  # manifest 文号;body 无可抽文号 → meta.doc_numbers 空 → 不冲突
+            "INTERNAL",            # issuer:不解析到 dict code → 无 issuer 冲突(同内规件)
+            "内部",
+            "P-CASE",
+            "LEGAL",
+            None,                  # issue_date None → 不与 body 日期冲突
+            None,
+            "案例",
             None,
         ]
     )
@@ -159,3 +206,45 @@ def indexed_stack(soffice, tmp_path_factory):
         s.execute(delete(Document).where(Document.logical_id == logical_id))
         s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
     mio.disconnect()
+
+
+@pytest.fixture(scope="session")
+def case_stack(indexed_stack, tmp_path_factory):
+    """R3:复用 indexed_stack 内规件 + 额外 ingest 一件 P-CASE 处罚决定书到 INDEXED。"""
+    pg, mio, ctx = indexed_stack.pg, indexed_stack.mio, indexed_stack.ctx
+    tmp = tmp_path_factory.mktemp("q_case")
+    d, m = _penalty_case_docx(tmp)
+    bid = str(ULID())
+    register_batch(ctx, bid, d, m)
+    cli._drive_batch(pg, ctx, bid)  # B 模式自动到 INDEXED
+    with pg.session() as s:
+        cdvids = [
+            x.doc_version_id
+            for x in s.scalars(select(DocVersion).where(DocVersion.batch_id == bid))
+        ]
+    assert cdvids, "案例件 ingest 未产出 dvid"
+    (case_dvid,) = cdvids
+    dv = pg.get(DocVersion, case_dvid)
+    assert dv.pipeline_status == "INDEXED", f"案例件未到 INDEXED:{dv.pipeline_status}"
+    assert pg.get_case(case_dvid) is not None, "cases 表未回填案例要素"
+    clogical = dv.logical_id
+
+    yield CaseStack(pg, mio, ctx, indexed_stack.dvid, case_dvid, indexed_stack.query, CASE_QUERY)
+
+    # 反 FK 序清理案例件(cases 行先于 doc_versions)+ Milvus 投影
+    try:
+        mio.delete(case_dvid)
+        mio.flush()
+    except Exception:
+        pass
+    with pg.session() as s:
+        child_ids = select(Chunk.chunk_id).where(Chunk.doc_version_id == case_dvid)
+        s.execute(delete(ClauseTag).where(ClauseTag.chunk_id.in_(child_ids)))
+        s.execute(delete(Case).where(Case.doc_version_id == case_dvid))
+        s.execute(delete(Chunk).where(Chunk.doc_version_id == case_dvid))
+        s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id == case_dvid))
+        s.execute(delete(RemediationRecord).where(RemediationRecord.doc_version_id == case_dvid))
+        s.execute(delete(ReviewQueue).where(ReviewQueue.doc_version_id == case_dvid))
+        s.execute(delete(DocVersion).where(DocVersion.doc_version_id == case_dvid))
+        s.execute(delete(Document).where(Document.logical_id == clogical))
+        s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
