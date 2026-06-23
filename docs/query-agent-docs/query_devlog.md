@@ -58,3 +58,30 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
 - **踩坑**:`diff_clauses` 按 clause_path_norm **字符串序**排序——中文数字按 Unicode 码点(一<三<二),非数字序;
   测试只验"确定性排序"(`sorted()`),数字序属后续 polish。`revision_notes` ingest 不填(仅人工录入),集成测试手插一条。
 - **未做(SPEC-R2 §0)**:背景栏(同期案例,明示"未纳入本期")、多跳历史、条款内字句级 diff、修订条目↔diff 的 LLM 对齐。
+
+## R3 相似案例 + 案例桥接(第三轮 spec-driven,SPEC/PLAN/TASKS-R3)
+
+- **切片**:R3 实装(替占位)——(a) `route_type=case`:case 分区(P-CASE)语义检索 → 按 `doc_version_id`
+  **去重一案一卡** → PG `cases`/`doc_versions` 要素回填 → `CASE_CARD` 卡片;(b) **附挂通道**:R1 充分
+  evidence 答复尾挂相关案例卡(语义 ∪ 精确反查);(c) **精确反查桥接原语**(`bridge.cases_for_clauses`)。
+  **全程零 LLM**。新增 `query/query/case/`(case_card / bridge / r3_case)。
+- **决策**:
+  - **consumed-when-present**(关键):`cited_regulations` 是 L2 LLM 字段、**默认关**(`case_extract.py:131` 留 `[]`)
+    → 精确反查**默认无数据**;只**消费**已有值,默认路径索引空 → 反查 `[]`、**降级语义-only**、**绝不臆造外规引用**。
+    fixture **手插** `cited_regulations`(仿 R2 手插 revision_notes)验证机制。`§15-⑤` 不阻塞本轮。
+  - **一案一卡**:case 分区多 chunk(case_summary + case_section)按 `doc_version_id` 去重保高分(`_dedup_by_case`)。
+  - **附挂边界**(§6.3):仅**充分 evidence** + **非 `definition`(概念判断型)**附挂;拒答/降级不挂、追加块不改 R1
+    引用核心、可关。配置 `[query] attach_cases`(默认 on)/`attach_topk`(3)——入 **QueryConfig 非 pipeline `[toggles]`**。
+  - **`norm_ref` 匹配契约**(Q3):发文字号/文号 + `clause_path_norm` 归一(复用 chunking 口径);`cited_regulations`
+    单条目 = **dict(`doc_no`+`clause_path`)**,非 dict / 缺键跳过;**真实 JSONB shape 随 L2 对齐落地校准**(§15-⑤)。
+  - **CASE_CARD content = 结构化 JSON 字符串**(Q4,`stream=False` 原子块);要素逐字 PG 权威,**L2 空字段省略不臆造**。
+- **踩坑**:
+  - `chunk_type=case_summary` 主命中面**无法 milvus 强过滤**(`_OUTPUT_FIELDS` 不含 `chunk_type`)→ 以**一案一卡**去重替代(GAP #12)。
+  - 集成 fixture 案例件 **B 模式自动放行**:`cross_check` 仅在「manifest 非空 ∧ L1 候选非空 ∧ 不一致」才冲突,故
+    首段=manifest 标题(免 title 冲突)、body **无可抽文号**(`meta.doc_numbers` 空→免 doc_number 冲突)、
+    manifest `issue_date=None`(免日期冲突)、`issuer=INTERNAL`(不解析到 dict code→免 issuer 冲突)。
+  - **`upsert_case` 是 `s.merge`** → 传部分字段会把其余列 **NULL 掉**;手插 `cited_regulations` 改用
+    `session.get(Case, dvid).cited_regulations = [...]` 直改单列(非 merge),并 finally 复位 `[]` 不污染会话级 fixture。
+  - **P-CASE QC** 只跑锚点(4)/文本质量(6),`cases` 字段完整率是**批次度量非 s2 拦截**(`qc/indicators.py`)→ 案例件易自动放行。
+- **未做(SPEC-R3 §0)**:桥接-as-入口(behavior→R5 检索入口,R5 占位/§15-④ 阻塞)、L2 `cited_regulations` 生产、
+  bge-reranker、`cited_regulations`→四级 `citations` 解析(Q6,默认空路径本就不加)、R6 统计型 cases SQL。
