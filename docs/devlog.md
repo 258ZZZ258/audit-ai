@@ -418,6 +418,58 @@ PR #5/#6/#7 已合入 main。
 R6 统计 + 重排;依赖缺口 — dict 加载让 N2 真识别事项(清 resolve_scope 兜底)/ clause_references resolver / cases 消费 /
 entity_type·biz_domain 检索前置过滤(需扩 milvus_io)。
 
+## 阶段 R:制度查询智能体 R3+R6 + RTM(2026-06-23~24)
+
+延续 spec-driven 闭环,接续 阶段 Q backlog,完成 R3 案例桥接 + R6 统计型 + RTM 全覆盖证明,PR #9–#12 均合入 main。
+细节见 `docs/query-agent-docs/query_devlog.md` 的 R3/R6 两节。
+
+- **R3 相似案例 + 案例桥接**(PR #9–#10):case 分区(P-CASE)语义检索 → **一案一卡去重**(`_dedup_by_case` 按
+  `doc_version_id`)→ PG 要素回填 → `CASE_CARD`;**附挂通道**:R1 充分 evidence 答复尾挂相关案例卡(门控:充分
+  evidence + 非 definition 型才附挂,可关 `query.attach_cases`)。**精确反查桥接**(`bridge.cases_for_clauses`,
+  consumed-when-present:L2 默认关 → `cited_regulations` 空 → 反查 `[]` 降级语义-only,**绝不臆造外规引用**)。
+  Codex 补审附挂门控单测(PR #10):definition/refuse/toggle-off 不挂,全绿。
+  **踩坑**:pymilvus 全局连接顺序依赖——`test_r2_change_integration` 模块级 teardown `mio.disconnect()` 断全局别名,
+  R3 集成按字母序后跑首个用 Milvus → `ConnectionNotExist`;修:R3 集成文件 autouse 幂等 `mio.connect()` 重连。
+  **后续系统性脆弱**:共享全局别名 + 模块级 disconnect,新增 Milvus 检索集成须注意同模式。
+
+- **RTM 需求可追溯矩阵**(PR #11):建 `docs/query-agent-docs/RTM.md`(v1.0 设计全覆盖证明,R1–R3/R6 已标 test_id)。
+
+- **R6 统计型**(PR #12):规则维度抽取(零 LLM)→ **防注入参数化 SQL**(`GroupBy` 白名单枚举 + SQLAlchemy
+  bound params,恶意输入落默认枚举不进 SQL 结构,拒 LLM 生成 SQL)→ **TABLE 输出**(`{columns, rows[, note]}`)。
+  两模式:聚合(GROUP BY 维度 count/sum_amount 降序)+ 列表(date 过滤 → 按 penalty_date 降序)。全程零 LLM。
+  集成 PG-only(不需 Milvus/embedding),合成 cases 用**哨兵未来年 2098/2099 + 唯一名** + FK 链 fixture 按序 flush。
+  **Codex 复审 3 warning(均实 bug)**:①列表统计未进 `STATISTICAL` 路由(缺"处罚有哪些"类触发词,R6 单测直调绕
+  过路由漏检)→ 加触发词 + golden + router 回归;②聚合直接 over `cases` 未 join `doc_versions` 过滤可见性
+  (INDEXED ∧ effective)→ 把 META_REVIEW/superseded/upcoming 件计入 → 修:两路统一 join 可见性条件;
+  ③PG `EXTRACT(year)` 返 `Decimal`,`json.dumps` 抛 TypeError → 修:`cast(..., Integer)` + `_fmt` Decimal 兜底 + 逐年集成测。
+  全部修完,Codex 最终 approve。
+
+**状态快照**:八路 **6 路实装**(R1 依据 / R2 变更 / R3 案例桥接 / R6 统计 / R7 澄清 / R8 兜底),R4(列举)/R5(判定)诚实占位。
+RTM 全覆盖证明落地。PR #9–#12 合入 main。ruff 全仓绿 · 迁移至 0008 无漂移。
+**后续 backlog(已更新 GAP.md)**:P0 — R5 判定型 / §9.2 多模型复核 / §9.3 权限;P1 — R4 列举 + 重排;
+依赖缺口 — `violation_category` L2 字典评审、`clause_references` resolver、entity_type·biz_domain 前置过滤。
+
+## 阶段 R4:制度查询智能体 R4 多文档列举(2026-06-24)
+
+第五轮 spec-driven(SPEC/PLAN/TASKS-R4),实装八路最后一个**确定性**路由 R4(列举)——**八路仅剩 R5 占位**。
+细节见 `docs/query-agent-docs/query_devlog.md` R4 节。
+
+- **切片**:`route_type=enumerate`——规则维度抽取(`listing/dimensions`)→ **枚举模式高 k**(`retrieve_enumerate`
+  50/50,不激进截断)→ 过滤(① **Milvus 标量预过滤** `chunk_type=clause`+`biz_domain`+`entity_type`;② **E1 义务
+  PG 后过滤** `clause_tags.is_obligation`)→ 去重 + 按 `doc_version` 聚合 → **TABLE**(制度名/文号/条款/页码/状态)
+  + 四级 citations + **不保证穷举外规边界声明**;空→覆盖拒答。**全程零 LLM。**
+- **承重(唯一)改动**:`milvus_io.search` 加可选 `extra_expr`(**add-only**,`None` 时 byte 等价,`test_milvus_search_expr`
+  守不回归 R1/R3/R6)。其余皆只读 + 新增 `query/query/listing/` 子包。
+- **防注入(红线)**:`build_milvus_expr` 字段名白名单(chunk_type/biz_domain/entity_type)+ 值经 `json.dumps` 转义;
+  raw user 串在 `dimensions.extract_enum_spec` 即被词典过滤(`extract_terms` 只返词典成员),绝不到 expr。
+- **两道 consumed-when-present 降级**:E1 PG 后过滤可后验 → 空集降级不过滤 + note;E2 Milvus 预过滤无法后验 →
+  仅当 query 抽到词典词才加 entity/biz 子句(dict 未接 PG 加载 → 默认不命中)。
+- **门控**:全仓非模型门 **514 passed / 31 skipped / 0 failed** · ruff 全仓绿 · 查询模型门集成(R1/R3/R4/hybrid/anchors,
+  真 PG+Milvus+BGE-M3)**13 passed**(证 `milvus_io` 不回归 + R4 端到端)。RTM reconcile:`R4-filter/mode/bound`→✅、
+  `§2-entity/biz/chunktype/tagsE1`/`§5.3`→🟡、GAP #12 ✅;覆盖摘要 36✅/31🟡/48❌/1➖。
+- **未做**:LLM 维度抽取、E1 期限数值过滤、E2 真打标/词典加载、sparse 提权(§5.4)/重排(§5.5)、Excel 导出、
+  穷举外规保证(§15-③ 声明不做)。待 Codex 复审。
+
 ## 已建链路与下一步
 
 全链路:`demo ingest`(s0 登记+版本关系+去重审计)→ s1(渲染+解析+对齐)→ s2(七指标质检)→ STRUCTURING 复合
@@ -448,3 +500,30 @@ DeepDoc/E2·E3/L2 LLM/perm_tag 过滤/OCR/endpoint 桩/注释保留表/§21 T1·
 - 迁移 add-only:autogenerate → upgrade → check 无漂移。`alembic/versions` 已纳入 ruff lint,autogenerate 后须
   `ruff check --fix alembic/versions && ruff format alembic/versions`(违规全可自动修,纯格式)再提交。
 - 行宽 100,ruff(E/F/I/UP/B);CJK 注释易超行,放独立行或缩短。
+
+## 阶段 S:文档处理管线评测工具(tools/doc_test 第一期,2026-06-24;PR #13)
+
+**背景**:团队需在接入真实 PDF 语料之前,快速评估三件事:① 正则抽取/条款树覆盖是否充分;
+② 扫描件 / 版面破碎件是否需要 DeepDoc;③ QC 七指标数值分布 vs 当前阈值是否合理。
+目标是产出**易懂中文报告**,无须人工读 pytest log。
+
+**范围与设计原则**:
+- `tools/doc_test/`(工具脚本,非生产包,`out/` + `config.yaml` 已 gitignore):
+  `run_phase1.py`(入口)/ `metrics.py`(确定性指标)/ `judge.py`(可选 LLM 裁判)/ `report.py`(Markdown 报告)
+  / `config.example.yaml`(配置模板)/ `使用指南.md`(团队详版)/ `README.md`(快速参考)。
+- **绕过 PG/ObjectStore/Milvus**,只调管线纯函数(`解析→切块→QC→正则抽取`);LLM 走 env
+  (`OPENAI_API_KEY`,绝不入库)可关。
+- **三目标 → 指标**:要素抽取命中率 + 条款树覆盖 + LLM 核对(① 正则);扫描件/版面破碎启发式 +
+  LLM(② DeepDoc 需求);7 指标数值分布 vs 阈值 + LLM 反推松紧(③ 阈值建议)。
+- **已冒烟**:4 份真实 PDF,捕获扫描件管线失效(E202→建议 OCR)+ 案例正则缺口(文号/金额漏抽);ruff 全绿。
+
+**决策**:免 Codex 审直接合入(工具脚本,团队自行迭代);无新契约/PG 迁移;不计入正式测试套件(非生产代码)。
+
+**状态**:PR #13 合入 main,`tools/doc_test/` 7 文件齐全。
+
+---
+
+## 本次会话新增基础设施(2026-06-24)
+
+- **`/clear` 自动存档 hook**(`~/.claude/hooks/save-devlog-on-clear.sh`,写入 `.claude/settings.local.json`):
+  `/clear` 触发时自动把会话摘要追加到 devlog(当前 session 即由此驱动)。属 Claude Code 配置层,不影响仓库代码。

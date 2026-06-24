@@ -1,6 +1,6 @@
 # RTM: 制度查询智能体 v1.0 需求可追溯矩阵(覆盖证明)
 
-> 基线 2026-06-23(R1/R2/R3/R7/R8 实装,R6 SPEC 进行中)。对照 `docs/制度查询智能体_技术框架设计_v1_0.md`(v1.0,功能1)。
+> 基线 2026-06-24(R1/R2/R3/**R4**/R6/R7/R8 实装,仅 R5 占位)。对照 `docs/制度查询智能体_技术框架设计_v1_0.md`(v1.0,功能1)。
 > **GAP.md 回答"做到哪了"(按 § 的进度盘点);RTM 回答"是否可确定覆盖了 v1.0"——把每条需求挂到 SPEC SC + 测试。**
 > 二者并存:迭代时先看 GAP 选下一轮,收口时更新 RTM 验证覆盖。
 
@@ -15,14 +15,14 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **33** | 28% | 红线 / R1 / R2 / R3 / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 |
-| 🟡 部分 | **27** | 23% | 务实版充分性/拒答判据、perm_tag 写不过滤、prompt 分路由、附挂触发边界、架构性无专测项、§14 验收部分项 |
-| ❌ 未实装 | **55** | 47% | R4/R5 路由、查询理解前端(N0/N1/N3)、§5.4/5.5、横切(§9 网关/复核/权限/观测/SSO)、§11–13 |
+| ✅ 实装+测试 | **36** | 31% | 红线 / R1 / R2 / R3 / **R4** / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 |
+| 🟡 部分 | **31** | 27% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制·E2 consumed-when-present)、E1 义务过滤、prompt 分路由、附挂触发边界、§14 验收部分项 |
+| ❌ 未实装 | **48** | 41% | R5 路由、查询理解前端(N0/N1/N3)、§5.4/5.5、横切(§9 网关/复核/权限/观测/SSO)、§11–13 |
 | ➖ 非查询逻辑 | **1** | — | §2.3 容量(摄取/部署) |
 | **合计** | **116** | | |
 
 - **红线(RL-1/2/3 + §0.1-2)**:核心引用真实性/四级回溯/可解释拒答 **✅**;"无裸结论"在 R1 路径 ✅(代码后检),真 LLM 下的 §9.2 复核 ❌ → RL-1 记 🟡。
-- **八路路由**:R1🟡(主体✅,sparse提权/entity过滤/流式 ❌)· R2✅ · R3✅ · **R6✅**(防注入 SQL 聚合/列表)· R7🟡(回 N0 缺)· R8✅ · **R4/R5 ❌**。
+- **八路路由**:R1🟡(主体✅,sparse提权/entity过滤/流式 ❌)· R2✅ · R3✅ · **R4✅**(枚举高 k + Milvus 标量/E1 义务过滤 + 按 doc 聚合)· **R6✅**(防注入 SQL 聚合/列表)· R7🟡(回 N0 缺)· R8✅ · **仅 R5 ❌**。
 - **~47 行带 §15 待确认 caveat**,其中 R5 产品形态(④)、网关/Langfuse/Casbin/SSO 横切、V0 评估是 demo 阶段真正未触的大块。
 
 ---
@@ -49,14 +49,14 @@
 | §2-corpus | 消费 audit_corpus 混合检索 | ✅ | `test_hybrid_integration` | ② |
 | §2-status | status=effective 强过滤 | ✅ | `test_hybrid_integration`/`test_anchors_integration` | — |
 | §2-perm | perm_tag 前置权限过滤 | 🟡 | 写入✅过滤❌(M1 设计意图,与摄取侧一致) | — |
-| §2-entity | entity_type[] 强过滤 | ❌ | milvus_io.search 未暴露 expr(GAP #12) | ⑥ |
-| §2-biz | biz_domain/issuer_level/effective_date 圈定 | ❌ | 同上 | — |
-| §2-chunktype | chunk_type 命中偏好 | ❌ | search 未输出 chunk_type(R3 用 dvid 去重替代) | — |
+| §2-entity | entity_type[] 强过滤 | 🟡 | R4 `extra_expr` 机制已落(`test_milvus_search_expr`/`test_r4_listing`);E2 默认关+词典未接 PG → consumed-when-present 默认不命中 | ⑥ |
+| §2-biz | biz_domain/issuer_level/effective_date 圈定 | 🟡 | biz_domain R4 `extra_expr` 过滤✅(`test_r4_listing_integration` biz code 真过滤);issuer_level/effective_date 圈定 ❌ | — |
+| §2-chunktype | chunk_type 命中偏好 | 🟡 | R4 `extra_expr` `chunk_type=clause` 硬偏好(`test_r4_listing`/集成);R3 仍用 dvid 去重 | — |
 | §2-chunks | PG chunks 全文+父块权威源 | ✅ | `test_anchors_integration`(fetch_texts/parent) | — |
 | §2-docver | doc_versions+revision_notes 变更源 | ✅ | `test_r2_change_integration` | — |
 | §2-cases | cases 桥接反查+卡片+SQL源 | ✅ | `test_r3_case_integration`/`test_bridge`;SQL(R6)❌ | ⑤ |
 | §2-clauseref | clause_references 多跳查表 | ❌ | 空表无 resolver(GAP #10) | — |
-| §2-tagsE1 | E1 义务/期限过滤 | ❌ | 未消费 | — |
+| §2-tagsE1 | E1 义务/期限过滤 | 🟡 | R4 消费 `is_obligation`(`fetch_obligation_chunk_ids`,`test_r4_listing_integration` 义务剔除);期限 `norm_duration_days` 过滤 ❌ | — |
 | §2-tagsE2 | E2 事项/部门/entity 过滤 | ❌ | 未消费 | ③⑥ |
 | §2-scenario | dict_scenario_terms 桥接+扩展 | ❌ | 未建表 | ⑥ |
 | §2-introutes | dict_intent_routes 路由样例 | ❌ | 未建表(用内置规则种子) | — |
@@ -88,7 +88,7 @@
 |---|---|---|---|---|
 | §5.1 | dense+sparse+RRF 混合 | ✅ | `test_hybrid_integration` | ② |
 | §5.2 | 分区并行配额 top25 | ✅ | `test_hybrid_integration` | — |
-| §5.3 | 强制过滤位 | 🟡 | status✅ perm_tag🟡 entity/biz❌ | ⑥ |
+| §5.3 | 强制过滤位 | 🟡 | status✅ perm_tag🟡;entity/biz/chunk_type **机制已落**(R4 `extra_expr`,consumed-when-present) | ⑥ |
 | §5.3-hist | 问历史放开 status | 🟡 | include_superseded 参数(R2 用) | — |
 | §5.4 | sparse 发文字号提权+扩展 | ❌ | 默认 RRF 序 | ⑥ |
 | §5.5 | bge-reranker top50→top8 | ❌ | 默认 rerank=none(接缝预留) | — |
@@ -112,9 +112,9 @@
 | R3-attach | 附挂通道(语义∪精确反查) | ✅ | `test_r3_case`/`test_graph_integration` | ⑤ |
 | R3-trigger | 桥接仅行为咨询触发 | 🟡 | 附挂边界 definition 排除;入口未做 | — |
 | R3-similar | 纯相似案例 case 检索→卡片 | ✅ | `test_r3_case_integration`(cited consumed-when-present) | ⑤ |
-| R4-filter | E1∩E2∩biz∩entity 过滤 | ❌ | 占位 | ③⑥ |
-| R4-mode | 枚举高 k 不激进截断 | ❌ | 占位 | — |
-| R4-bound | 声明不保证穷举外规 | ❌ | R4 未做 | ③ |
+| R4-filter | E1∩E2∩biz∩entity 过滤 | ✅ | SPEC-R4 §8 SC3-4;`test_r4_listing`(build_milvus_expr 白名单/E1 后过滤)`test_milvus_search_expr`(extra_expr 等价)`test_r4_listing_integration`(E1 义务剔除·biz 真过滤);**E2 entity consumed-when-present**(默认关) | ③⑥ |
+| R4-mode | 枚举高 k 不激进截断 | ✅ | SPEC-R4 §8 SC2;`test_r4_listing_integration`(跨文档聚合);`retrieve_enumerate` 50/50 | — |
+| R4-bound | 声明不保证穷举外规 | ✅ | SPEC-R4 §8 SC6;`test_r4_listing`(边界 note)`test_r4_listing_integration`(不保证穷举外规) | ③ |
 | R5-bridge | 案例反查→外规定位 | ❌ | 占位 | ⑤ |
 | R5-mix | 内+外规补充候选 | ❌ | 占位 | — |
 | R5-elem | 构成要件提取(LLM) | ❌ | 占位 | — |
@@ -182,10 +182,10 @@
 ## 缺口清单(按 GAP backlog 优先级)
 
 - **P0 红线/验收**:R5 全组(R5-bridge/mix/elem/3seg/noraw/review/render,⛔④)· §9.2 多模型复核 · §9.3-perm 权限验收(§14-c)。
-- **P1 路由**:R4(R4-filter/mode/bound)· §5.4 sparse 提权 · §5.5 重排。(~~R6~~ ✅ 已实装)
+- **P1 路由**:§5.4 sparse 提权 · §5.5 重排。(~~R6~~ ✅ · ~~R4~~ ✅ 已实装 —— 八路仅剩 R5 占位)
 - **P2 查询理解前端**:N0 · N1 HyDE · N3 分解。
 - **P3 横切/工程**:§7.2 流式 · §11 导出 · §9.3 敏感词/Langfuse/SSO/AI 页脚 · §12 容量 · §13 V0 评估(RAGAS/断层率/评估集)。
-- **依赖资产**:§2-entity/biz/chunktype 检索过滤(扩 milvus_io.search,GAP #12)· §2-clauseref resolver · §2-scenario/introutes 字典建表 · §2-tagsE1/E2 富集过滤。
+- **依赖资产**:~~§2-entity/biz/chunktype 检索过滤(扩 milvus_io.search,GAP #12)~~ ✅(R4 `extra_expr`;E2 真打标+词典加载待补)· §2-clauseref resolver · §2-scenario/introutes 字典建表 · §2-tagsE1 期限/E2 富集过滤。
 
 ## §15 待确认图例(阻塞标记)
 
