@@ -167,3 +167,36 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     修:节点转发 `scene.get("matters")`/`entity_types`;dict 接入后图路径自动生效 + `test_graph` 加转发回归。
   - **缺锚点静默成功**:`fetch_anchors` 后未复检,候选 PG 缺锚点(写序不一致)时返 `route_type=enumerate` 但 rows/citations
     空(违 SC1"TABLE+四级 citations"、红线"锚点 PG 权威")。修:`rows` 空 → `refuse_coverage` 降级 + `test_missing_anchors_refuses`。
+
+## R5 判定型路由(第六轮 spec-driven,SPEC/PLAN/TASKS-R5)—— 八路收官
+
+- **切片**:R5 实装(替最后一个占位)——`route_type=judgmental` + `review_required=true`。桥接入口(复用 R3
+  `retrieve_cases`→`cited_regulations` 反查外规条款,consumed-when-present)∥ hybrid(内规+外规)→ **三段式硬约束**
+  (① 依据条款四级锚点 ② 构成要件框定 ③ AI辅助/人工复核标识,**无 verdict 槽**)→ §9.2 复核接口。**默认零-LLM**。
+  新增 `query/query/judge/`(framing/review/r5_judgment)。**八路全实装,无占位**。
+- **决策**(AskUserQuestion 2026-06-24):
+  - **框定生成 = clause直呈 + LLM toggle**(`judge_constituent_llm` 默认关):② 默认结构化罗列命中条款适用边界(零-LLM);
+    开 toggle 时 LLM 抽取适用前提/对象/行为类型(经 `strip_bare_conclusion` 后检)。
+  - **不出裸结论(红线)= 形态(无 verdict 槽)+ 代码后检 always-on + §9.2 接口**:`strip_bare_conclusion` 覆盖
+    verdict 词(违规/违法/合规/合法)+ 试探性表述(可能违反/疑似违规/涉嫌/倾向于不合规/构成违)→ 替中性"不作判定"。
+  - **桥接入口 = 复用 R3**:`resolve_cited_clauses(pg, case_dvids)` 把 `cited_regulations`{doc_no,clause_path} 经
+    `bridge.norm_ref` 归一 → `doc_versions.doc_number` 匹配 + `chunks.clause_path_norm` 匹配 → 外规条款 chunk;
+    **consumed-when-present** 默认空→`[]`→降级 hybrid-only。
+  - **§9.2 多模型复核 = 接口+toggle**(`judge_multimodel_review` 默认关):关→passthrough(always-on 保障靠代码后检+形态);
+    开→第二 LLM 校验试探性是否被引用支持,不支持→降"待人工核实"。
+- **关键洞察 / 踩坑**:
+  - **安全文案有意避开 verdict 词**:`_NEUTRAL`/`_FRAMING_LEAD`/`_REVIEW_NOTICE` 用"不作判定/不作认定结论"等中性
+    表述,**不含违规/合规字面** → "输出无裸结论"可被钝断言(`assert 无 verdict 词 in blocks`);query 含"违规"
+    不回显进块(框定只引条款身份,不回显问句)。形态无 verdict 槽是结构保障,strip 是 LLM 路径兜底。
+  - **strip 只施于 LLM 路径**:clause直呈(默认)是确定性安全构造(只列条款身份),不过 strip;LLM 框定输出过 strip。
+    避免把合法文档标题/条款身份误伤(钝过滤宁伤 LLM 输出、不伤确定性构造)。
+  - **§9.2 复核逐块施于全部块**:含 ③ 固定标识块;默认关 passthrough 无影响,开时 sane reviewer 对 meta-标识判支持。
+  - **`judge` 模块级零 pipeline 导入**:retriever/pg/llm 经形参注入、`drop_degraded` 就地 inline、`resolve_cited_clauses`
+    用 `common.pg_models` + `bridge` 归一 → 纯函数 `strip_bare_conclusion`/`build_framing` 零栈可测。
+  - **集成复用 `case_stack`**:内规件(三段式依据)+ 处罚案例件(桥接 retrieve_cases);桥接**手插 `cited_regulations`**
+    指向内规 doc_number+clause_path_norm 验反查(同 R3/R4 手插-复位);autouse 幂等 `mio.connect()` 重连(R3/R4 预案)。
+  - **占位收尾**:`_PLACEHOLDER_NOTE` 清空但 `_placeholder` 节点**保留为防御兜底**(未知 route_type 仍落它)。
+- **未做(SPEC-R5 §0)**:§9.2 真 LLM 复核默认开(需 gateway+Kimi,RL-1 真-LLM 闭环另轮)、LLM 构成要件抽取默认开、
+  `cited_regulations` L2 生产打标(§15-⑤)、§9.2 触发重生成(降待核实即可)、bge-reranker/sparse 提权/流式。
+- **§15-④ 产品形态**:按 §6.5 三段式 demo workaround 实装(`review_required` 人工复核必需 + 代码后检无裸结论 +
+  AI 辅助标识),**不向甲方承诺判定结论**,交付标注待甲方(张益)确认。待 Codex 复审。

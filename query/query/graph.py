@@ -28,11 +28,10 @@ _TERMINAL = {
     RouteType.CASE: "r3_case",
     RouteType.STATISTICAL: "r6_stats",
     RouteType.ENUMERATE: "r4_listing",
-    RouteType.JUDGMENTAL: "placeholder",
+    RouteType.JUDGMENTAL: "r5_judgment",
 }
-_PLACEHOLDER_NOTE = {
-    RouteType.JUDGMENTAL: "判定型(R5)",
-}
+# 八路全实装(R5 收官)→ 无占位路由;``_placeholder`` 节点保留为**防御兜底**(未知 route_type 仍落它)。
+_PLACEHOLDER_NOTE: dict = {}
 
 # 未识别具体业务事项时的确定性兜底,保覆盖拒答 exhausted_scope 非空(SPEC §8.2 可解释契约)。
 # ⚠ 临时:N2 未接 dict_biz_domains/dict_entity_types 加载(见 GAP §依赖缺口),接入后即命中真实事项。
@@ -136,6 +135,16 @@ class QueryAgent:
             )
         }
 
+    def _r5_judgment(self, state: QueryState) -> dict:
+        from query.judge.r5_judgment import answer_judgment  # 懒导入,避免 import 期拉 pipeline
+
+        # R5 判定型(§6.5):三段式硬约束 + review_required + 不出裸结论;默认零-LLM(stub)
+        return {
+            "result": answer_judgment(
+                state.query, self._retriever, self._pg, self._llm, self._qcfg
+            )
+        }
+
     def _clarify(self, state: QueryState) -> dict:
         blk = AnswerBlock(
             BlockType.CLARIFY_QUESTION,
@@ -163,6 +172,7 @@ class QueryAgent:
         g.add_node("r3_case", self._r3_case)
         g.add_node("r6_stats", self._r6_stats)
         g.add_node("r4_listing", self._r4_listing)
+        g.add_node("r5_judgment", self._r5_judgment)
         g.add_node("clarify", self._clarify)
         g.add_node("refuse", self._refuse)
         g.add_node("placeholder", self._placeholder)
@@ -171,11 +181,11 @@ class QueryAgent:
             "understand",
             self._route_edge,
             {"evidence": "evidence", "change": "change", "r3_case": "r3_case",
-             "r6_stats": "r6_stats", "r4_listing": "r4_listing", "clarify": "clarify",
-             "refuse": "refuse", "placeholder": "placeholder"},
+             "r6_stats": "r6_stats", "r4_listing": "r4_listing", "r5_judgment": "r5_judgment",
+             "clarify": "clarify", "refuse": "refuse", "placeholder": "placeholder"},
         )
-        for n in ("evidence", "change", "r3_case", "r6_stats", "r4_listing", "clarify",
-                  "refuse", "placeholder"):
+        for n in ("evidence", "change", "r3_case", "r6_stats", "r4_listing", "r5_judgment",
+                  "clarify", "refuse", "placeholder"):
             g.add_edge(n, END)
         return g.compile()
 

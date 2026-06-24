@@ -7,8 +7,9 @@
 > **GAP 回答"做到哪了"(选下一轮);覆盖是否可确定见 `RTM.md`(116 条需求 → SPEC SC → test,✅=测试证明)。**
 
 ## 一句话
-三条红线已在 **R1 闭环**(无编造引用 / 无裸结论 / 可解释拒答);八路里 **R1/R2/R3/R4/R6/R7/R8 实装,仅 R5 占位**;
-查询理解前端(HyDE/多轮/分解)与横切能力(多模型复核/权限/观测/流式/导出)大部分未做。
+三条红线已在 **R1 闭环**(无编造引用 / 无裸结论 / 可解释拒答);**八路全实装(R5 收官)**;判定型经三段式硬约束
++ 代码后检无裸结论(§9.2 真复核接口+toggle,默认关)。查询理解前端(HyDE/多轮/分解)与横切能力(真多模型复核/
+权限/观测/流式/导出)大部分未做。
 
 ---
 
@@ -30,12 +31,12 @@
 | R2 变更查询(§6.2) | ✅ 实装 | 版本链回查 + 条款级 diff + 修订原因回查(缺失明示、不推测)+ §6.2 四栏;背景栏/多跳/字句级 diff 留后续(见 SPEC-R2 §0) |
 | R3 相似案例 + 案例桥接(§6.3) | ✅ 实装 | case 分区检索✅ + 要素回填卡片✅(一案一卡)+ 附挂到 R1✅(语义∪精确反查)+ 精确反查桥接原语✅(`cited_regulations` **consumed-when-present**,默认空降级语义-only);桥接-as-入口(behavior→R5)留后续(R5 占位)、L2 `cited_regulations` 生产/`case_summary` 强过滤留后续 |
 | R4 多文档列举(§6.4) | ✅ 实装 | 枚举模式高 k(`retrieve_enumerate` 50/50,不激进截断)+ **Milvus 标量预过滤**(`chunk_type=clause` 硬偏好 + `biz_domain`/`entity_type`,扩 `milvus_io.search` 加 `extra_expr` add-only,防注入白名单)+ **E1 义务 PG 后过滤**(`clause_tags.is_obligation`,consumed-when-present 空降级)+ 按 doc 聚合 TABLE + 四级 citations + 不保证穷举外规边界声明;`entity_type`(E2 默认关)/biz 词典未接 PG 加载 → consumed-when-present;sparse 提权/重排留后续 |
-| R5 判定型(§6.5) | ❌ 占位 | 构成要件框定 / 三段式 / 多模型复核 全未做(P0,§15-④) |
+| R5 判定型(§6.5) | ✅ 实装 | 三段式硬约束(① 依据四级锚点 ② 构成要件框定 clause直呈/LLM toggle ③ AI辅助/人工复核标识,**无 verdict 槽**)+ **不出裸结论代码后检**(`strip_bare_conclusion` verdict+试探性 always-on)+ 桥接入口(`resolve_cited_clauses` consumed-when-present)+ §9.2 复核接口+toggle(默认关)+ `review_required=true`;真多模型复核(Kimi)/LLM 构成要件抽取默认关、§15-④ demo workaround 待甲方确认 |
 | R6 统计型(§6.6) | ✅ 实装 | 规则维度抽取✅ + 参数化 SQL(白名单 + bound params **防注入**)✅ + 聚合/列表 TABLE✅;`violation_category` **consumed-when-present**(L2 空降级明示);LLM 维度抽取/占比/字典评审留后续 |
 | R7 需澄清(§6.7) | 🟡 | 触发✅ + 纯对话澄清块✅;缺澄清后回 N0 重新归并(N0 未做) |
 | R8 兜底拒答(§6.8) | ✅ | `refuse_out_of_domain` |
 
-> **仅 R5** 仍诚实打标 route_type 占位(不裸答),二次开发 = 往既有图挂节点 + 填 handler。
+> **八路全实装,无占位**(R5 收官)。`_placeholder` 节点保留为防御兜底(未知 route_type 仍落它)。
 
 ## 3. 检索与重排(§5)
 
@@ -56,7 +57,7 @@
 | §7.1 引用 ID 注入式生成 | ✅ | `citation_inject` + `select_faithful` 代码级兜底 |
 | §7.2 流式输出(Qwen3.5 首 token<3s) | ❌ | 无流式;contract 有 `stream` 字段但未真推送 |
 | §7.3 四级锚点回查 | ✅ | `anchors`(PG 权威源) |
-| §7.4 prompt 模板分路由 | 🟡 | R1 有;R5 三段式 / R2 四栏 ❌(对应路由未实装) |
+| §7.4 prompt 模板分路由 | ✅ | R1 引用注入 / R2 四栏 / R5 三段式硬约束 / R3 卡片 / R6 表格 各路由差异化 |
 
 ## 5. 覆盖感知拒答(§8)
 
@@ -64,14 +65,14 @@
 |---|---|---|
 | §8.1 分数阈值→覆盖语境判据 | 🟡 | 务实版(命中数);非"事项分区穷尽"完整判据,接口保真 |
 | §8.2 覆盖感知拒答话术 + exhausted_scope | ✅ | `refuse_coverage` |
-| §8.3 判定型框定三段式 | ❌ | R5 未实装 |
+| §8.3 判定型框定三段式 | ✅ | R5 `build_framing` 三段式无 verdict 槽 + `strip_bare_conclusion` 不出裸结论 |
 
 ## 6. 横切能力(§9)—— 几乎全缺
 
 | 项 | 状态 | 说明 |
 |---|---|---|
 | §9.1 模型网关 / 模型矩阵(CP-005) | 🟡 | LLM 接缝✅(stub 默认 / gateway 可选);Qwen3.5 主答 / Kimi 复核 / bge endpoint 未真接;MCP/SKILL❌ |
-| §9.2 多模型复核(Kimi faithfulness) | ❌ | 未做 |
+| §9.2 多模型复核(Kimi faithfulness) | 🟡 | R5 `review_tentative` 接口+toggle(`judge_multimodel_review` 默认关);真 Kimi faithfulness 复核留后续(RL-1 真-LLM 闭环) |
 | §9.3 敏感词过滤 | ❌ | 未做 |
 | §9.3 AI 内容标识 | 🟡 | `contract.ai_label`✅;导出页脚❌ |
 | §9.3 权限 Casbin + 操作日志 | ❌ | 未做(perm_tag 仅写入不过滤) |
@@ -113,8 +114,8 @@
 ## 迭代 Backlog(按优先级)
 
 ### P0 — 红线 / 验收口径
-1. **R5 判定型**(构成要件框定 + 三段式 + 多模型复核)— §15-④ 待甲方确认产品形态
-2. **§9.2 多模型复核**(Kimi faithfulness)— 真 LLM 下"无裸结论"代码级保障
+1. ~~**R5 判定型**(构成要件框定 + 三段式 + 多模型复核接口)~~ ✅(SPEC/PLAN/TASKS-R5;§15-④ demo workaround 待甲方确认产品形态)
+2. **§9.2 真多模型复核**(Kimi faithfulness 真接)— 真 LLM 下"无裸结论"代码级保障(接口已就位,RL-1 真-LLM 闭环)
 3. **§9.3 权限 Casbin + 操作日志** — 权限/安全验收
 
 ### P1 — 核心功能路由
