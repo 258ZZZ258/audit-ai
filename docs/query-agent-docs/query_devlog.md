@@ -199,4 +199,12 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
 - **未做(SPEC-R5 §0)**:§9.2 真 LLM 复核默认开(需 gateway+Kimi,RL-1 真-LLM 闭环另轮)、LLM 构成要件抽取默认开、
   `cited_regulations` L2 生产打标(§15-⑤)、§9.2 触发重生成(降待核实即可)、bge-reranker/sparse 提权/流式。
 - **§15-④ 产品形态**:按 §6.5 三段式 demo workaround 实装(`review_required` 人工复核必需 + 代码后检无裸结论 +
-  AI 辅助标识),**不向甲方承诺判定结论**,交付标注待甲方(张益)确认。待 Codex 复审。
+  AI 辅助标识),**不向甲方承诺判定结论**,交付标注待甲方(张益)确认。
+- **Codex 复审修复(1 critical,实红线缺陷)**:
+  - **`R5-NORAW-PASSTHROUGH`**:默认零-LLM 框定 `_clause_passthrough` **回显 doc_title/clause_path 进文本且未过 strip**
+    → 标题/路径含 verdict 词(如 `合规管理办法`/`违规处理`)即泄漏裸结论进 `answer_blocks`,踩 SC2 红线
+    (实现期我误判"clause直呈是确定性安全构造"——真实存在以"合规/违规"命名的制度)。修:**框定抽象引用所引条款**
+    (`所引 N 条条款`,条款身份只在 `citations[]` 结构化承载、不回显进文本)+ **`build_framing` 两路框定都过
+    `strip_bare_conclusion`**(always-on 元数据泄漏兜底)+ `test_verdict_token_in_metadata_not_leaked` 回归
+    (doc_title=`合规管理办法`/clause_path=`违规处理` → blocks 无 verdict)。**红线本质**:验证真实性 ⊆ citations,
+    框定文本不承载可能含 verdict 的元数据。

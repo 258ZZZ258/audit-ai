@@ -40,13 +40,26 @@ def test_build_framing_default_clause_passthrough():
     blocks = build_framing(_CLAUSES, "二维码介绍开户是否违规", llm=None, qcfg=qcfg)
     assert len(blocks) == 2
     assert all(b.type is BlockType.TEXT for b in blocks)
-    # ② 框定:clause直呈(含命中条款引用),零 LLM
-    assert "反洗钱管理办法" in blocks[0].content and "第三条" in blocks[0].content
+    # ② 框定:抽象引用所引条款(身份在 citations[],不回显标题/路径进文本)
+    assert "所引 2 条条款" in blocks[0].content
+    assert "反洗钱管理办法" not in blocks[0].content  # 元数据不回显进框定文本
     # ③ AI 辅助/人工复核标识
     assert "人工复核" in blocks[1].content
     # 红线:任一块都不含 verdict/试探性裸结论(无 verdict 槽 + 安全文案避词)
     for b in blocks:
         assert not any(w in b.content for w in _VERDICT_WORDS)
+
+
+def test_verdict_token_in_metadata_not_leaked():
+    # R5-NORAW 红线(Codex 复审):命中条款 doc_title/clause_path 含 verdict 词 → 不得泄漏进 blocks
+    clauses = [{"doc_title": "合规管理办法", "clause_path": "违规处理", "text": "x"}]
+    for toggle in (False, True):
+        qcfg = SimpleNamespace(judge_constituent_llm=toggle)
+        # LLM 路径回显含 verdict 的元数据 → strip 兜底(整体降中性)
+        fake = SimpleNamespace(chat_json=lambda s, u: {"framing": "见《合规管理办法》违规处理"})
+        blocks = build_framing(clauses, "q", llm=fake, qcfg=qcfg)
+        for b in blocks:
+            assert not any(w in b.content for w in ("违规", "合规", "违法", "合法")), b.content
 
 
 def test_build_framing_llm_toggle_stripped():

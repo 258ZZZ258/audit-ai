@@ -14,12 +14,8 @@ from query.contract import AnswerBlock, BlockType
 #: 裸结论判定词(复用 R1 ``generate.r1_evidence`` 口径)+ R5 试探性表述(§9.2)。钝兜底,宁过滤勿漏。
 _VERDICT = ("违规", "违法", "合规", "合法")
 _TENTATIVE = ("可能违反", "疑似违规", "涉嫌", "倾向于不合规", "构成违")
-#: 替换文案 / 框定引导 / 复核标识 —— 均有意**避开 verdict 词**(不作判定的中性表述)。
+#: 替换文案 / 复核标识 —— 均有意**避开 verdict 词**(不作判定的中性表述)。
 _NEUTRAL = "相关依据见所引条款原文;具体认定须人工对照构成要件判断(本系统不作判定)。"
-_FRAMING_LEAD = (
-    "本问句涉及行为的判断依据见下列条款(详见引用),"
-    "其适用边界需对照各条款的适用前提/对象/行为类型:"
-)
 _REVIEW_NOTICE = (
     "AI 辅助判断,建议人工复核:以上仅列依据条款与构成要件框定,"
     "不作认定结论,请人工对照各条款适用边界复核。"
@@ -32,13 +28,13 @@ def strip_bare_conclusion(text: str) -> str:
 
 
 def _clause_passthrough(clauses) -> str:
-    """零-LLM 框定:结构化罗列命中条款适用边界(只引条款身份,不渲染条款正文,避裸结论)。"""
-    lines = [_FRAMING_LEAD]
-    for c in clauses:
-        title = c.get("doc_title") or "(未知制度)"
-        path = c.get("clause_path") or "(条款)"
-        lines.append(f"- 《{title}》{path}:适用前提/对象/行为类型见该条款原文。")
-    return "\n".join(lines)
+    """零-LLM 框定:**抽象引用**所引条款——条款身份(标题/路径)在 ``citations[]`` 结构化承载,
+    **不回显进框定文本**,杜绝 verdict 词随元数据(如标题"合规管理办法")泄漏进 answer_blocks。
+    """
+    return (
+        f"本问句涉及行为的判断依据见所引 {len(clauses)} 条条款(详见引用),"
+        "其适用边界需对照各条款的适用前提/适用对象/行为类型。"
+    )
 
 
 def _llm_constituent(clauses, query, llm) -> str:
@@ -56,11 +52,12 @@ def _llm_constituent(clauses, query, llm) -> str:
 
 
 def build_framing(clauses, query, llm, qcfg) -> list[AnswerBlock]:
-    """三段式 ②③:构成要件框定 + AI辅助/人工复核标识。无 verdict 槽;LLM 路径经 strip 后检。"""
+    """三段式 ②③:构成要件框定 + AI辅助/人工复核标识。无 verdict 槽;框定 **always-on 经 strip**。"""
     if getattr(qcfg, "judge_constituent_llm", False):
-        framing = strip_bare_conclusion(_llm_constituent(clauses, query, llm))
+        framing = _llm_constituent(clauses, query, llm)
     else:
         framing = _clause_passthrough(clauses)
+    framing = strip_bare_conclusion(framing)  # 红线 always-on:两路框定都过后检(含元数据泄漏兜底)
     return [
         AnswerBlock(BlockType.TEXT, framing, stream=False),
         AnswerBlock(BlockType.TEXT, _REVIEW_NOTICE, stream=False),
