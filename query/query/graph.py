@@ -19,21 +19,20 @@ from query.state import QueryState
 from query.understand.classify import SceneType, classify
 from query.understand.router import route
 
-# route_type → 终端节点名(R4–R6 收敛到 placeholder)
+# route_type → 终端节点名(R4/R5 收敛到 placeholder)
 _TERMINAL = {
     RouteType.EVIDENCE: "evidence",
     RouteType.CLARIFY: "clarify",
     RouteType.REFUSE: "refuse",
     RouteType.CHANGE: "change",
     RouteType.CASE: "r3_case",
+    RouteType.STATISTICAL: "r6_stats",
     RouteType.ENUMERATE: "placeholder",
     RouteType.JUDGMENTAL: "placeholder",
-    RouteType.STATISTICAL: "placeholder",
 }
 _PLACEHOLDER_NOTE = {
     RouteType.ENUMERATE: "多文档列举(R4)",
     RouteType.JUDGMENTAL: "判定型(R5)",
-    RouteType.STATISTICAL: "统计型(R6)",
 }
 
 # 未识别具体业务事项时的确定性兜底,保覆盖拒答 exhausted_scope 非空(SPEC §8.2 可解释契约)。
@@ -120,6 +119,11 @@ class QueryAgent:
 
         return {"result": answer_case(state.query, self._retriever, self._pg, self._qcfg)}
 
+    def _r6_stats(self, state: QueryState) -> dict:
+        from query.stats.r6_stats import answer_stats  # 懒导入,避免 import 期拉 pipeline
+
+        return {"result": answer_stats(state.query, self._pg)}
+
     def _clarify(self, state: QueryState) -> dict:
         blk = AnswerBlock(
             BlockType.CLARIFY_QUESTION,
@@ -145,6 +149,7 @@ class QueryAgent:
         g.add_node("evidence", self._evidence)
         g.add_node("change", self._change)
         g.add_node("r3_case", self._r3_case)
+        g.add_node("r6_stats", self._r6_stats)
         g.add_node("clarify", self._clarify)
         g.add_node("refuse", self._refuse)
         g.add_node("placeholder", self._placeholder)
@@ -153,9 +158,10 @@ class QueryAgent:
             "understand",
             self._route_edge,
             {"evidence": "evidence", "change": "change", "r3_case": "r3_case",
-             "clarify": "clarify", "refuse": "refuse", "placeholder": "placeholder"},
+             "r6_stats": "r6_stats", "clarify": "clarify", "refuse": "refuse",
+             "placeholder": "placeholder"},
         )
-        for n in ("evidence", "change", "r3_case", "clarify", "refuse", "placeholder"):
+        for n in ("evidence", "change", "r3_case", "r6_stats", "clarify", "refuse", "placeholder"):
             g.add_edge(n, END)
         return g.compile()
 

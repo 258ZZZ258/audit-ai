@@ -38,6 +38,12 @@ def test_all_eight_routes_covered():
     } <= routes
 
 
+def test_list_statistical_routes_to_statistical():
+    # §6.6 列表型统计「X年以来…处罚有哪些」→ STATISTICAL(此前误落 evidence/R1,Codex R6-ROUTING)
+    for q in ("2024年以来的处罚有哪些", "2024年以来期货监管处罚有哪些"):
+        assert route(q, classify(q)).route_type is RouteType.STATISTICAL, q
+
+
 def test_off_domain_refuses():
     assert route("今天天气怎么样", classify("今天天气怎么样")).route_type is RouteType.REFUSE
 

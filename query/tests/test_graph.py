@@ -34,19 +34,44 @@ def test_ambiguous_routes_to_clarify(agent):
 @pytest.mark.parametrize(
     "query, route",
     [
-        # R2 变更 / R3 案例已实装(走真栈,见 test_r2_change_integration / test_r3_case_integration);
-        # 此处仅 R4–R6 仍占位
+        # R2 变更 / R3 案例 / R6 统计已实装(走真栈,见各集成);此处仅 R4–R5 仍占位
         ("哪些制度规定了信息披露", RouteType.ENUMERATE),
         ("二维码介绍开户是否违规", RouteType.JUDGMENTAL),
-        ("哪些板块处罚高发", RouteType.STATISTICAL),
     ],
 )
-def test_r4_to_r6_honest_placeholder(agent, query, route):
+def test_r4_to_r5_honest_placeholder(agent, query, route):
     res = agent.ask(query)
     assert res.route_type is route  # 正确打标
     assert "暂未实装" in res.answer_blocks[0].content  # 诚实占位,不裸答
     assert "违规" not in res.answer_blocks[0].content and "合规" not in res.answer_blocks[0].content
     assert res.citations == []  # 占位不出引用
+
+
+def test_statistical_routes_to_r6_node():
+    # R6 已实装:STATISTICAL 路由落 r6_stats 节点(fake pg,零栈)。空结果 → 明示。
+    class _Result:
+        def all(self):
+            return []
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute(self, _stmt):
+            return _Result()
+
+    class _Pg:
+        def session(self):
+            return _Session()
+
+    agent = QueryAgent(retriever=None, pg=_Pg(), llm=StubLLMClient(), qcfg=load_query_config())
+    res = agent.ask("哪些板块处罚高发")
+    assert res.route_type is RouteType.STATISTICAL
+    assert "未检索到" in res.answer_blocks[0].content  # 空结果明示,不臆造
+    assert res.citations == []
 
 
 def test_case_routes_to_r3_node():

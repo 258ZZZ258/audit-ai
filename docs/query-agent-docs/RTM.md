@@ -15,14 +15,14 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **30** | 26% | 红线 / R1 / R2 / R3 / R7 / R8 / 契约 / 四级锚点 / 混合检索 |
+| ✅ 实装+测试 | **33** | 28% | 红线 / R1 / R2 / R3 / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 |
 | 🟡 部分 | **27** | 23% | 务实版充分性/拒答判据、perm_tag 写不过滤、prompt 分路由、附挂触发边界、架构性无专测项、§14 验收部分项 |
-| ❌ 未实装 | **58** | 50% | R4/R5/R6 路由、查询理解前端(N0/N1/N3)、§5.4/5.5、横切(§9 网关/复核/权限/观测/SSO)、§11–13 |
+| ❌ 未实装 | **55** | 47% | R4/R5 路由、查询理解前端(N0/N1/N3)、§5.4/5.5、横切(§9 网关/复核/权限/观测/SSO)、§11–13 |
 | ➖ 非查询逻辑 | **1** | — | §2.3 容量(摄取/部署) |
 | **合计** | **116** | | |
 
 - **红线(RL-1/2/3 + §0.1-2)**:核心引用真实性/四级回溯/可解释拒答 **✅**;"无裸结论"在 R1 路径 ✅(代码后检),真 LLM 下的 §9.2 复核 ❌ → RL-1 记 🟡。
-- **八路路由**:R1🟡(主体✅,sparse提权/entity过滤/流式 ❌)· R2✅ · R3✅ · R7🟡(回 N0 缺)· R8✅ · **R4/R5/R6 ❌**(R6 SPEC 进行中)。
+- **八路路由**:R1🟡(主体✅,sparse提权/entity过滤/流式 ❌)· R2✅ · R3✅ · **R6✅**(防注入 SQL 聚合/列表)· R7🟡(回 N0 缺)· R8✅ · **R4/R5 ❌**。
 - **~47 行带 §15 待确认 caveat**,其中 R5 产品形态(④)、网关/Langfuse/Casbin/SSO 横切、V0 评估是 demo 阶段真正未触的大块。
 
 ---
@@ -123,10 +123,10 @@
 | R5-review | 多模型复核 | ❌ | 未做 | — |
 | R5-render | route_type=judgmental 人工复核框 | ❌ | 占位 | ④ |
 | R5-noloop | 单轮不进推理循环 | ❌ | R5 未实装 | — |
-| R6-dim | 维度抽取 | ❌ | **SPEC-R6 进行中**(规则版) | ⑤ |
-| R6-sql | 参数化 SQL 防注入 | ❌ | **SPEC-R6 进行中** | ⑤ |
-| R6-table | 表格化输出+下钻 | ❌ | **SPEC-R6 进行中** | — |
-| R6-precond | cases 完整率≥90%+字典评审 | ❌ | 摄取侧前提(consumed-when-present 不阻塞) | ⑤⑥ |
+| R6-dim | 维度抽取(规则版) | ✅ | SPEC-R6 §8 SC1;`test_dimensions` | — |
+| R6-sql | 参数化 SQL 防注入 | ✅ | SPEC-R6 §8 SC4;`test_sql_builder`(编译断言 parametrized) | — |
+| R6-table | 表格化输出(聚合/列表) | ✅ | SPEC-R6 §8 SC1-3;`test_r6_stats`/`test_r6_stats_integration`;下钻链接留后续 | — |
+| R6-precond | cases 完整率≥90%+字典评审 | ❌ | 摄取侧数据质量前提;R6 **consumed-when-present** 不依赖(violation_category 空则明示) | ⑥ |
 | R7 | 单问题纯对话澄清+回 N0 | 🟡 | 触发✅(`test_graph`);回 N0 ❌(N0 缺) | — |
 | R8 | 兜底拒答 | ✅ | `test_graph`(refuse_out_of_domain) | — |
 
@@ -182,7 +182,7 @@
 ## 缺口清单(按 GAP backlog 优先级)
 
 - **P0 红线/验收**:R5 全组(R5-bridge/mix/elem/3seg/noraw/review/render,⛔④)· §9.2 多模型复核 · §9.3-perm 权限验收(§14-c)。
-- **P1 路由**:**R6**(进行中)· R4(R4-filter/mode/bound)· §5.4 sparse 提权 · §5.5 重排。
+- **P1 路由**:R4(R4-filter/mode/bound)· §5.4 sparse 提权 · §5.5 重排。(~~R6~~ ✅ 已实装)
 - **P2 查询理解前端**:N0 · N1 HyDE · N3 分解。
 - **P3 横切/工程**:§7.2 流式 · §11 导出 · §9.3 敏感词/Langfuse/SSO/AI 页脚 · §12 容量 · §13 V0 评估(RAGAS/断层率/评估集)。
 - **依赖资产**:§2-entity/biz/chunktype 检索过滤(扩 milvus_io.search,GAP #12)· §2-clauseref resolver · §2-scenario/introutes 字典建表 · §2-tagsE1/E2 富集过滤。
