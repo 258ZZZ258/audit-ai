@@ -116,8 +116,12 @@ def answer_enumerate(query, retriever, pg, *, biz_terms=(), entity_terms=()) -> 
         return refuse_coverage(scope, [])
 
     anchors = fetch_anchors(pg, [c.chunk_id for c in cands])
-    content = {"columns": _LIST_COLS, "rows": _aggregate_rows(cands, anchors), "note": note}
+    rows = _aggregate_rows(cands, anchors)
     citations = [anchors[c.chunk_id] for c in cands if c.chunk_id in anchors]
+    # 候选回查 PG 全缺锚点(写序不一致兜底)→ 覆盖拒答,不出无锚点的空 enumerate(红线:锚点 PG 权威)
+    if not rows:
+        return refuse_coverage(scope, [])
+    content = {"columns": _LIST_COLS, "rows": rows, "note": note}
     return QueryResult(
         route_type=RouteType.ENUMERATE,
         answer_blocks=[

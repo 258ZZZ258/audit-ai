@@ -161,3 +161,9 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
 - **未做(SPEC-R4 §0)**:LLM 维度抽取;E1 细粒度数值过滤(`deontic_type`/`norm_duration_days` 期限);`entity_type` 真数据强过滤
   (E2 默认关);sparse 发文字号提权(§5.4)、bge-reranker(§5.5);`clause_references` 多跳;穷举外规保证(§15-③ 声明不做);
   Excel 导出(§11)、下钻链接;P-QA/P-CASE 分区(列举只打 P-INT/P-EXT)。
+- **Codex 复审修复(2 warning,均实缺陷)**:
+  - **图节点丢弃 `state.scene` 抽取项**:`_r4_listing` 未把 N2 已抽的 `matters`/`entity_types` 传 `answer_enumerate` →
+    `query ask` 路径永远只下推 `chunk_type`,biz/entity 标量过滤仅在直调测试路径生效(违 T6 验收"复用 state.scene 注入")。
+    修:节点转发 `scene.get("matters")`/`entity_types`;dict 接入后图路径自动生效 + `test_graph` 加转发回归。
+  - **缺锚点静默成功**:`fetch_anchors` 后未复检,候选 PG 缺锚点(写序不一致)时返 `route_type=enumerate` 但 rows/citations
+    空(违 SC1"TABLE+四级 citations"、红线"锚点 PG 权威")。修:`rows` 空 → `refuse_coverage` 降级 + `test_missing_anchors_refuses`。

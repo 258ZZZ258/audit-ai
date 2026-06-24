@@ -126,8 +126,15 @@ class QueryAgent:
     def _r4_listing(self, state: QueryState) -> dict:
         from query.listing.r4_listing import answer_enumerate  # 懒导入,避免 import 期拉 pipeline
 
-        # biz/entity 词典未接 PG 加载(GAP)→ 暂传空,标量过滤降为 chunk_type 偏好(降级)
-        return {"result": answer_enumerate(state.query, self._retriever, self._pg)}
+        # 复用 N2(classify)已抽取的 matters/entity_types 注入 R4 标量过滤(T6 验收)。dict 未接
+        # PG 加载 → scene 抽取为空 → biz/entity 降级、只下推 chunk_type;dict 接入后图路径自动生效。
+        scene = state.scene or {}
+        return {
+            "result": answer_enumerate(
+                state.query, self._retriever, self._pg,
+                biz_terms=scene.get("matters", ()), entity_terms=scene.get("entity_types", ()),
+            )
+        }
 
     def _clarify(self, state: QueryState) -> dict:
         blk = AnswerBlock(

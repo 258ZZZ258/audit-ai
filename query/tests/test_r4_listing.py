@@ -136,6 +136,15 @@ def test_empty_candidates_refuses(monkeypatch):
     assert res.exhausted_scope  # 非空(可解释)
 
 
+def test_missing_anchors_refuses(monkeypatch):
+    # 候选在 PG 缺锚点 → fetch_anchors 全空 → 不出空 enumerate,降级覆盖拒答(红线:锚点 PG 权威)
+    cands = [_cand("a1", "DOC1", "1/1")]
+    monkeypatch.setattr(r4_listing, "fetch_anchors", lambda pg, ids: {})
+    res = answer_enumerate("哪些制度规定了反洗钱", _FakeRetriever(cands), pg=None)
+    assert res.route_type is RouteType.REFUSE
+    assert res.exhausted_scope  # 可解释
+
+
 def test_extra_expr_threaded_with_chunk_type(monkeypatch):
     cands = [_cand("a1", "DOC1", "1/1")]
     _patch_anchors(monkeypatch, cands)

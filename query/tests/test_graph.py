@@ -68,6 +68,40 @@ def test_enumerate_routes_to_r4_node(monkeypatch):
     assert len(res.citations) == 1  # 四级锚点
 
 
+def test_r4_node_forwards_scene_terms(monkeypatch):
+    # R4 图节点须把 state.scene 抽取的 matters/entity 注入 answer_enumerate(T6 验收)
+    from query.contract import Citation
+    from query.listing import r4_listing
+    from query.retrieve.hybrid import Candidate
+    from query.state import QueryState
+
+    cand = Candidate("a1", 1.0, "P-INT", "DV1", "1/1", 1, False, "hybrid")
+    captured = {}
+
+    class _Retr:
+        def retrieve_enumerate(self, q, *, extra_expr=None, include_superseded=False):
+            captured["expr"] = extra_expr
+            return [cand]
+
+    monkeypatch.setattr(
+        r4_listing, "fetch_anchors",
+        lambda pg, ids: {
+            "a1": Citation(
+                clause_id="a1", doc_title="《X》", doc_no="1", clause_path="1/1",
+                page_start=1, status="effective",
+            )
+        },
+    )
+    agent = QueryAgent(retriever=_Retr(), pg=None, llm=StubLLMClient(), qcfg=load_query_config())
+    st = QueryState(
+        "哪些制度规定了反洗钱",
+        scene={"scene_type": "enumerate", "matters": ["反洗钱"], "entity_types": []},
+    )
+    agent._r4_listing(st)
+    # scene 抽取的 matters 下推为 biz 过滤(非仅 chunk_type)
+    assert 'array_contains_any(biz_domain, ["反洗钱"])' in captured["expr"]
+
+
 def test_statistical_routes_to_r6_node():
     # R6 已实装:STATISTICAL 路由落 r6_stats 节点(fake pg,零栈)。空结果 → 明示。
     class _Result:
