@@ -28,3 +28,7 @@ _web_uploads/
 # 用户意留未跟踪(不入库):cursor 本地设置 / Office 临时锁文件
 /.cursor/settings.json
 ~$*
+
+# 第一期文档测试生成的报告(不入库)
+tools/doc_test/out/
+tools/doc_test/config.yaml
