@@ -122,3 +122,42 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     两路统一 join 可见性条件;集成 fixture 补不可见哨兵断言排除。**集成 fixture 原 `doc_versions` 默认 `REGISTERED` 故须显式置 INDEXED**。
   - **YEAR 聚合 Decimal 序列化崩**:PG `EXTRACT(year)` 返 `Decimal`,`json.dumps` 抛 TypeError(逐年路径无集成测,漏检)。
     修:`cast(extract..., Integer)` + `_fmt` Decimal 兜底 + 逐年集成测。
+
+## R4 多文档列举(第五轮 spec-driven,SPEC/PLAN/TASKS-R4)
+
+- **切片**:R4 实装(替占位)——`route_type=enumerate`:**规则维度抽取**(`listing/dimensions`)→ **枚举模式高 k 检索**
+  (`hybrid.retrieve_enumerate`,不激进截断)→ **过滤**(① Milvus 标量预过滤 `chunk_type=clause`+`biz_domain`+`entity_type`,扩
+  `milvus_io.search` 加 `extra_expr`;② E1 义务 PG 后过滤 `clause_tags.is_obligation`)→ **去重+按 `doc_version` 聚合** →
+  **TABLE**(制度名/文号/命中条款/页码/状态)+ **citations[]** 四级锚点(`listing/r4_listing`)。**全程零 LLM**。
+  新增 `query/query/listing/`(dimensions/r4_listing)。**八路仅剩 R5 占位**。
+- **决策**:
+  - **过滤范围(AskUserQuestion 已定)**:Milvus 标量 + **E1 义务**(query 侧首次消费 `clause_tags`)。E1(零-LLM **默认开**)
+    有真数据 → 义务过滤有效;E2 `entity_type`(默认关)+ `biz_domain` 走 **consumed-when-present**。
+  - **防注入(红线)**:`build_milvus_expr` 字段名只来自白名单 `_ALLOWED_EXPR_FIELDS`(chunk_type/biz_domain/entity_type)→
+    `array_contains_any`;值经 `json.dumps` 转义(纵深);raw user 串在 `dimensions.extract_enum_spec` 即被**词典过滤**
+    (`extract_terms` 只返词典成员),绝不到 expr。`test_r4_listing` 断言恶意 query 文本不进 spec/expr。
+  - **`milvus_io.search` add-only**:加可选 `extra_expr`(append 到 status/corpus 子句),hybrid 与 dense-only 兜底两路都带;
+    **`extra_expr=None` 与原行为 byte 等价**(`test_milvus_search_expr` 守不回归 R1/R3/R6)。承重检索层唯一改动。
+  - **两道 consumed-when-present 降级**(机制不同):**E1 PG 后过滤可后验** → `is_obligation` 空集 → **降级不过滤 + note**
+    (不丢光);**E2 Milvus 预过滤无法后验** → **仅当 query 抽到词典词才加** entity/biz 子句(dict 未注入→不加,避免空数组 over-filter)。
+  - **义务意图触发**(Q3):问句含「要求/义务/必须/应当/禁止/不得」→ `obligation_only`;「制度/规定/哪些」**不**触发
+    (避免"列出制度"被误缩为只剩义务条款)。
+  - **枚举高 k**(Q2):`enumerate_partition_topk/enumerate_topk` 默认 50/50(放大默认 25/8),config 化、⚠ V0 标定;
+    `retrieve_enumerate` 独立方法、不改 R1 `retrieve`(零回归)。
+  - **`chunk_type=clause` 硬偏好**(Q5):列举=条款,排除 table(可退软偏好,留接缝)。
+  - **TABLE content = JSON `{columns, rows, note}`**(沿用 R3/R6),`stream=False`;非空附**不保证穷举外规**边界声明
+    (§6.4+§15-③,不向甲方承诺);空结果 → 覆盖感知拒答(`refuse_coverage`,exhausted_scope 非空)。
+  - **`fetch_obligation_chunk_ids` 与 cli `_obligation_chunk_ids` 同义**(均查 `clause_tags.tag_type=="is_obligation"`)——
+    查询侧不 import cli,独立实现保 DAG;语义一致(presence=义务)。
+- **踩坑**:
+  - **`listing` 模块级零 pipeline 导入**:`r4_listing` 就地 inline degraded 过滤(不 `from query.retrieve.hybrid import drop_degraded`,
+    因 hybrid 模块级拉 pipeline),Retriever/PgIO 经形参注入 → 纯函数 `build_milvus_expr` 可**零栈测**。
+  - **`test_dimensions` 基名已被 R6 占**(全仓唯一约定)→ R4 用 `test_listing_dimensions`。
+  - **`biz_domain` Milvus 存的是 manifest code**(`[dv.biz_domain]`,如 `["DISCLOSURE"]`),非中文事项名 → 集成验 biz 过滤
+    用 code(query 含 code + `biz_terms=[code]`);负例不存在 code → 真 Milvus 0 命中 → 拒答(证 `extra_expr` 真下推)。
+  - **E1 集成靠自然打标**:E1 义务 enrichment 在 B 模式 ingest 自动跑(`cli.py:145`)→ 合成 doc_a 第二条含「应当」自动得
+    `is_obligation`、doc_b 无标记 → 义务查询断言 doc_b **被剔除**(不依赖手插,稳健于高 k 噪声)。
+  - **pymilvus 全局别名顺序**:`test_r4_listing_integration` 按字母序在 r2/r3 后跑,autouse 幂等 `mio.connect()` 重连(沿用 R3 预案)。
+- **未做(SPEC-R4 §0)**:LLM 维度抽取;E1 细粒度数值过滤(`deontic_type`/`norm_duration_days` 期限);`entity_type` 真数据强过滤
+  (E2 默认关);sparse 发文字号提权(§5.4)、bge-reranker(§5.5);`clause_references` 多跳;穷举外规保证(§15-③ 声明不做);
+  Excel 导出(§11)、下钻链接;P-QA/P-CASE 分区(列举只打 P-INT/P-EXT)。

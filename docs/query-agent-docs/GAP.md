@@ -7,7 +7,7 @@
 > **GAP 回答"做到哪了"(选下一轮);覆盖是否可确定见 `RTM.md`(116 条需求 → SPEC SC → test,✅=测试证明)。**
 
 ## 一句话
-三条红线已在 **R1 闭环**(无编造引用 / 无裸结论 / 可解释拒答);八路里 **R1/R2/R3/R6/R7/R8 实装,R4/R5 仅占位**;
+三条红线已在 **R1 闭环**(无编造引用 / 无裸结论 / 可解释拒答);八路里 **R1/R2/R3/R4/R6/R7/R8 实装,仅 R5 占位**;
 查询理解前端(HyDE/多轮/分解)与横切能力(多模型复核/权限/观测/流式/导出)大部分未做。
 
 ---
@@ -29,13 +29,13 @@
 | R1 依据查询(§6.1) | 🟡 大部分 | 混合检索✅ 充分性自检✅(务实) 引用约束生成✅ 四级锚点✅ **案例附挂✅**(R3,可关);缺:sparse 发文字号提权❌、entity_type 强过滤❌ |
 | R2 变更查询(§6.2) | ✅ 实装 | 版本链回查 + 条款级 diff + 修订原因回查(缺失明示、不推测)+ §6.2 四栏;背景栏/多跳/字句级 diff 留后续(见 SPEC-R2 §0) |
 | R3 相似案例 + 案例桥接(§6.3) | ✅ 实装 | case 分区检索✅ + 要素回填卡片✅(一案一卡)+ 附挂到 R1✅(语义∪精确反查)+ 精确反查桥接原语✅(`cited_regulations` **consumed-when-present**,默认空降级语义-only);桥接-as-入口(behavior→R5)留后续(R5 占位)、L2 `cited_regulations` 生产/`case_summary` 强过滤留后续 |
-| R4 多文档列举(§6.4) | ❌ 占位 | 枚举模式高 k / E1∩E2∩biz_domain∩entity_type 全未做 |
+| R4 多文档列举(§6.4) | ✅ 实装 | 枚举模式高 k(`retrieve_enumerate` 50/50,不激进截断)+ **Milvus 标量预过滤**(`chunk_type=clause` 硬偏好 + `biz_domain`/`entity_type`,扩 `milvus_io.search` 加 `extra_expr` add-only,防注入白名单)+ **E1 义务 PG 后过滤**(`clause_tags.is_obligation`,consumed-when-present 空降级)+ 按 doc 聚合 TABLE + 四级 citations + 不保证穷举外规边界声明;`entity_type`(E2 默认关)/biz 词典未接 PG 加载 → consumed-when-present;sparse 提权/重排留后续 |
 | R5 判定型(§6.5) | ❌ 占位 | 构成要件框定 / 三段式 / 多模型复核 全未做(P0,§15-④) |
 | R6 统计型(§6.6) | ✅ 实装 | 规则维度抽取✅ + 参数化 SQL(白名单 + bound params **防注入**)✅ + 聚合/列表 TABLE✅;`violation_category` **consumed-when-present**(L2 空降级明示);LLM 维度抽取/占比/字典评审留后续 |
 | R7 需澄清(§6.7) | 🟡 | 触发✅ + 纯对话澄清块✅;缺澄清后回 N0 重新归并(N0 未做) |
 | R8 兜底拒答(§6.8) | ✅ | `refuse_out_of_domain` |
 
-> R4/R5 均已正确打标 route_type(诚实占位、不裸答),二次开发 = 往既有图挂节点 + 填 handler。
+> **仅 R5** 仍诚实打标 route_type 占位(不裸答),二次开发 = 往既有图挂节点 + 填 handler。
 
 ## 3. 检索与重排(§5)
 
@@ -43,7 +43,7 @@
 |---|---|---|
 | §5.1 混合检索 dense+sparse+RRF | ✅ | 复用 `milvus_io` |
 | §5.2 分区并行配额(内规∥外规 top25) | ✅ | `retrieve/hybrid` 双分区合并 |
-| §5.3 强制过滤位 | 🟡 | status✅前置、perm_tag🟡(写入不过滤=设计意图)、entity_type❌ / biz_domain❌(暂缓) |
+| §5.3 强制过滤位 | 🟡 | status✅前置、perm_tag🟡(写入不过滤=设计意图);entity_type/biz_domain **机制已落**(R4 `extra_expr` 经 `milvus_io.search`,consumed-when-present)、E2 默认关+词典未接 PG 加载故默认不命中 |
 | §5.4 sparse 精确通道(发文字号提权 + 词典扩展) | ❌ | 用默认 RRF,无差异化权重 / 无 `dict_scenario_terms` 扩展 |
 | §5.5 重排 bge-reranker top50→top8 | ❌ | 默认 `rerank=none`(用 RRF 序);接缝预留 |
 | §5.6 父子块供证 | ✅ | `fetch_parent_text` |
@@ -96,7 +96,7 @@
 | PG `chunks` 四级回查 | ✅ | anchors |
 | `cases` | ✅ | **R3 已消费**(要素回填卡片 + `cited_regulations` 精确反查)+ **R6 参数化 SQL 聚合/列表**;`violation_category`(L2)consumed-when-present |
 | `clause_references` | ❌ | 空表(无 resolver),R1/R2 多跳未用 |
-| `clause_tags` E1/E2 | 🟡 | 分类用词典,未真做义务/期限过滤 |
+| `clause_tags` E1/E2 | 🟡 | **R4 已消费 E1 `is_obligation`**(义务后过滤,`fetch_obligation_chunk_ids`);期限(`norm_duration_days`)/E2 事项过滤未做 |
 | `dict_*` | 🟡 | entity_types/biz_domains/departments 存在;scenario_terms / intent_routes 未建 |
 
 ## 9. §1.3 四个关键取舍落地
@@ -118,7 +118,7 @@
 3. **§9.3 权限 Casbin + 操作日志** — 权限/安全验收
 
 ### P1 — 核心功能路由
-4. ~~R2 变更查询~~ ✅ / ~~R3 相似案例+案例桥接~~ ✅ / ~~R6 统计型~~ ✅(SPEC/PLAN/TASKS-R6)/ R4 多文档列举 / R5 判定型(R4/R5 仍占位)
+4. ~~R2 变更查询~~ ✅ / ~~R3 相似案例+案例桥接~~ ✅ / ~~R6 统计型~~ ✅ / ~~R4 多文档列举~~ ✅(SPEC/PLAN/TASKS-R4)/ **R5 判定型(仅此一路仍占位)**
 5. §5.5 重排(bge-reranker)/ §5.4 sparse 精确通道提权
 
 ### P2 — 查询理解前端
@@ -131,8 +131,8 @@
 ### 依赖资产缺口(可并行补)
 9. ~~`cases` 消费(R3/R6 前提)~~ ✅ R3(要素回填 + 精确反查)+ R6(参数化 SQL 聚合/列表)已消费
 10. `clause_references` resolver(R1/R2 多跳;表已建,数据/逻辑待补,见 `libs/common/common/pg_models.py` TODO)
-11. `dict_scenario_terms` / `dict_intent_routes` 建表 + 灌种子(18 问 + 应用场景 + 真实日志)
-12. entity_type / biz_domain 检索前置过滤 → 需扩 `pipeline.index.milvus_io.search` 接受附加 expr / output_fields
+11. `dict_scenario_terms` / `dict_intent_routes` 建表 + 灌种子(18 问 + 应用场景 + 真实日志);**`dict_biz_domains`/`dict_entity_types` 接 PG 加载注入 classify/R4**(现未接 → R4 biz/entity 过滤默认不命中)
+12. ~~entity_type / biz_domain 检索前置过滤 → 扩 `pipeline.index.milvus_io.search` 接受附加 expr~~ ✅(R4 `extra_expr` add-only;E2 真打标 + 词典加载待补)
 
 ---
 

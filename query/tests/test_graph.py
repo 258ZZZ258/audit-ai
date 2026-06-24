@@ -31,20 +31,41 @@ def test_ambiguous_routes_to_clarify(agent):
     assert res.answer_blocks[0].type is BlockType.CLARIFY_QUESTION
 
 
-@pytest.mark.parametrize(
-    "query, route",
-    [
-        # R2 变更 / R3 案例 / R6 统计已实装(走真栈,见各集成);此处仅 R4–R5 仍占位
-        ("哪些制度规定了信息披露", RouteType.ENUMERATE),
-        ("二维码介绍开户是否违规", RouteType.JUDGMENTAL),
-    ],
-)
-def test_r4_to_r5_honest_placeholder(agent, query, route):
-    res = agent.ask(query)
-    assert res.route_type is route  # 正确打标
+def test_r5_honest_placeholder(agent):
+    # R1/R2/R3/R4/R6 已实装(走真栈,见各集成);**八路仅剩 R5 判定型占位**
+    res = agent.ask("二维码介绍开户是否违规")
+    assert res.route_type is RouteType.JUDGMENTAL  # 正确打标
     assert "暂未实装" in res.answer_blocks[0].content  # 诚实占位,不裸答
     assert "违规" not in res.answer_blocks[0].content and "合规" not in res.answer_blocks[0].content
     assert res.citations == []  # 占位不出引用
+
+
+def test_enumerate_routes_to_r4_node(monkeypatch):
+    # R4 已实装:ENUMERATE 路由落 r4_listing 节点(fake retriever + monkeypatch anchors,零栈)。
+    from query.contract import Citation
+    from query.listing import r4_listing
+    from query.retrieve.hybrid import Candidate
+
+    cand = Candidate("a1", 1.0, "P-INT", "DV1", "1/1", 1, False, "hybrid")
+
+    class _Retr:
+        def retrieve_enumerate(self, q, *, extra_expr=None, include_superseded=False):
+            return [cand]
+
+    monkeypatch.setattr(
+        r4_listing, "fetch_anchors",
+        lambda pg, ids: {
+            "a1": Citation(
+                clause_id="a1", doc_title="《信息披露管理办法》", doc_no="令1号",
+                clause_path="1/1", page_start=1, status="effective",
+            )
+        },
+    )
+    agent = QueryAgent(retriever=_Retr(), pg=None, llm=StubLLMClient(), qcfg=load_query_config())
+    res = agent.ask("哪些制度规定了信息披露")
+    assert res.route_type is RouteType.ENUMERATE
+    assert res.answer_blocks[0].type is BlockType.TABLE  # 列表化输出
+    assert len(res.citations) == 1  # 四级锚点
 
 
 def test_statistical_routes_to_r6_node():

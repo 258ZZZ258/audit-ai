@@ -57,6 +57,8 @@ CASE_QUERY = "有没有微信二维码违规开户的处罚案例"
 IndexedStack = namedtuple("IndexedStack", "pg mio ctx dvid query")
 #: R3 案例栈(复用 indexed_stack 的内规件 + 额外一件 P-CASE 处罚决定书)
 CaseStack = namedtuple("CaseStack", "pg mio ctx internal_dvid case_dvid query case_query")
+#: R4 列举栈(复用 indexed_stack + 额外两件同主题「信息披露」内规:a 含义务条款、b 无义务)
+EnumStack = namedtuple("EnumStack", "pg mio ctx dvid_a dvid_b biz_code")
 
 
 def _clean_internal_docx(tmp_path):
@@ -206,6 +208,99 @@ def indexed_stack(soffice, tmp_path_factory):
         s.execute(delete(Document).where(Document.logical_id == logical_id))
         s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
     mio.disconnect()
+
+
+#: R4 列举栈共享业务域(biz_domain code,Milvus ARRAY 存此值;供 extra_expr biz 过滤验证)
+ENUM_BIZ_CODE = "DISCLOSURE"
+
+
+def _disclosure_docx(tmp_path, prefix, title, clauses):
+    """同主题「信息披露」内规件(首段=manifest 标题、body 无可抽文号 → L1 零冲突 → B 模式放行)。
+
+    ``clauses`` 为「第N条…」正文行列表;``ENUM_BIZ_CODE`` 入 manifest biz_domain(→ Milvus ARRAY)。
+    """
+    tag = str(ULID())
+    d = tmp_path / (prefix + tag[:8])
+    d.mkdir()
+    fn = "disc.docx"
+    doc = Docx()
+    doc.add_paragraph(title)            # 首段=manifest 标题(免 title 冲突)
+    doc.add_paragraph("第一章 总则")
+    doc.add_paragraph("第一节 一般规定")  # 章→节→条:产出节级父块
+    for i, body in enumerate(clauses):
+        doc.add_paragraph(f"{body}编号{tag}{i}。")
+    doc.save(d / fn)
+    wb = Workbook()
+    wb.active.append(_MANIFEST_COLS)
+    wb.active.append(
+        [fn, title, f"披露第{tag[:6]}号", "INTERNAL", "内部", "P-INT",
+         ENUM_BIZ_CODE, None, None, "内规", None]
+    )
+    mp = d / "manifest.xlsx"
+    wb.save(mp)
+    return d, mp
+
+
+def _ingest_one(pg, ctx, d, m):
+    """ingest 一件到 INDEXED(B 模式自动放行),返回 (dvid, logical_id, batch_id)。"""
+    bid = str(ULID())
+    register_batch(ctx, bid, d, m)
+    cli._drive_batch(pg, ctx, bid)
+    with pg.session() as s:
+        (dvid,) = [
+            x.doc_version_id
+            for x in s.scalars(select(DocVersion).where(DocVersion.batch_id == bid))
+        ]
+    dv = pg.get(DocVersion, dvid)
+    assert dv.pipeline_status == "INDEXED", f"未到 INDEXED:{dv.pipeline_status}"
+    return dvid, dv.logical_id, bid
+
+
+def _purge_doc(pg, mio, dvid, logical_id, bid):
+    """反 FK 序清理一件 + Milvus 投影。"""
+    try:
+        mio.delete(dvid)
+        mio.flush()
+    except Exception:
+        pass
+    with pg.session() as s:
+        child_ids = select(Chunk.chunk_id).where(Chunk.doc_version_id == dvid)
+        s.execute(delete(ClauseTag).where(ClauseTag.chunk_id.in_(child_ids)))
+        s.execute(delete(Chunk).where(Chunk.doc_version_id == dvid))
+        s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id == dvid))
+        s.execute(delete(RemediationRecord).where(RemediationRecord.doc_version_id == dvid))
+        s.execute(delete(ReviewQueue).where(ReviewQueue.doc_version_id == dvid))
+        s.execute(delete(DocVersion).where(DocVersion.doc_version_id == dvid))
+        s.execute(delete(Document).where(Document.logical_id == logical_id))
+        s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
+
+
+@pytest.fixture(scope="session")
+def enumerate_stack(indexed_stack, tmp_path_factory):
+    """R4:复用 indexed_stack + 额外 ingest 两件同主题「信息披露」内规到 INDEXED。
+
+    doc_a 第二条含义务条款(``应当`` → E1 自动打 ``is_obligation``);doc_b 全无义务标记
+    → 义务查询时 doc_b 被 E1 后过滤剔除,doc_a 保留(验 consumed-when-present 过滤)。
+    """
+    pg, mio, ctx = indexed_stack.pg, indexed_stack.mio, indexed_stack.ctx
+    tmp = tmp_path_factory.mktemp("q_enum")
+    da, ma = _disclosure_docx(
+        tmp, "enum_a_", "信息披露管理办法",
+        ["第一条 为规范信息披露根据有关规定制定本办法",
+         "第二条 上市公司应当及时完整披露信息披露相关重大事项"],  # 第二条:应当→义务
+    )
+    db, mb = _disclosure_docx(
+        tmp, "enum_b_", "信息披露事务管理细则",
+        ["第一条 本细则界定信息披露的范围与办理流程",
+         "第二条 信息披露分为定期报告与临时公告两类内容"],  # 无义务标记
+    )
+    dvid_a, lid_a, bid_a = _ingest_one(pg, ctx, da, ma)
+    dvid_b, lid_b, bid_b = _ingest_one(pg, ctx, db, mb)
+
+    yield EnumStack(pg, mio, ctx, dvid_a, dvid_b, ENUM_BIZ_CODE)
+
+    _purge_doc(pg, mio, dvid_b, lid_b, bid_b)
+    _purge_doc(pg, mio, dvid_a, lid_a, bid_a)
 
 
 @pytest.fixture(scope="session")

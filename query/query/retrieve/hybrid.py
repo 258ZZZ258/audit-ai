@@ -90,6 +90,32 @@ class Retriever:
         ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)
         return ranked[: self._qcfg.topk]
 
+    def retrieve_enumerate(
+        self, query: str, *, extra_expr: str | None = None, include_superseded: bool = False
+    ) -> list[Candidate]:
+        """§6.4 枚举模式:**高 k**(``enumerate_partition_topk``/``enumerate_topk``)+ 标量预过滤
+        (``extra_expr`` 由 ``listing.build_milvus_expr`` 构,白名单字段)。不激进截断、不改 R1。
+        分区配额合并去重(同 chunk_id 保高分)→ 按分降序取 ``enumerate_topk``。
+        """
+        emb = self._embed.embed([query])[0]
+        merged: dict[str, Candidate] = {}
+        for corpus in _PARTITIONS:
+            res = self._milvus.search(
+                emb.dense,
+                emb.sparse,
+                topk=self._qcfg.enumerate_partition_topk,
+                include_superseded=include_superseded,
+                corpus=corpus,
+                extra_expr=extra_expr,
+            )
+            for hit in res.hits:
+                cand = _to_candidate(hit, res.retrieval_mode)
+                prev = merged.get(cand.chunk_id)
+                if prev is None or cand.score > prev.score:
+                    merged[cand.chunk_id] = cand
+        ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)
+        return ranked[: self._qcfg.enumerate_topk]
+
     def retrieve_cases(self, query: str, *, include_superseded: bool = False) -> list[Candidate]:
         """§6.3 案例分区(P-CASE)语义检索 → 按分降序的 chunk 级候选(``partition_topk`` 条)。
 

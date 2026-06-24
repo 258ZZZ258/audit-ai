@@ -226,6 +226,7 @@ class MilvusIO:
         topk: int,
         include_superseded: bool = False,
         corpus: str | None = None,
+        extra_expr: str | None = None,
     ) -> SearchResult:
         """混合查(dense+sparse + RRFRanker);hybrid 失败或 sparse 空 → dense-only 兜底 + 标记。
 
@@ -233,6 +234,8 @@ class MilvusIO:
         status in [effective, superseded])。**staging(INDEXED 前半成品)在任何情况下都不可见**
         ——这是硬契约(写序 PG→upsert→flush→INDEXED,翻 effective 前不暴露),故 include_superseded
         只放宽到 superseded、绝不去掉 status 过滤。corpus 加 corpus_type 过滤。
+        ``extra_expr`` 追加调用方标量过滤(R4 枚举:chunk_type/biz_domain/entity_type;**add-only**,
+        为 None 时 expr 与原行为等价,不改 status/corpus 语义)。
         hit 带四级引用字段(clause_path/doc_version_id/page_start)。
         """
         col = self._collection()
@@ -245,6 +248,8 @@ class MilvusIO:
         clauses = [status_clause]
         if corpus:
             clauses.append(f'corpus_type == "{corpus}"')
+        if extra_expr:
+            clauses.append(extra_expr)  # 调用方标量过滤(白名单字段 + 转义值,见 query.listing)
         expr = " and ".join(clauses)
 
         try:
