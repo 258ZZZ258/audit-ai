@@ -1,0 +1,40 @@
+# 第一期文档处理管线测试 — 配置(复制为 config.yaml 后按需改)
+# 跑法:.venv/bin/python tools/doc_test/run_phase1.py --config tools/doc_test/config.yaml
+
+# ── 输入:PDF 根目录 + 分类来源(已分类好,无 manifest,跳过 S0 登记)──────────────
+pdf_root: "/绝对路径/你的PDF根目录"   # 必填
+recurse: true                          # 递归扫描子目录
+
+# 分类:按"父目录名 → corpus_type"映射(改成你的目录名)。
+# corpus_type 取值:P-INT(内规)/ P-EXT(外规)/ P-CASE(案例)/ P-QA(监管问答)
+corpus_map:
+  内规: P-INT
+  外规: P-EXT
+  案例: P-CASE
+  监管问答: P-QA
+# 可选:逐文件覆盖(文件名 → corpus_type),优先级高于目录映射
+file_overrides: {}
+# 未匹配任何分类的 PDF:skip(默认跳过并在报告标注)| 或填一个 corpus_type 兜底
+unclassified: skip
+
+# ── 解析 ─────────────────────────────────────────────────────────────────────
+parse:
+  scanned_char_per_page_max: 50        # 低于此 字符/页 → 判扫描件(需 OCR/DeepDoc)
+
+# ── QC 阈值:留空 = 用仓库 config/qc_thresholds.yaml 现值;在此覆盖可做对比实验 ──────
+qc_thresholds: {}                      # 例:{clause_coverage_min: 0.90, text_garbled_max: 0.02}
+
+# ── LLM 无标注裁判(目标①②③ 的真值核对)──────────────────────────────────────
+llm:
+  enabled: true                        # false = 只跑确定性指标,报告标注"未经 LLM 复核"
+  model: "gpt-5.4-nano"                # OpenAI 兼容网关模型;key/endpoint 走 env,绝不入库
+  # 环境变量:OPENAI_API_KEY(必填)/ OPENAI_BASE_URL / OPENAI_MODEL(可覆盖 model)
+  max_chars: 12000                     # 送 LLM 的文本上限(控成本)
+  sample: head_mid_tail                # 文本采样:head_mid_tail | head
+  max_pdfs: 0                          # >0 = 只对前 N 个 PDF 跑 LLM(冒烟/控成本);0 = 全跑
+
+# ── 输出 ─────────────────────────────────────────────────────────────────────
+output:
+  dir: "tools/doc_test/out"            # 报告与逐 PDF 指标 JSON 落盘目录
+  report_name: "phase1_report.md"
+  metrics_name: "phase1_metrics.json"
