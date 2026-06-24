@@ -1,6 +1,6 @@
 # RTM: 制度查询智能体 v1.0 需求可追溯矩阵(覆盖证明)
 
-> 基线 2026-06-24(R1/R2/R3/**R4**/R6/R7/R8 实装,仅 R5 占位)。对照 `docs/制度查询智能体_技术框架设计_v1_0.md`(v1.0,功能1)。
+> 基线 2026-06-24(**八路全实装,R5 收官**)。对照 `docs/制度查询智能体_技术框架设计_v1_0.md`(v1.0,功能1)。
 > **GAP.md 回答"做到哪了"(按 § 的进度盘点);RTM 回答"是否可确定覆盖了 v1.0"——把每条需求挂到 SPEC SC + 测试。**
 > 二者并存:迭代时先看 GAP 选下一轮,收口时更新 RTM 验证覆盖。
 
@@ -15,14 +15,14 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **36** | 31% | 红线 / R1 / R2 / R3 / **R4** / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 |
-| 🟡 部分 | **31** | 27% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制·E2 consumed-when-present)、E1 义务过滤、prompt 分路由、附挂触发边界、§14 验收部分项 |
-| ❌ 未实装 | **48** | 41% | R5 路由、查询理解前端(N0/N1/N3)、§5.4/5.5、横切(§9 网关/复核/权限/观测/SSO)、§11–13 |
+| ✅ 实装+测试 | **45** | 39% | 红线 / R1 / R2 / R3 / **R4** / **R5** / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 |
+| 🟡 部分 | **33** | 28% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取/§9.2 复核(接口·toggle)、§14 验收部分项 |
+| ❌ 未实装 | **37** | 32% | 查询理解前端(N0/N1/N3)、§5.4/5.5、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
 | ➖ 非查询逻辑 | **1** | — | §2.3 容量(摄取/部署) |
 | **合计** | **116** | | |
 
-- **红线(RL-1/2/3 + §0.1-2)**:核心引用真实性/四级回溯/可解释拒答 **✅**;"无裸结论"在 R1 路径 ✅(代码后检),真 LLM 下的 §9.2 复核 ❌ → RL-1 记 🟡。
-- **八路路由**:R1🟡(主体✅,sparse提权/entity过滤/流式 ❌)· R2✅ · R3✅ · **R4✅**(枚举高 k + Milvus 标量/E1 义务过滤 + 按 doc 聚合)· **R6✅**(防注入 SQL 聚合/列表)· R7🟡(回 N0 缺)· R8✅ · **仅 R5 ❌**。
+- **红线(RL-1/2/3 + §0.1-2)**:核心引用真实性/四级回溯/可解释拒答 **✅**;"无裸结论"在 R1/R5 路径 ✅(形态无 verdict 槽 + 代码后检 verdict+试探性),真 LLM 下的 §9.2 复核接口已就位但默认关 → RL-1 记 🟡(真-LLM 闭环留后续)。
+- **八路路由(全实装)**:R1🟡(主体✅,sparse提权/entity过滤/流式 ❌)· R2✅ · R3✅ · **R4✅** · **R5✅**(三段式硬约束 + 不出裸结论 + 桥接入口 + §9.2 接口)· **R6✅** · R7🟡(回 N0 缺)· R8✅。**无占位**。
 - **~47 行带 §15 待确认 caveat**,其中 R5 产品形态(④)、网关/Langfuse/Casbin/SSO 横切、V0 评估是 demo 阶段真正未触的大块。
 
 ---
@@ -32,14 +32,14 @@
 ### 红线 / §1.3 取舍 / §0 边界
 | Req | 需求 | 状态 | 证据(SPEC §SC / test) | §15 |
 |---|---|---|---|---|
-| RL-1 | 无编造引用 / 无裸结论 | 🟡 | SPEC §8-红线;`test_evidence_guards`(sanitize/refuse)✅;真 LLM §9.2 复核 ❌ | ④ |
+| RL-1 | 无编造引用 / 无裸结论 | 🟡 | SPEC §8-红线;`test_evidence_guards`✅ + R5 `test_framing`(形态无 verdict 槽 + strip verdict/试探性)✅;真 LLM §9.2 复核接口就位默认关 → 真-LLM 闭环 ❌ | ④ |
 | RL-2 | 拒答可解释(穷尽分区+最接近 N 条) | ✅ | SPEC §8 SC3;`test_coverage_refusal` | ⑥ |
 | RL-3 | 引用真实性 clause_id ⊆ 上下文 | ✅ | SPEC §8 SC2;`test_citation_faithfulness` | — |
 | §0.1-2 | 依据四级回溯 | ✅ | SPEC §8 SC1;`test_anchors_integration` | — |
 | §0.1-5 | 单向只读不回写 | 🟡 | 架构(无回写路径),待补回归测;各 SPEC §7 Never | — |
 | §0.3 | 范围外不做(专业判断/比对/舆情) | 🟡 | R8 兜底 + 各 SPEC §0 边界;无专测 | — |
 | TO-1 | 查询理解前端替代裸检索 | 🟡 | N2 规则版✅(`test_classify`);HyDE ❌ | ①⑦ |
-| TO-2 | 八路路由形态隔离裸结论 | ✅ | SPEC §8 SC4;`test_router`/`test_graph` | — |
+| TO-2 | 八路路由形态隔离裸结论 | ✅ | SPEC §8 SC4;`test_router`/`test_graph`(**八路全实装**,R5 判定型三段式形态隔离) | — |
 | TO-3 | 引用 ID 注入(只选不生成) | ✅ | `test_citation_inject`/`test_citation_faithfulness` | — |
 | TO-4 | 覆盖感知拒答替代分数阈值 | 🟡 | 务实版命中数(`test_sufficiency`);事项分区穷尽完整判据 ❌ | ⑥ |
 
@@ -115,14 +115,14 @@
 | R4-filter | E1∩E2∩biz∩entity 过滤 | ✅ | SPEC-R4 §8 SC3-4;`test_r4_listing`(build_milvus_expr 白名单/E1 后过滤)`test_milvus_search_expr`(extra_expr 等价)`test_r4_listing_integration`(E1 义务剔除·biz 真过滤);**E2 entity consumed-when-present**(默认关) | ③⑥ |
 | R4-mode | 枚举高 k 不激进截断 | ✅ | SPEC-R4 §8 SC2;`test_r4_listing_integration`(跨文档聚合);`retrieve_enumerate` 50/50 | — |
 | R4-bound | 声明不保证穷举外规 | ✅ | SPEC-R4 §8 SC6;`test_r4_listing`(边界 note)`test_r4_listing_integration`(不保证穷举外规) | ③ |
-| R5-bridge | 案例反查→外规定位 | ❌ | 占位 | ⑤ |
-| R5-mix | 内+外规补充候选 | ❌ | 占位 | — |
-| R5-elem | 构成要件提取(LLM) | ❌ | 占位 | — |
-| R5-3seg | 三段式硬约束输出 | ❌ | 占位 | ④ |
-| R5-noraw | 不出违规/合规裸结论 | ❌ | R5 占位(R1 路径有代码后检) | ④ |
-| R5-review | 多模型复核 | ❌ | 未做 | — |
-| R5-render | route_type=judgmental 人工复核框 | ❌ | 占位 | ④ |
-| R5-noloop | 单轮不进推理循环 | ❌ | R5 未实装 | — |
+| R5-bridge | 案例反查→外规定位 | ✅ | SPEC-R5 §8 SC4;`test_r5_judgment`(consumed-when-present)`test_r5_judgment_integration`(手插 cited 反查命中);`resolve_cited_clauses` | ⑤ |
+| R5-mix | 内+外规补充候选 | ✅ | `test_r5_judgment`(桥接 ∪ hybrid);复用 R1 `retrieve`(P-INT/P-EXT) | — |
+| R5-elem | 构成要件提取(LLM) | 🟡 | clause直呈实装(`test_framing`);LLM 抽取 `judge_constituent_llm` 默认关(接缝)| — |
+| R5-3seg | 三段式硬约束输出 | ✅ | SPEC-R5 §8 SC1;`test_framing`(无 verdict 槽)`test_r5_judgment`/集成(②框定+③标识) | ④ |
+| R5-noraw | 不出违规/合规裸结论 | ✅ | SPEC-R5 §8 SC2;`test_framing`(`strip_bare_conclusion` verdict+试探性)`test_r5_judgment_integration`(断言无裸结论) | ④ |
+| R5-review | 多模型复核 | 🟡 | `test_r5_review`(接口+toggle 关 passthrough/开降级);真 Kimi faithfulness 留后续 | — |
+| R5-render | route_type=judgmental 人工复核框 | ✅ | SPEC-R5 §8 SC1;`test_r5_judgment`(`review_required=true`) | ④ |
+| R5-noloop | 单轮不进推理循环 | ✅ | `test_graph`(单跳直通 r5_judgment,无 agentic 循环) | — |
 | R6-dim | 维度抽取(规则版) | ✅ | SPEC-R6 §8 SC1;`test_dimensions` | — |
 | R6-sql | 参数化 SQL 防注入 | ✅ | SPEC-R6 §8 SC4;`test_sql_builder`(编译断言 parametrized) | — |
 | R6-table | 表格化输出(聚合/列表) | ✅ | SPEC-R6 §8 SC1-3;`test_r6_stats`/`test_r6_stats_integration`;下钻链接留后续 | — |
@@ -136,10 +136,10 @@
 | §7.1 | 引用 ID 注入式生成 | ✅ | `test_citation_inject`/`test_citation_faithfulness` | — |
 | §7.2 | 流式输出 首 token<3s | ❌ | contract.stream 字段未真推送 | — |
 | §7.3 | 四级锚点 PG 回查 | ✅ | `test_anchors_integration` | — |
-| §7.4 | prompt 模板分路由 | 🟡 | R1✅ R2 四栏✅(文本);R5 三段式 ❌ | ④ |
+| §7.4 | prompt 模板分路由 | ✅ | R1 引用注入✅ R2 四栏✅ **R5 三段式✅**(`test_framing`)R3 卡片✅ R6 表格✅ | ④ |
 | §8.1 | 覆盖语境判据(事项分区穷尽) | 🟡 | 务实版(`test_sufficiency`);接口保真 | ⑥ |
 | §8.2 | 拒答话术+exhausted_scope | ✅ | `test_coverage_refusal` | ⑥ |
-| §8.3 | 判定型框定三段式 | ❌ | R5 未实装 | ④ |
+| §8.3 | 判定型框定三段式 | ✅ | SPEC-R5 §8 SC1-2;`test_framing`(无 verdict 槽 + strip)`test_r5_judgment_integration`(无裸结论) | ④ |
 
 ### §9 横切
 | Req | 需求 | 状态 | 证据 | §15 |
@@ -148,8 +148,8 @@
 | §9.1-matrix | 模型矩阵(Qwen/Kimi/bge) | ❌ | 未真接 | ① |
 | §9.1-embed | embedding endpoint dense+sparse 双输出验证 | ❌ | 走本地 BGE-M3 | ② |
 | §9.1-mcp | 检索/SQL 工具 MCP 注册 | ❌ | 未做 | ⑧ |
-| §9.2 | 多模型复核 Kimi faithfulness | ❌ | 未做 | — |
-| §9.2-r5 | R5 试探性表述复核 | ❌ | 未做 | ④ |
+| §9.2 | 多模型复核 Kimi faithfulness | 🟡 | R5 `review_tentative` 接口+toggle(`test_r5_review`);真 Kimi faithfulness 默认关、留后续 | — |
+| §9.2-r5 | R5 试探性表述复核 | 🟡 | `strip_bare_conclusion` 覆盖试探性(always-on)✅ + `review_tentative` 接口(toggle 默认关);真 LLM 语义复核留后续 | ④ |
 | §9.3-sensitive | 敏感词双向过滤 | ❌ | 未做 | — |
 | §9.3-ailabel | AI 内容标识+导出页脚 | 🟡 | contract.ai_label✅;导出页脚 ❌ | — |
 | §9.3-perm | Casbin+操作日志 | ❌ | 未做 | — |
@@ -175,13 +175,13 @@
 | §14-d | 安全验收(Langfuse+日志) | ❌ | 未做 | — |
 | §14-e | 非功能(复核+敏感词+标识) | 🟡 | ai_label✅;复核/敏感词 ❌ | — |
 | §14-f | 性能验收 | ❌ | 未做 | ⑦ |
-| §14-g | 核心目标(不裸答) | 🟡 | 引用注入✅+覆盖拒答✅;判定型框定 ❌ | ④ |
+| §14-g | 核心目标(不裸答) | ✅ | 引用注入✅+覆盖拒答✅+**判定型框定✅**(R5 三段式无 verdict 槽+代码后检);真 LLM §9.2 复核留后续 | ④ |
 
 ---
 
 ## 缺口清单(按 GAP backlog 优先级)
 
-- **P0 红线/验收**:R5 全组(R5-bridge/mix/elem/3seg/noraw/review/render,⛔④)· §9.2 多模型复核 · §9.3-perm 权限验收(§14-c)。
+- **P0 红线/验收**:~~R5 全组~~ ✅(三段式+不出裸结论+桥接+§9.2 接口;§15-④ demo workaround)· **§9.2 真多模型复核**(Kimi faithfulness 真接,RL-1 真-LLM 闭环)· §9.3-perm 权限验收(§14-c)。
 - **P1 路由**:§5.4 sparse 提权 · §5.5 重排。(~~R6~~ ✅ · ~~R4~~ ✅ 已实装 —— 八路仅剩 R5 占位)
 - **P2 查询理解前端**:N0 · N1 HyDE · N3 分解。
 - **P3 横切/工程**:§7.2 流式 · §11 导出 · §9.3 敏感词/Langfuse/SSO/AI 页脚 · §12 容量 · §13 V0 评估(RAGAS/断层率/评估集)。
@@ -189,7 +189,7 @@
 
 ## §15 待确认图例(阻塞标记)
 
-① 网关轻量小模型(HyDE/路由/分类/分解/维度抽取) · ② embedding sparse 双输出 endpoint+版本钉死 · ③ E2 外规覆盖范围(R4 穷举边界) · ④ R5 不裸答产品形态(P0,红线验收) · ⑤ cases"引用外规条款"结构化字段(桥接/SQL 前提) · ⑥ 字典评审/维护(scenario_terms/entity_types/违规类别——覆盖拒答可靠性) · ⑦ 网关并发配额/限流(QPS/HyDE-on) · ⑧ MCP/SKILL 接入规范。
+① 网关轻量小模型(HyDE/路由/分类/分解/维度抽取) · ② embedding sparse 双输出 endpoint+版本钉死 · ③ E2 外规覆盖范围(R4 穷举边界) · ④ R5 不裸答产品形态(demo workaround 已落:三段式+人工复核必需+代码后检;**待甲方确认验收口径**) · ⑤ cases"引用外规条款"结构化字段(桥接/SQL 前提) · ⑥ 字典评审/维护(scenario_terms/entity_types/违规类别——覆盖拒答可靠性) · ⑦ 网关并发配额/限流(QPS/HyDE-on) · ⑧ MCP/SKILL 接入规范。
 
 > 多数 §15 项是**生产确认待办**,demo 已用 workaround 交付(本地 BGE-M3=② · consumed-when-present=⑤ · 规则分类=① · 务实判据=⑥)。真正 demo 阶段未触的大块:R5 产品形态(④)、网关/Langfuse/Casbin/SSO 横切、V0 评估。
 

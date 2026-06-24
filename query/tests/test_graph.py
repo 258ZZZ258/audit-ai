@@ -31,13 +31,37 @@ def test_ambiguous_routes_to_clarify(agent):
     assert res.answer_blocks[0].type is BlockType.CLARIFY_QUESTION
 
 
-def test_r5_honest_placeholder(agent):
-    # R1/R2/R3/R4/R6 已实装(走真栈,见各集成);**八路仅剩 R5 判定型占位**
+def test_judgmental_routes_to_r5_node(monkeypatch):
+    # R5 已实装(收官):JUDGMENTAL 路由落 r5_judgment 节点;**八路全实装,无占位**。
+    from query.contract import Citation
+    from query.judge import r5_judgment
+    from query.retrieve.hybrid import Candidate
+
+    cand = Candidate("a1", 1.0, "P-EXT", "DV1", "第三条", 1, False, "hybrid")
+
+    class _Retr:
+        def retrieve(self, q, *, include_superseded=False):
+            return [cand]
+
+        def retrieve_cases(self, q, *, include_superseded=False):
+            return []
+
+    monkeypatch.setattr(
+        r5_judgment, "fetch_anchors",
+        lambda pg, ids: {
+            "a1": Citation(clause_id="a1", doc_title="合同管理办法", doc_no="令1",
+                           clause_path="第三条", page_start=1, status="effective")
+        },
+    )
+    monkeypatch.setattr(r5_judgment, "fetch_texts", lambda pg, ids: {"a1": "合同应当经法务审查。"})
+    monkeypatch.setattr(r5_judgment, "resolve_cited_clauses", lambda pg, dvids: [])
+    agent = QueryAgent(retriever=_Retr(), pg=None, llm=StubLLMClient(), qcfg=load_query_config())
     res = agent.ask("二维码介绍开户是否违规")
-    assert res.route_type is RouteType.JUDGMENTAL  # 正确打标
-    assert "暂未实装" in res.answer_blocks[0].content  # 诚实占位,不裸答
-    assert "违规" not in res.answer_blocks[0].content and "合规" not in res.answer_blocks[0].content
-    assert res.citations == []  # 占位不出引用
+    assert res.route_type is RouteType.JUDGMENTAL
+    assert res.review_required is True            # 人工复核框
+    assert res.citations                          # 三段式 ① 依据条款
+    for b in res.answer_blocks:                    # 红线:无裸结论
+        assert not any(w in b.content for w in ("违规", "违法", "合规", "合法", "可能违反"))
 
 
 def test_enumerate_routes_to_r4_node(monkeypatch):

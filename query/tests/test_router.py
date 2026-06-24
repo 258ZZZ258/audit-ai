@@ -30,7 +30,7 @@ def test_router_golden():
 
 def test_all_eight_routes_covered():
     routes = {RouteType(i["route"]) for i in _load_golden()}
-    # 实装三路 + R2–R6 占位标签(八路分满)
+    # 八路全实装(R5 收官):R1–R8 均有真实 route_type 落点,无占位
     assert {RouteType.EVIDENCE, RouteType.CLARIFY, RouteType.REFUSE} <= routes
     assert {
         RouteType.CHANGE, RouteType.CASE, RouteType.ENUMERATE,

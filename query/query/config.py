@@ -27,6 +27,8 @@ class QueryConfig(BaseModel):
     sufficiency_min_hits: int = 1  # ⚠ 事项分区内充分判据最少命中(§8.1 务实版)
     attach_cases: bool = True      # ⚠ R1 依据答复尾挂相关案例卡(§6.3 附挂通道);可关
     attach_topk: int = 3           # ⚠ 附挂案例卡条数(§6.3 top3)
+    judge_constituent_llm: bool = False   # ⚠ R5 构成要件框定用 LLM 抽取(§6.5②);默认关=clause直呈
+    judge_multimodel_review: bool = False  # ⚠ R5 §9.2 多模型复核;默认关=代码后检+形态保障
     llm_backend: Literal["stub", "gateway"] = "stub"   # QUERY_LLM_BACKEND 覆盖
     rerank_backend: Literal["none", "bge"] = "none"    # QUERY_RERANK_BACKEND 覆盖
     llm_model: str = "gpt-5.4-nano"  # ⚠ gateway 时模型名;env OPENAI_MODEL 可覆盖
