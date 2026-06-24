@@ -32,3 +32,15 @@ def test_review_on_supported_keeps():
     qcfg = SimpleNamespace(judge_multimodel_review=True)
     out = review_tentative(_BLOCKS, _CITS, llm=_llm(True), qcfg=qcfg)
     assert out[0].content == _BLOCKS[0].content  # 支持 → 原样
+
+
+def test_review_malformed_bool_fails_closed():
+    # LLM05(Codex 复审):畸形/非严格-bool supported → fail closed(降级),绝不放过
+    qcfg = SimpleNamespace(judge_multimodel_review=True)
+    for bad in ("false", "true", 1, None, {}):  # 字符串/数字/缺值:均非 bool True → 不支持
+        llm = SimpleNamespace(chat_json=lambda s, u, _b=bad: {"supported": _b})
+        out = review_tentative(_BLOCKS, _CITS, llm=llm, qcfg=qcfg)
+        assert "待人工核实" in out[0].content, bad
+    # 完全缺 supported 键 → fail closed
+    llm = SimpleNamespace(chat_json=lambda s, u: {})
+    assert "待人工核实" in review_tentative(_BLOCKS, _CITS, llm=llm, qcfg=qcfg)[0].content

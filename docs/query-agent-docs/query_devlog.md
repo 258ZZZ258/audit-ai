@@ -208,3 +208,7 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     `strip_bare_conclusion`**(always-on 元数据泄漏兜底)+ `test_verdict_token_in_metadata_not_leaked` 回归
     (doc_title=`合规管理办法`/clause_path=`违规处理` → blocks 无 verdict)。**红线本质**:验证真实性 ⊆ citations,
     框定文本不承载可能含 verdict 的元数据。
+  - **`R5-REVIEW-LLM-BOOL-VALIDATION`(warning,LLM05)**:§9.2 `_supported` 用 `bool(...get("supported", True))`
+    判 LLM 输出——畸形 `{"supported": "false"}`(字符串真值为 True)→ 误判支持放过踩红线表述;且缺键默认 `True`
+    **fail open**。修:改 `...get("supported") is True`(**严格 bool True**;缺失/非 bool/字符串 → 判不支持,
+    **fail closed** 降"待人工核实")+ `test_review_malformed_bool_fails_closed` 回归(`"false"`/`"true"`/缺键)。
