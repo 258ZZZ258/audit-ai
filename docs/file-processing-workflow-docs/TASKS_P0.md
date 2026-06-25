@@ -12,7 +12,8 @@
 ### Task T0.1 (F):迁移 0009 + 字典/列 + seeds
 **Description:** 为 B2/B3/C2 建共享 add-only schema:两张字典表 + 业务域多值列,并灌 v0-draft 种子。
 **Acceptance criteria:**
-- [ ] `pg_models.py` 新增 `DictViolationType(code PK, name, dict_version, AuditMixin)` 与 `DictAlias(id PK, alias, canonical_doc, dict_version, AuditMixin)`;`DocVersion` +`biz_domains`(JSONB,nullable)+`biz_domain_source`(String(16),nullable)。**原 `biz_domain` 单值列保留不删**。
+- [ ] `pg_models.py` 新增 `DictViolationType(code PK, name, dict_version, AuditMixin)` 与 `DictAlias(alias PK, canonical_doc_number, canonical_title, dict_version, AuditMixin)`;`DocVersion` +`biz_domains`(JSONB,nullable)+`biz_domain_source`(String(16),nullable)。**原 `biz_domain` 单值列保留不删**。
+  - **DictAlias 主键定为 `alias`(非代理 `id`)**:与既有字典族一致(`dict_issuers`/`dict_entity_types`/`dict_departments` 均自然键 `code` PK),且**幂等 seed 必需**——`s.merge(DictAlias(alias=...))` 按 PK upsert,代理 `id` PK 会致重复 seed 插重;`canonical_doc` 拆 `canonical_doc_number`/`canonical_title` 服务 C2 R4 三级匹配(文号精确 → 标题精确)。`test_seeds_p0` 钉该 schema 形态。
 - [ ] `seeds/dict_violation_types.csv`(样例聚类 v0-draft,`dict_version=v0-draft-2026-06`)+ `seeds/dict_aliases.csv`(别名起点)随 `demo up` seed 入库。
 - [ ] 迁移 `0009_dict_violation_aliases_bizdomains.py`:autogenerate → `alembic upgrade head` → `alembic check` 无漂移。
 **Verification:** `alembic upgrade head && alembic check`;`ruff check --fix alembic/versions && ruff format alembic/versions`;`pytest pipeline/tests/test_seeds_p0.py`(seed 行数/dict_version)。

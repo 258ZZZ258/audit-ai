@@ -287,19 +287,14 @@ def _article_chunks(
     return out
 
 
-def _render_rows(table: Table) -> list[str]:
-    # 合并单元格展开补值由 IR Table.expanded_rows 统一处理(rowspan/colspan)
-    return [" | ".join(r) for r in table.expanded_rows()]
-
-
 def _table_segments(table: Table, cfg: ChunkConfig) -> Iterator[str]:
-    rows = _render_rows(table)
-    header = rows[: table.header_rows]
-    data = rows[table.header_rows :]
+    # markdown 序列化(合并单元格展开 + 首尾管道 + 表头分隔行)由 IR Table 统一提供,
+    # 切块只负责按 token 预算拆数据行、每组重复表头块(与 to_markdown 同源,格式一致)。
+    header, data = table.markdown_header_and_data()
     header_txt = "\n".join(header)
     if not data:
         yield header_txt
         return
     budget = max(1, cfg.target_token_max - count_tokens(header_txt))
     for grp in _group_by_budget(data, count_tokens, budget):
-        yield "\n".join([*header, *grp])  # 重复表头
+        yield "\n".join([*header, *grp])  # 每组重复 markdown 表头块

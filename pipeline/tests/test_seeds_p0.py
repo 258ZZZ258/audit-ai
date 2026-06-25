@@ -35,6 +35,15 @@ def test_models_and_columns_exist():
     assert {"biz_domain", "biz_domains", "biz_domain_source"} <= cols
 
 
+def test_dict_alias_schema_pin():
+    # Codex P0-DICT-ALIAS-SCHEMA:alias 自然键 PK(同 dict_* 族 + 幂等 seed 必需);
+    # 拆 canonical_doc_number/canonical_title 服务 R4 三级匹配。PK 形态 add-only 后难改 → 钉死。
+    assert [c.name for c in DictAlias.__table__.primary_key.columns] == ["alias"]
+    assert {"canonical_doc_number", "canonical_title", "dict_version"} <= set(
+        DictAlias.__table__.columns.keys()
+    )
+
+
 # ── 集成:seed 加载两张新字典(违规类别 v0-draft + 别名)──────────────────
 def test_seed_loads_violation_and_aliases(pg):
     counts = pg.seed_dicts(REPO / "seeds")

@@ -67,14 +67,22 @@ class Table(BaseModel):
                     grid.setdefault((c.row + dr, c.col + dc), c.text)
         return [[grid.get((r, col), "") for col in range(self.n_cols)] for r in range(self.n_rows)]
 
+    def markdown_header_and_data(self) -> tuple[list[str], list[str]]:
+        """markdown 行拆 (表头块[含分隔行], 数据行)。切块按行组拆时每组重复表头块——
+
+        与 to_markdown 同源,保证切块表格块输出与 to_markdown 格式一致(首尾管道 + 分隔行)。
+        """
+        rows = ["| " + " | ".join(r) + " |" for r in self.expanded_rows()]
+        if not (self.n_rows and self.n_cols):
+            return rows, []
+        hr = max(1, self.header_rows)
+        sep = "| " + " | ".join("---" for _ in range(self.n_cols)) + " |"
+        return [*rows[:hr], sep], rows[hr:]
+
     def to_markdown(self) -> str:
         """渲染 markdown 表(合并单元格展开 + 表头分隔行)。供切块表格块 / 表格摘要消费。"""
-        lines = ["| " + " | ".join(r) + " |" for r in self.expanded_rows()]
-        if self.n_rows and self.n_cols:
-            sep = "| " + " | ".join("---" for _ in range(self.n_cols)) + " |"
-            hr = max(1, self.header_rows)
-            lines = lines[:hr] + [sep] + lines[hr:]
-        return "\n".join(lines)
+        header, data = self.markdown_header_and_data()
+        return "\n".join([*header, *data])
 
 
 class Block(BaseModel):

@@ -201,7 +201,7 @@ def _enforce(returned, allowed: set[str]) -> list[str]:
 | 改动 | 表/字段 | 迁移 | 备注 |
 |---|---|---|---|
 | dict_violation_types | code/name/dict_version | 0009 | B2;v0-draft seed |
-| dict_aliases | alias/canonical_doc/dict_version | 0009 | C2;别名种子 |
+| dict_aliases | **alias(PK)**/canonical_doc_number/canonical_title/dict_version | 0009 | C2;别名种子。alias 自然键(同 dict_* 族 + 幂等 seed 必需);canonical 拆文号/标题服务 R4 三级匹配 |
 | doc_versions.biz_domains + biz_domain_source | JSONB 多值 + String | 0009/0010 | B3/D4;原单值 `biz_domain` 保留不删;LLM 业务域写此 |
 | IR Block.ocr_conf | `float \| None` | (IR 契约,非 PG)| A2;add-only,`test_v16_fidelity` 更新 |
 | cases.cited_regulations / violation_category / ref_unresolved | 已存在 | — | B1/B2 填充(无 schema 改) |
