@@ -34,6 +34,7 @@ class Candidate:
     page_start: int | None
     degraded: bool
     retrieval_mode: str  # hybrid | dense_only(命中所在分区的检索模式)
+    text: str | None = None  # §5.5 Milvus 截断 text(仅 with_text 检索-重排一跳填;默认 None)
 
 
 def _to_candidate(hit: dict, mode: str) -> Candidate:
@@ -46,6 +47,7 @@ def _to_candidate(hit: dict, mode: str) -> Candidate:
         page_start=hit.get("page_start"),
         degraded=bool(hit.get("degraded")),
         retrieval_mode=mode,
+        text=hit.get("text"),  # with_text=False 时 None(rerank=none 路径无开销)
     )
 
 
@@ -57,10 +59,16 @@ def drop_degraded(candidates: list[Candidate]) -> list[Candidate]:
 class Retriever:
     """混合检索器:持有查询嵌入 + Milvus 客户端(连真栈)。"""
 
-    def __init__(self, embed: EmbeddingClient, milvus: MilvusIO, qcfg: QueryConfig) -> None:
+    def __init__(
+        self, embed: EmbeddingClient, milvus: MilvusIO, qcfg: QueryConfig, reranker=None
+    ) -> None:
+        from query.rerank.reranker import make_reranker  # 局部导入,避 import 期环
+
         self._embed = embed
         self._milvus = milvus
         self._qcfg = qcfg
+        # rerank_backend=none → NoneReranker(passthrough,byte 等价);bge → 本地 reranker
+        self._reranker = reranker if reranker is not None else make_reranker(qcfg)
 
     @classmethod
     def from_config(cls, qcfg: QueryConfig | None = None) -> Retriever:
@@ -71,7 +79,8 @@ class Retriever:
         return cls(EmbeddingClient.from_config(settings), milvus, qcfg or load_query_config())
 
     def retrieve(self, query: str, *, include_superseded: bool = False) -> list[Candidate]:
-        """分区配额检索 → 合并去重(同 chunk_id 保留更高分)→ 按分降序取 topk。"""
+        """分区配额检索 → 合并去重 → RRF 序 → §5.5 重排(none=passthrough)→ 取 topk。"""
+        with_text = self._qcfg.rerank_backend != "none"  # 仅重排时取 Milvus text(零开销默认)
         emb = self._embed.embed([query])[0]
         merged: dict[str, Candidate] = {}
         for corpus in _PARTITIONS:
@@ -81,13 +90,15 @@ class Retriever:
                 topk=self._qcfg.partition_topk,
                 include_superseded=include_superseded,
                 corpus=corpus,
+                with_text=with_text,
             )
             for hit in res.hits:
                 cand = _to_candidate(hit, res.retrieval_mode)
                 prev = merged.get(cand.chunk_id)
                 if prev is None or cand.score > prev.score:
                     merged[cand.chunk_id] = cand
-        ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)
+        ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)  # RRF 序(none 终态)
+        ranked = self._reranker.rerank(query, ranked)  # bge 重排;none passthrough(等价)
         return ranked[: self._qcfg.topk]
 
     def retrieve_enumerate(

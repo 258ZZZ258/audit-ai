@@ -31,6 +31,7 @@ class QueryConfig(BaseModel):
     judge_multimodel_review: bool = False  # ⚠ R5 §9.2 多模型复核;默认关=代码后检+形态保障
     llm_backend: Literal["stub", "gateway"] = "stub"   # QUERY_LLM_BACKEND 覆盖
     rerank_backend: Literal["none", "bge"] = "none"    # QUERY_RERANK_BACKEND 覆盖
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"  # ⚠ §5.5 bge 模型名/路径;QUERY_RERANK_MODEL 覆盖
     llm_model: str = "gpt-5.4-nano"  # ⚠ gateway 时模型名;env OPENAI_MODEL 可覆盖
 
 
@@ -41,6 +42,8 @@ def _apply_env(raw: dict) -> None:
         raw["llm_backend"] = env["QUERY_LLM_BACKEND"]
     if "QUERY_RERANK_BACKEND" in env:
         raw["rerank_backend"] = env["QUERY_RERANK_BACKEND"]
+    if "QUERY_RERANK_MODEL" in env:
+        raw["rerank_model"] = env["QUERY_RERANK_MODEL"]
     if "OPENAI_MODEL" in env:
         raw["llm_model"] = env["OPENAI_MODEL"]
 

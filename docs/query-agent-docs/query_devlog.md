@@ -212,3 +212,29 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     判 LLM 输出——畸形 `{"supported": "false"}`(字符串真值为 True)→ 误判支持放过踩红线表述;且缺键默认 `True`
     **fail open**。修:改 `...get("supported") is True`(**严格 bool True**;缺失/非 bool/字符串 → 判不支持,
     **fail closed** 降"待人工核实")+ `test_review_malformed_bool_fails_closed` 回归(`"false"`/`"true"`/缺键)。
+
+## §5.5 重排(第七轮 spec-driven,SPEC/PLAN/TASKS-RERANK)—— 八路后首个横切增强
+
+- **切片**:`rerank_backend=bge` 时,主 hybrid `retrieve`(R1/R5)对候选池(~50)用 **bge-reranker-v2-m3** cross-encoder
+  重排 → `topk`(8)。新增 `query/query/rerank/`(`RerankerClient` Protocol + `NoneReranker` passthrough **默认** +
+  `BGEReranker` 本地 `FlagReranker` 懒载 + `make_reranker` factory)。扩 `milvus_io.search` 加 `with_text`(add-only)。
+  `Candidate` +`text`(add-only,默认 None)。**`rerank=none`(默认)byte 等价**。
+- **决策**(AskUserQuestion 2026-06-25):
+  - **文本来源 = Milvus rerank-hop**:扩 `search` `with_text` 输出 Milvus 截断 text(2000)——schema 本就为"检索-重排
+    一跳"预留;reranker 内部截 512 token,2000 足够;热路径免 PG 往返(生产意图)。`with_text=False`(默认)与原等价。
+  - **应用范围 = 仅主 hybrid `retrieve`(R1/R5)**:`retrieve_enumerate`(R4)/`retrieve_cases`(R3)**不接 reranker**
+    —— R4 枚举 §6.4 求召回完整性、不激进截断,与精排 top8 相悖;R3 一案一卡去重。
+  - **接缝 idiom**(同 llm/embedding):Protocol + demo 默认(none)+ factory(`make_reranker`)+ 本地懒载。
+    **加载失败抛、不静默退化 none**(Q5,避免误以为重排了)。
+- **默认零回归三重守护**:① `NoneReranker` passthrough 接在 RRF 序后 → 终态不变;② `with_text=False` 默认(零 text
+  开销 + output_fields 与原 `_OUTPUT_FIELDS` 等价);③ `Candidate.text` 末位默认 None → 既有 8-arg 位置构造不破。
+- **踩坑 / 测试**:
+  - **`_hits(res, fields)` 透传**:`_hits` 原读模块级 `_OUTPUT_FIELDS` → 加 text 须把 output_fields 传入 `_hits`(否则
+    text 在 output 里但不进 row);`with_text=False` 传 `_OUTPUT_FIELDS` 守等价。`test_milvus_search_text`(mock)断言。
+  - **`rerank` 模块级零 pipeline 导入**:`reranker.py` 候选按 `.text` **鸭子类型**(不引 `Candidate`,Protocol 用 `list`),
+    纯函数零栈可测;`Retriever.__init__` 局部导入 `make_reranker`(避 import 期环)。
+  - **无本地 reranker 模型也能验承重**:集成注入 **fake reranker**(反转)在真栈跑 → 验 `with_text=True` 返**真 Milvus text**
+    + reranker 真应用(`bge_ids == none_ids[::-1]`);真 bge-reranker-v2-m3 模型需 `QUERY_RERANK_MODEL`,缺则 skip(绝不联网)。
+  - **`zip(scores, candidates, strict=True)`**:分数与候选等长(compute_score 返 len(pairs))→ strict 守不静默丢候选。
+- **未做(SPEC-RERANK §0)**:rerank endpoint/网关(§9.1,本地 FlagReranker 同 BGE-M3 workaround)、top-k V0 标定
+  (§15,默认 50→8 占位)、`compute_score` 归一阈值、R4/R3 重排、sparse 提权(§5.4)。

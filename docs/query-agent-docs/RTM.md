@@ -1,6 +1,6 @@
 # RTM: 制度查询智能体 v1.0 需求可追溯矩阵(覆盖证明)
 
-> 基线 2026-06-24(**八路全实装,R5 收官**)。对照 `docs/制度查询智能体_技术框架设计_v1_0.md`(v1.0,功能1)。
+> 基线 2026-06-25(**八路全实装** + §5.5 重排)。对照 `docs/制度查询智能体_技术框架设计_v1_0.md`(v1.0,功能1)。
 > **GAP.md 回答"做到哪了"(按 § 的进度盘点);RTM 回答"是否可确定覆盖了 v1.0"——把每条需求挂到 SPEC SC + 测试。**
 > 二者并存:迭代时先看 GAP 选下一轮,收口时更新 RTM 验证覆盖。
 
@@ -15,9 +15,9 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **45** | 39% | 红线 / R1 / R2 / R3 / **R4** / **R5** / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 |
+| ✅ 实装+测试 | **46** | 40% | 红线 / R1 / R2 / R3 / **R4** / **R5** / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 / **§5.5 重排** |
 | 🟡 部分 | **33** | 28% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取/§9.2 复核(接口·toggle)、§14 验收部分项 |
-| ❌ 未实装 | **37** | 32% | 查询理解前端(N0/N1/N3)、§5.4/5.5、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
+| ❌ 未实装 | **36** | 31% | 查询理解前端(N0/N1/N3)、§5.4、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
 | ➖ 非查询逻辑 | **1** | — | §2.3 容量(摄取/部署) |
 | **合计** | **116** | | |
 
@@ -91,7 +91,7 @@
 | §5.3 | 强制过滤位 | 🟡 | status✅ perm_tag🟡;entity/biz/chunk_type **机制已落**(R4 `extra_expr`,consumed-when-present) | ⑥ |
 | §5.3-hist | 问历史放开 status | 🟡 | include_superseded 参数(R2 用) | — |
 | §5.4 | sparse 发文字号提权+扩展 | ❌ | 默认 RRF 序 | ⑥ |
-| §5.5 | bge-reranker top50→top8 | ❌ | 默认 rerank=none(接缝预留) | — |
+| §5.5 | bge-reranker top50→top8 | ✅ | SPEC-RERANK §8;`test_reranker`(none passthrough/bge 重排)`test_milvus_search_text`(with_text 等价)`test_rerank_integration`(rerank-hop 真 text + none 等价);本地 reranker | ① |
 | §5.6 | 父子块供证 | ✅ | `test_anchors_integration`(fetch_parent_text) | — |
 | §5.7 | 充分性自检→覆盖判据 | 🟡 | 务实版(`test_sufficiency`) | ⑥ |
 
@@ -99,7 +99,7 @@
 | Req | 需求 | 状态 | 证据 | §15 |
 |---|---|---|---|---|
 | R1-mix | 混合检索∥案例桥接 | ✅ | `test_r1_integration`;桥接=R3 附挂✅ | — |
-| R1-filter | 重排+status/perm/entity 过滤 | 🟡 | status✅;rerank/entity ❌ | — |
+| R1-filter | 重排+status/perm/entity 过滤 | 🟡 | status✅;**重排✅**(§5.5 接缝,`test_rerank_integration`);entity ❌ | — |
 | R1-suff | 充分性→生成/拒答 | ✅ | `test_r1_integration`/`test_sufficiency` | ⑥ |
 | R1-gen | 引用约束生成+案例附挂+导出 | 🟡 | 生成✅ 附挂✅(R3);流式/导出 ❌ | — |
 | R1-sparse | 发文字号 sparse 提权+entity 强过滤 | ❌ | 见 §5.4 / §2-entity | — |
@@ -182,7 +182,7 @@
 ## 缺口清单(按 GAP backlog 优先级)
 
 - **P0 红线/验收**:~~R5 全组~~ ✅(三段式+不出裸结论+桥接+§9.2 接口;§15-④ demo workaround)· **§9.2 真多模型复核**(Kimi faithfulness 真接,RL-1 真-LLM 闭环)· §9.3-perm 权限验收(§14-c)。
-- **P1 路由**:§5.4 sparse 提权 · §5.5 重排。(~~R6~~ ✅ · ~~R4~~ ✅ 已实装 —— 八路仅剩 R5 占位)
+- **P1 检索**:§5.4 sparse 提权。(~~R6/R4/R5~~ ✅ 八路全实装 · ~~§5.5 重排~~ ✅ 接缝+本地 bge)
 - **P2 查询理解前端**:N0 · N1 HyDE · N3 分解。
 - **P3 横切/工程**:§7.2 流式 · §11 导出 · §9.3 敏感词/Langfuse/SSO/AI 页脚 · §12 容量 · §13 V0 评估(RAGAS/断层率/评估集)。
 - **依赖资产**:~~§2-entity/biz/chunktype 检索过滤(扩 milvus_io.search,GAP #12)~~ ✅(R4 `extra_expr`;E2 真打标+词典加载待补)· §2-clauseref resolver · §2-scenario/introutes 字典建表 · §2-tagsE1 期限/E2 富集过滤。

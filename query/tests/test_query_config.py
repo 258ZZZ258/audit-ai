@@ -22,3 +22,10 @@ def test_env_override_llm_backend(tmp_path, monkeypatch):
     (tmp_path / "settings.toml").write_text("[query]\nllm_backend = 'stub'\n", encoding="utf-8")
     monkeypatch.setenv("QUERY_LLM_BACKEND", "gateway")
     assert load_query_config(tmp_path).llm_backend == "gateway"
+
+
+def test_rerank_model_default_and_env(tmp_path, monkeypatch):
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    assert load_query_config(tmp_path).rerank_model == "BAAI/bge-reranker-v2-m3"  # §5.5 默认
+    monkeypatch.setenv("QUERY_RERANK_MODEL", "/local/bge-reranker")
+    assert load_query_config(tmp_path).rerank_model == "/local/bge-reranker"

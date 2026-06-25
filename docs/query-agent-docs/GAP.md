@@ -46,7 +46,7 @@
 | §5.2 分区并行配额(内规∥外规 top25) | ✅ | `retrieve/hybrid` 双分区合并 |
 | §5.3 强制过滤位 | 🟡 | status✅前置、perm_tag🟡(写入不过滤=设计意图);entity_type/biz_domain **机制已落**(R4 `extra_expr` 经 `milvus_io.search`,consumed-when-present)、E2 默认关+词典未接 PG 加载故默认不命中 |
 | §5.4 sparse 精确通道(发文字号提权 + 词典扩展) | ❌ | 用默认 RRF,无差异化权重 / 无 `dict_scenario_terms` 扩展 |
-| §5.5 重排 bge-reranker top50→top8 | ❌ | 默认 `rerank=none`(用 RRF 序);接缝预留 |
+| §5.5 重排 bge-reranker top50→top8 | ✅ | 接缝实装(`rerank/reranker`:none passthrough 默认 / bge 本地 `FlagReranker`)+ Milvus rerank-hop(`search` `with_text`)+ 仅主 retrieve(R1/R5);`rerank=none` 默认 byte 等价;真 reranker 模型需 `QUERY_RERANK_MODEL`(缺则 skip,绝不联网)|
 | §5.6 父子块供证 | ✅ | `fetch_parent_text` |
 | §5.7 充分性自检 | 🟡 | 务实版,接口按 §8.1 保真 |
 
@@ -120,7 +120,7 @@
 
 ### P1 — 核心功能路由
 4. ~~R2 变更查询~~ ✅ / ~~R3 相似案例+案例桥接~~ ✅ / ~~R6 统计型~~ ✅ / ~~R4 多文档列举~~ ✅(SPEC/PLAN/TASKS-R4)/ **R5 判定型(仅此一路仍占位)**
-5. §5.5 重排(bge-reranker)/ §5.4 sparse 精确通道提权
+5. ~~§5.5 重排(bge-reranker)~~ ✅(SPEC/PLAN/TASKS-RERANK;接缝+本地 bge+none 默认等价)/ §5.4 sparse 精确通道提权
 
 ### P2 — 查询理解前端
 6. N0 多轮归并 / N1 HyDE(默认 on/off 待 V0 A/B)/ N3 问题分解

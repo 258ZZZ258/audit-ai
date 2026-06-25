@@ -110,11 +110,11 @@ def _to_milvus_dict(r: CorpusRow) -> dict:
     }
 
 
-def _hits(res) -> list[dict]:
+def _hits(res, fields: list[str] = _OUTPUT_FIELDS) -> list[dict]:
     out = []
     for h in res[0]:  # 单查询:res[0]
         row = {"chunk_id": h.id, "score": float(h.distance)}
-        for f in _OUTPUT_FIELDS:
+        for f in fields:
             if f != "chunk_id":
                 row[f] = h.entity.get(f)
         out.append(row)
@@ -227,6 +227,7 @@ class MilvusIO:
         include_superseded: bool = False,
         corpus: str | None = None,
         extra_expr: str | None = None,
+        with_text: bool = False,
     ) -> SearchResult:
         """混合查(dense+sparse + RRFRanker);hybrid 失败或 sparse 空 → dense-only 兜底 + 标记。
 
@@ -236,6 +237,8 @@ class MilvusIO:
         只放宽到 superseded、绝不去掉 status 过滤。corpus 加 corpus_type 过滤。
         ``extra_expr`` 追加调用方标量过滤(R4 枚举:chunk_type/biz_domain/entity_type;**add-only**,
         为 None 时 expr 与原行为等价,不改 status/corpus 语义)。
+        ``with_text`` 额外输出 Milvus 截断 ``text``(§5.5 检索-重排一跳;**add-only**,为 False 时
+        output_fields 与原 ``_OUTPUT_FIELDS`` 等价,不回归)。
         hit 带四级引用字段(clause_path/doc_version_id/page_start)。
         """
         col = self._collection()
@@ -251,6 +254,7 @@ class MilvusIO:
         if extra_expr:
             clauses.append(extra_expr)  # 调用方标量过滤(白名单字段 + 转义值,见 query.listing)
         expr = " and ".join(clauses)
+        out_fields = [*_OUTPUT_FIELDS, "text"] if with_text else _OUTPUT_FIELDS
 
         try:
             if not sparse:
@@ -267,12 +271,12 @@ class MilvusIO:
             ]
             res = col.hybrid_search(
                 reqs, RRFRanker(), limit=topk,
-                output_fields=_OUTPUT_FIELDS, consistency_level="Strong",
+                output_fields=out_fields, consistency_level="Strong",
             )
-            return SearchResult(_hits(res), "hybrid", expr)
+            return SearchResult(_hits(res, out_fields), "hybrid", expr)
         except Exception:  # hybrid 受阻(R2 兜底,不静默)→ dense-only
             res = col.search(
                 [dense], "dense_vec", {"metric_type": "COSINE", "params": {}},
-                limit=topk, expr=expr, output_fields=_OUTPUT_FIELDS, consistency_level="Strong",
+                limit=topk, expr=expr, output_fields=out_fields, consistency_level="Strong",
             )
-            return SearchResult(_hits(res), "dense_only", expr)
+            return SearchResult(_hits(res, out_fields), "dense_only", expr)
