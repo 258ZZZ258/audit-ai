@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from query.config import QueryConfig
 from query.rerank.reranker import BGEReranker, NoneReranker, make_reranker
 from query.retrieve.hybrid import Candidate
@@ -49,7 +51,7 @@ def test_bge_empty():
 
 def test_bge_load_forces_local_files_only(monkeypatch):
     # 本地离线契约(Codex 复审 QUERY-RERANK-OFFLINE):from_pretrained 必带 local_files_only=True
-    import transformers
+    transformers = pytest.importorskip("transformers")  # CI 无 [embed] extra → skip
 
     captured: dict = {}
 
