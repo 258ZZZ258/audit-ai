@@ -145,9 +145,12 @@ def table_consistency(ir: IRDocument, th: QcThresholds) -> IndicatorResult:
 
 def text_quality(ir: IRDocument, th: QcThresholds) -> IndicatorResult:
     total = garbled = 0
+    confs: list[float] = []
     for b in ir.blocks:
         if b.type is BlockType.TABLE:
             continue
+        if b.ocr_conf is not None:  # 仅 OCR 文档块带置信度;非 OCR(light)为 None 不计
+            confs.append(b.ocr_conf)
         for ch in b.text:
             if ch.isspace():
                 continue
@@ -156,9 +159,15 @@ def text_quality(ir: IRDocument, th: QcThresholds) -> IndicatorResult:
                 garbled += 1
     value = garbled / total if total else 0.0
     passed, _ = _le(value, th.text_garbled_max, th.edge_band_epsilon)  # 阈值<ε 退化,关边缘带
+    detail = {"garbled": garbled, "total": total}
+    # OCR 文档:块均值 ocr_conf < 阈值 → 不通过(§5.1 指标6;无 ocr_conf 的非 OCR 文档跳过)
+    if confs:
+        ocr_mean = sum(confs) / len(confs)
+        detail["ocr_conf_mean"] = round(ocr_mean, 4)
+        if ocr_mean < th.ocr_conf_min:
+            passed = False
     return IndicatorResult(
-        "text_quality", 6, "文本质量", value, th.text_garbled_max, passed, False,
-        {"garbled": garbled, "total": total},
+        "text_quality", 6, "文本质量", value, th.text_garbled_max, passed, False, detail
     )
 
 

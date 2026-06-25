@@ -84,7 +84,10 @@ class DocVersion(AuditMixin, Base):
     version_status: Mapped[str] = mapped_column(String(16), default="effective")
 
     perm_tag: Mapped[str | None] = mapped_column(String(32))  # 密级:全链路写入,M1 不过滤
-    biz_domain: Mapped[str | None] = mapped_column(String(64))
+    biz_domain: Mapped[str | None] = mapped_column(String(64))  # 原单值(manifest);保留不删
+    # 业务域多值(D4,§7.1 L2):LLM 为事实主来源,写权威字段 + 标来源(manifest|llm|confirmed)
+    biz_domains: Mapped[list | None] = mapped_column(JSONB)
+    biz_domain_source: Mapped[str | None] = mapped_column(String(16))
     sub_type: Mapped[str | None] = mapped_column(String(32))  # 子类型(issuer_level 分层)
     issuer: Mapped[str | None] = mapped_column(String(128))
     doc_number: Mapped[str | None] = mapped_column(String(128))  # 发文字号
@@ -283,6 +286,27 @@ class DictDepartment(AuditMixin, Base):
 
     code: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(256))
+    dict_version: Mapped[str | None] = mapped_column(String(32))
+
+
+class DictViolationType(AuditMixin, Base):
+    """违规事由分类字典(§9 案例 L2;§16-6 待评审)。v0-draft 从样例聚类;dict_version 增量重打。"""
+
+    __tablename__ = "dict_violation_types"
+
+    code: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(256))
+    dict_version: Mapped[str | None] = mapped_column(String(32))
+
+
+class DictAlias(AuditMixin, Base):
+    """制度简称别名表(§6.7 R4 跨文档指代);别名 → 权威文号。人工维护,带 dict_version。"""
+
+    __tablename__ = "dict_aliases"
+
+    alias: Mapped[str] = mapped_column(String(256), primary_key=True)  # 简称/别名(唯一)
+    canonical_doc_number: Mapped[str | None] = mapped_column(String(128))  # 权威文号
+    canonical_title: Mapped[str | None] = mapped_column(String(512))  # 权威标题(兜底匹配)
     dict_version: Mapped[str | None] = mapped_column(String(32))
 
 

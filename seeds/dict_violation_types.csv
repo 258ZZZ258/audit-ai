@@ -1,0 +1,13 @@
+code,name,dict_version
+INFO_DISCLOSURE,信息披露违规,v0-draft-2026-06
+INSIDER_TRADING,内幕交易,v0-draft-2026-06
+MARKET_MANIPULATION,操纵市场,v0-draft-2026-06
+DUE_DILIGENCE,未勤勉尽责,v0-draft-2026-06
+FINANCIAL_FRAUD,财务造假,v0-draft-2026-06
+FUND_OCCUPATION,资金占用,v0-draft-2026-06
+ILLEGAL_GUARANTEE,违规担保,v0-draft-2026-06
+SUITABILITY,投资者适当性管理违规,v0-draft-2026-06
+ANTI_MONEY_LAUNDERING,反洗钱违规,v0-draft-2026-06
+INTEGRITY,廉洁从业违规,v0-draft-2026-06
+ILLEGAL_REDUCTION,违规减持,v0-draft-2026-06
+INTERNAL_CONTROL,内部控制不健全,v0-draft-2026-06

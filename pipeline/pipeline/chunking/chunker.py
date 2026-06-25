@@ -288,11 +288,8 @@ def _article_chunks(
 
 
 def _render_rows(table: Table) -> list[str]:
-    grid = {(c.row, c.col): c.text for c in table.cells}
-    return [
-        " | ".join(grid.get((r, col), "") for col in range(table.n_cols))
-        for r in range(table.n_rows)
-    ]
+    # 合并单元格展开补值由 IR Table.expanded_rows 统一处理(rowspan/colspan)
+    return [" | ".join(r) for r in table.expanded_rows()]
 
 
 def _table_segments(table: Table, cfg: ChunkConfig) -> Iterator[str]:

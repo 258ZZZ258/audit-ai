@@ -90,6 +90,7 @@ class QcThresholds(BaseModel):
     page_anchor_complete_min: float  # 指标4 页码锚点完整率
     table_empty_max: float  # 指标5 空表占比上限
     text_garbled_max: float  # 指标6 非 CJK 乱码占比上限
+    ocr_conf_min: float = 0.85  # 指标6 OCR 文档块均值置信度下限(仅 OCR 文档参与;非 OCR 跳过)
     extraction_sufficiency_min: float  # 指标7 抽取充分性
     qa_pair_completeness_min: float = 0.95  # P-QA 专属:问答对完整率(完整对数 ÷ 问标记数)≥
     edge_band_epsilon: float  # 边缘通过带 ε
