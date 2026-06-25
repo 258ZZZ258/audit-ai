@@ -47,6 +47,29 @@ def test_bge_empty():
     assert BGEReranker("fake").rerank("q", []) == []
 
 
+def test_bge_load_forces_local_files_only(monkeypatch):
+    # 本地离线契约(Codex 复审 QUERY-RERANK-OFFLINE):from_pretrained 必带 local_files_only=True
+    import transformers
+
+    captured: dict = {}
+
+    def _fake_tok(name, **kw):
+        captured["tok"] = kw
+        return SimpleNamespace()
+
+    def _fake_mdl(name, **kw):
+        captured["mdl"] = kw
+        return SimpleNamespace(eval=lambda: None)
+
+    monkeypatch.setattr(transformers.AutoTokenizer, "from_pretrained", _fake_tok)
+    monkeypatch.setattr(
+        transformers.AutoModelForSequenceClassification, "from_pretrained", _fake_mdl
+    )
+    BGEReranker("/local/reranker")._load()
+    assert captured["tok"].get("local_files_only") is True
+    assert captured["mdl"].get("local_files_only") is True
+
+
 def test_make_reranker_none():
     assert isinstance(make_reranker(QueryConfig(rerank_backend="none")), NoneReranker)
 

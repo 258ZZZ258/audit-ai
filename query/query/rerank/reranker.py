@@ -41,8 +41,12 @@ class BGEReranker:
         if self._loaded is None:
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-            tok = AutoTokenizer.from_pretrained(self._model_name)
-            mdl = AutoModelForSequenceClassification.from_pretrained(self._model_name)
+            # 本地离线契约(SPEC §8 SC6):local_files_only=True 强制只读本地缓存/路径,
+            # **绝不联网下载**;模型不在本地 → from_pretrained 抛(fail closed,不静默退化 none)。
+            tok = AutoTokenizer.from_pretrained(self._model_name, local_files_only=True)
+            mdl = AutoModelForSequenceClassification.from_pretrained(
+                self._model_name, local_files_only=True
+            )
             mdl.eval()
             self._loaded = (mdl, tok)
         return self._loaded

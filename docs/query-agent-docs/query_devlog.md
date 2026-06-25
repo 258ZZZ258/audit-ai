@@ -246,3 +246,9 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
   - **`zip(scores, candidates, strict=True)`**:分数与候选等长(`_scores` 返 len(texts))→ strict 守不静默丢候选。
 - **未做(SPEC-RERANK §0)**:rerank endpoint/网关(§9.1,本地 transformers reranker 同 BGE-M3 workaround)、top-k V0 标定
   (§15,默认 50→8 占位)、`compute_score` 归一阈值、R4/R3 重排、sparse 提权(§5.4)。
+- **Codex 复审修复(1 warning,实契约缺口)**:
+  - **`QUERY-RERANK-OFFLINE`**:`BGEReranker._load` 调 `from_pretrained` **未带 `local_files_only=True`** → `rerank=bge`
+    且模型未缓存时会**联网 HF 下载**,违"绝不联网"rerank 契约(此前仅靠集成 `HF_HUB_OFFLINE` env 防护、非代码强制)。
+    修:tokenizer/model 两处 `from_pretrained` 均加 **`local_files_only=True`**(本地缺失→抛,fail closed,同"加载失败
+    不退化 none")+ `test_bge_load_forces_local_files_only`(monkeypatch 断言参数传入);实测**去掉 `HF_HUB_OFFLINE` env
+    后真模型仍从本地 modelscope 路径加载、集成绿**(代码级离线 enforced)。
