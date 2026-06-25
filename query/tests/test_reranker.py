@@ -25,15 +25,22 @@ def test_none_passthrough():
 def test_bge_reorders_by_score():
     cands = [_c("a", "t1"), _c("b", "t2"), _c("c", "t3")]
     b = BGEReranker("fake")
-    b._reranker = SimpleNamespace(compute_score=lambda pairs: [0.1, 0.9, 0.5])
+    b._scores = lambda query, texts: [0.1, 0.9, 0.5]  # mock 打分接缝(免载模型)
     out = b.rerank("q", cands)
     assert [c.chunk_id for c in out] == ["b", "c", "a"]  # 按 cross-encoder 分降序
 
 
 def test_bge_text_none_ok():
     b = BGEReranker("fake")
-    b._reranker = SimpleNamespace(compute_score=lambda pairs: [0.5])
+    captured: dict = {}
+
+    def _scores(query, texts):
+        captured["texts"] = texts
+        return [0.5]
+
+    b._scores = _scores
     assert b.rerank("q", [_c("a", None)])  # text=None → "" 不崩
+    assert captured["texts"] == [""]
 
 
 def test_bge_empty():
@@ -47,7 +54,7 @@ def test_make_reranker_none():
 def test_make_reranker_bge_no_load():
     r = make_reranker(QueryConfig(rerank_backend="bge"))
     assert isinstance(r, BGEReranker)        # 懒载:构造不触发模型加载
-    assert r._reranker is None
+    assert r._loaded is None
 
 
 def test_candidate_text_backward_compat():

@@ -217,7 +217,7 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
 
 - **切片**:`rerank_backend=bge` 时,主 hybrid `retrieve`(R1/R5)对候选池(~50)用 **bge-reranker-v2-m3** cross-encoder
   重排 → `topk`(8)。新增 `query/query/rerank/`(`RerankerClient` Protocol + `NoneReranker` passthrough **默认** +
-  `BGEReranker` 本地 `FlagReranker` 懒载 + `make_reranker` factory)。扩 `milvus_io.search` 加 `with_text`(add-only)。
+  `BGEReranker` 本地 **transformers 直载** cross-encoder 懒载 + `make_reranker` factory)。扩 `milvus_io.search` 加 `with_text`(add-only)。
   `Candidate` +`text`(add-only,默认 None)。**`rerank=none`(默认)byte 等价**。
 - **决策**(AskUserQuestion 2026-06-25):
   - **文本来源 = Milvus rerank-hop**:扩 `search` `with_text` 输出 Milvus 截断 text(2000)——schema 本就为"检索-重排
@@ -235,6 +235,14 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     纯函数零栈可测;`Retriever.__init__` 局部导入 `make_reranker`(避 import 期环)。
   - **无本地 reranker 模型也能验承重**:集成注入 **fake reranker**(反转)在真栈跑 → 验 `with_text=True` 返**真 Milvus text**
     + reranker 真应用(`bge_ids == none_ids[::-1]`);真 bge-reranker-v2-m3 模型需 `QUERY_RERANK_MODEL`,缺则 skip(绝不联网)。
-  - **`zip(scores, candidates, strict=True)`**:分数与候选等长(compute_score 返 len(pairs))→ strict 守不静默丢候选。
-- **未做(SPEC-RERANK §0)**:rerank endpoint/网关(§9.1,本地 FlagReranker 同 BGE-M3 workaround)、top-k V0 标定
+  - **`FlagReranker` 不兼容 transformers 5.x**(实测):本机 `transformers 5.12.0` 已移除 tokenizer 的
+    `prepare_for_model`,`FlagEmbedding.FlagReranker.compute_score` 调用即 `AttributeError`(BGE-M3 **embedding** 走
+    `BGEM3FlagModel` 不受影响,故仅 reranker 中招)。**修**:`BGEReranker` 改 **`transformers` 直载**
+    (`AutoModelForSequenceClassification` + `AutoTokenizer`,bge-reranker-v2-m3 = XLM-RoBERTa cross-encoder,输出
+    relevance logit)——这正是 FlagReranker 内部所封装、且**零新依赖**(transformers 已在栈)。`_scores(query, texts)`
+    为打分接缝(单测 mock,免载 2.3G);实测相关条款 logit 2.616 ≫ 无关 -5.096。模型经 **modelscope** 拉到
+    `~/.cache/modelscope/hub/models/BAAI/bge-reranker-v2-m3`(同 BGE-M3,~0.7MB/s 慢、暂存 `._____temp` 后移入)。
+    **真模型集成 3/3 passed**(含 `test_rerank_bge_real_model`)。
+  - **`zip(scores, candidates, strict=True)`**:分数与候选等长(`_scores` 返 len(texts))→ strict 守不静默丢候选。
+- **未做(SPEC-RERANK §0)**:rerank endpoint/网关(§9.1,本地 transformers reranker 同 BGE-M3 workaround)、top-k V0 标定
   (§15,默认 50→8 占位)、`compute_score` 归一阈值、R4/R3 重排、sparse 提权(§5.4)。

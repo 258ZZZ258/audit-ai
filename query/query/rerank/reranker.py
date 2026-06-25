@@ -26,26 +26,43 @@ class NoneReranker:
 
 
 class BGEReranker:
-    """本地 bge-reranker-v2-m3(``FlagReranker``,懒载;同 BGE-M3 离线,绝不联网)。"""
+    """本地 bge-reranker-v2-m3(XLM-RoBERTa cross-encoder,懒载;同 BGE-M3 离线,绝不联网)。
+
+    经 ``transformers`` 直载(``AutoModelForSequenceClassification``)打 query×doc 相关性 logit——
+    **不走** ``FlagEmbedding.FlagReranker``(其在 transformers 5.x 调已移除的
+    ``tokenizer.prepare_for_model``,见 devlog)。``_scores`` 为打分接缝(单测可 mock,免载模型)。
+    """
 
     def __init__(self, model: str) -> None:
         self._model_name = model
-        self._reranker: Any = None
+        self._loaded: Any = None  # (model, tokenizer),懒载
 
-    def _model(self) -> Any:
-        if self._reranker is None:
-            from FlagEmbedding import FlagReranker  # 懒载,避免 import 期拉模型
+    def _load(self) -> Any:
+        if self._loaded is None:
+            from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-            self._reranker = FlagReranker(self._model_name, use_fp16=True)
-        return self._reranker
+            tok = AutoTokenizer.from_pretrained(self._model_name)
+            mdl = AutoModelForSequenceClassification.from_pretrained(self._model_name)
+            mdl.eval()
+            self._loaded = (mdl, tok)
+        return self._loaded
+
+    def _scores(self, query: str, texts: list[str]) -> list[float]:
+        """query×doc cross-encoder 相关性 logit(越大越相关)。打分接缝,单测 mock 之。"""
+        import torch
+
+        mdl, tok = self._load()
+        with torch.no_grad():
+            inp = tok(
+                [[query, t] for t in texts],
+                padding=True, truncation=True, max_length=512, return_tensors="pt",
+            )
+            return mdl(**inp).logits.view(-1).tolist()
 
     def rerank(self, query: str, candidates: list) -> list:
         if not candidates:
             return candidates
-        pairs = [(query, getattr(c, "text", None) or "") for c in candidates]
-        scores = self._model().compute_score(pairs)
-        if not isinstance(scores, list):  # compute_score 单对可能返标量
-            scores = [scores]
+        scores = self._scores(query, [getattr(c, "text", None) or "" for c in candidates])
         order = sorted(zip(scores, candidates, strict=True), key=lambda z: z[0], reverse=True)
         return [c for _, c in order]
 
