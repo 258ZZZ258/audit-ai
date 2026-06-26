@@ -12,7 +12,7 @@
 - **B-严**(开关开,settings.toml 设 true):无冲突**全新件**直通 EMBEDDING;**冲突件 + 带 `supersedes_version_id` 的修订件**(supersede 旧版=最有后果的权威变更)仍入闸。s4 判据:`not conflicts and toggle and not dv.supersedes_version_id`。
 - B 模式的**驱动正确性 bug**(strand-at-EMBEDDING)详见 `../orchestration_devlog.md` / `../web/web_devlog.md`。
 
-## P0 Phase 2:案例 L2 LLM 富集(T2.1 引用外规 + T2.2 违规事由,2026-06-26;PR #19)
+## P0 Phase 2:案例 L2 LLM 富集(T2.1 引用外规 + T2.2 违规事由,2026-06-26;PR #20)
 
 **背景**:案例库 §9 的两个最高价值字段在 L1 仅留占位(`cited_regulations=[]` / `violation_category=None`),T2.1/T2.2 接真 LLM 把它们补齐。新模块 `meta/case_l2.py`(默认关 `case_l2_enabled`)。
 

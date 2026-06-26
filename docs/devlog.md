@@ -597,7 +597,7 @@ DeepDoc/E2·E3/L2 LLM/perm_tag 过滤/OCR/endpoint 桩/注释保留表/§21 T1·
 
 ---
 
-## 阶段 P0 Phase 2(案例 L2):引用外规对齐 + 违规事由分类(2026-06-26;PR #19)
+## 阶段 P0 Phase 2(案例 L2):引用外规对齐 + 违规事由分类(2026-06-26;PR #20)
 
 **范围**:T2.1 + T2.2(用户选定 Phase 2 最高价值子簇)。新模块 `meta/case_l2.py` + 迁移 0011 +
 `s4_meta` 装配,接 §9 案例库两个最高价值 LLM 字段(默认关 `case_l2_enabled`)。
@@ -623,6 +623,6 @@ DeepDoc/E2·E3/L2 LLM/perm_tag 过滤/OCR/endpoint 桩/注释保留表/§21 T1·
 
 **测试**:`test_case_l2.py` 14 纯单元 + 真栈 fake-LLM 集成 + 门控真模型;**全仓回归 409 passed / 11 skipped / 0 failed**(stack up,无 key/embedding 模型项 skip)。
 
-**PR 状态**:PR #19(feat/p0-phase2-case-l2,stacked on feat/p0-phase1)待交 Codex 复审。
+**PR 状态**:PR #20(feat/p0-phase2-case-l2,stacked on #18)。Codex 复审 clean(`findings: []`);**全量门控 638 passed / 3 skipped / 0 failed**(干净栈 + 真 BGE-M3,3 skip = 无 key 的 LLM 真模型 + `[embed]` extra rerank);待合并。
 
 详见 `docs/devlogs/metadata_devlog.md` §「P0 Phase 2」。
