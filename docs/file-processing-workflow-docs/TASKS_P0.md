@@ -86,9 +86,9 @@
 ### Task T1.5 (A/A1):xlsx 直读 + 白名单含 xlsx
 **Description:** light parser 加 xlsx 分支(openpyxl):每 sheet → `Table` block → IR;`SourceFormat` 加 xlsx(add-only);白名单含 xlsx。
 **Acceptance criteria:**
-- [ ] `ir.py` `SourceFormat` +`XLSX="xlsx"`(add-only);`light_parser` xlsx 分支用 openpyxl 产 `Table` block(cells row/col)。
-- [ ] `WHITELIST_FORMATS` += xlsx;`detect_format` 识别 xlsx(zip/`xl/` 魔数)。
-- [ ] `test_xlsx_parse`:简单 xlsx → `chunk_type=table` 块入库。
+- [x] `ir.py` `SourceFormat` +`XLSX`(add-only);`light_parser` xlsx 分支 openpyxl 产 `Table` block + 坏文件健壮(BadZipFile → 无效格式,不崩溃)。
+- [x] `detect_format` 识别 xlsx(魔数);**端到端入库白名单/路由留 P2 P-MISC**(纯表格 S3 不适用,避静默 0-chunk indexed,Codex P0-XLSX-NO-TABLE-CHUNKS)。
+- [x] `test_xlsx_parse`:`LightParser.parse` xlsx → `Table` 块 + markdown;`SourceFormat.XLSX`(parser-only,不接 s0/s1 端到端)。
 **Verification:** `pytest pipeline/tests/test_xlsx_parse.py pipeline/tests/test_s0_register.py`
 **Dependencies:** T0.2(`to_markdown` 辅助)
 **Files:** `pipeline/pipeline/parsing/light_parser.py`、`libs/common/common/ir.py`、`pipeline/pipeline/stages/s0_register.py`、`pipeline/tests/test_xlsx_parse.py`

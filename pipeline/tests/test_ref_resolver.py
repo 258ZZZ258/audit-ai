@@ -134,6 +134,7 @@ def ref_stack():
                 text="第一章 > 第一条\n第一条 依照第二条办理。",
                 is_parent=False,
                 is_table=False,
+                chunk_type="clause",
                 chunk_status="effective",
             )
         )
@@ -149,6 +150,7 @@ def ref_stack():
                 text="第一章 > 第二条\n第二条 本办法另有规定的除外。",
                 is_parent=False,
                 is_table=False,
+                chunk_type="clause",
                 chunk_status="effective",
             )
         )
@@ -189,3 +191,15 @@ def test_run_resolver_idempotent(ref_stack):
     first = len(_refs(pg, dvid))
     run_resolver(ctx, dvid)  # 内含 clear → 不翻倍
     assert len(_refs(pg, dvid)) == first
+
+
+def test_run_resolver_skips_non_clause_chunks(ref_stack):
+    # P-CASE/P-QA 块(chunk_type != clause)不解析:案例「第X条」是引用外规(走 case_ref_align),非自指
+    pg, ctx, dvid = ref_stack
+    with pg.session() as s:
+        rows = list(s.scalars(select(Chunk).where(Chunk.doc_version_id == dvid)))
+        rows[0].chunk_type = "case_section"  # 模拟 P-CASE 块
+        cid = rows[0].chunk_id
+    res = run_resolver(ctx, dvid)
+    assert res.chunks == 1  # 2 块中 1 个改 case_section → 仅剩 1 个 clause 块
+    assert all(r.chunk_id != cid for r in _refs(pg, dvid))  # case_section 块不产 ref

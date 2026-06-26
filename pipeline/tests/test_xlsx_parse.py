@@ -27,10 +27,11 @@ def test_source_format_has_xlsx():
     assert SourceFormat.XLSX == "xlsx"  # add-only 枚举
 
 
-def test_detect_and_whitelist_xlsx():
+def test_detect_recognizes_xlsx_but_not_whitelisted():
+    # detect_format 识别 xlsx(magic);端到端入库白名单留 P2(纯表格 S3 不适用)→ xlsx 不在白名单
     data = _xlsx_bytes([["费用项目", "标准"], ["差旅", "500"]])
     assert detect_format(data) == "xlsx"
-    assert "xlsx" in WHITELIST_FORMATS
+    assert "xlsx" not in WHITELIST_FORMATS
 
 
 def test_light_parser_xlsx_to_table_block():

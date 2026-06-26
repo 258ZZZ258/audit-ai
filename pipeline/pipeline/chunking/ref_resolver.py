@@ -123,7 +123,9 @@ def run_resolver(ctx: StageContext, dvid: str) -> ResolverResult:
     clear_refs(ctx, dvid)
     with ctx.db.session() as s:
         chunks = list(s.scalars(select(Chunk).where(Chunk.doc_version_id == dvid)))
-    clause_chunks = [c for c in chunks if not c.is_parent and not c.is_table]
+    # 仅条文块(chunk_type=clause):排除父块 + P-CASE/P-QA 的 case_section/case_summary/qa 块——
+    # 后者的「第X条」是引用外规(走 case_ref_align/R4),非文档内自指,不应写同文档 clause_reference。
+    clause_chunks = [c for c in chunks if c.chunk_type == "clause" and not c.is_parent]
     norms = frozenset(c.clause_path_norm for c in clause_chunks if c.clause_path_norm)
     ordered = sorted(clause_chunks, key=lambda c: c.seq)
     order = list(dict.fromkeys(c.clause_path_norm for c in ordered if c.clause_path_norm))

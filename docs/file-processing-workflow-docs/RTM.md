@@ -16,8 +16,8 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **78** | 57% | 入库主干契约 · S0 登记 · S3 条款树/切块/QA · S2 七指标(含指标6 ocr_conf)· S4 L1/版本链 · S5 索引/冷备 · E1 富集 · **Phase 0/1:IR markdown/xlsx/E2 真模型/ref_resolver R1–R3** · T2/T4 · 编排/一致性/重建 |
-| 🟡 部分 | **34** | 25% | 生产解析栈 stub · IR 缺 block_id/table_id · 面包屑缺文号 · 案例 L1-only · T3/T6 框架 · perm_tag 写不过滤 · 错误码子集 · **ref_resolver R4/dict_aliases 消费留 T2.4** · §18 边缘带/REPARSE |
+| ✅ 实装+测试 | **77** | 56% | 入库主干契约 · S0 登记 · S3 条款树/切块/QA · S2 七指标(含指标6 ocr_conf)· S4 L1/版本链 · S5 索引/冷备 · E1 富集 · **Phase 0/1:IR markdown/E2 真模型/ref_resolver R1–R3** · T2/T4 · 编排/一致性/重建 |
+| 🟡 部分 | **35** | 25% | 生产解析栈 stub · **xlsx parser-only(端到端 P2)** · IR 缺 block_id/table_id · 面包屑缺文号 · 案例 L1-only · T3/T6 框架 · perm_tag 写不过滤 · 错误码子集 · **ref_resolver R4/dict_aliases 消费留 T2.4** · §18 边缘带/REPARSE |
 | ❌ 未实装 | **21** | 15% | OCR/MinerU · L2 元数据 · 案例违规事由/引用外规 L2 · 修订说明对齐 · §18 指标8/9/仲裁/高危token/quality_tickets · §6.6 图谱窗口 · T1/T5 · P-MISC 路由 · dict_violation_types 消费 · §14 敏感词 |
 | ➖ 边界外 | **5** | 4% | E4 路由(二期)· T7(CP-007)· §22.3/.4/.5 费用/项目/模板交接 |
 | **合计** | **138** | | |
@@ -62,7 +62,7 @@
 | S1-1 | docx/pdf-text → DeepDoc 通道 | 🟡 | §4.1;DeepDoc **stub**,demo light(`test_light_parser`) | | |
 | S1-2 | pdf-notext/图片 → PaddleOCR(GPU)→版面重建 | ❌ | §4.1;PaddleOCR stub,扫描件隔离 | | ① |
 | S1-3 | 复杂版式失败 → MinerU 重试一次 | ❌ | §4.1;MinerU stub | | |
-| S1-4 | xlsx → openpyxl 直读 → 表格 IR | ✅ | §4.1;`test_xlsx_parse`/`test_s1_parse`(parser+s1 路由;端到端入库受 profile 制约留 P2) | | |
+| S1-4 | xlsx → openpyxl 直读 → 表格 IR | 🟡 | §4.1;light_parser xlsx 解析能力(`test_xlsx_parse`);白名单/端到端入库(纯表格 S3 不适用)留 P2 P-MISC | | |
 | S1-5 | 文本层判定 <50 字/页 → OCR | ✅ | §4.1;`test_light_parser` | | |
 | S1-6 | 解析失败 → PARSE_FAILED(E203) | ✅ | §4.1/§11.2;`test_s1_parse` | | |
 | S1-7 | IR schema(blocks/tables/bbox/page) | 🟡 | §4.2;缺 ocr_conf/block_id/table_id/cells_md(`test_ir`) | | |

@@ -122,7 +122,7 @@ def _enforce(returned, allowed: set[str]) -> list[str]:
 
 ### A1 xlsx 直读(本地,无外部依赖)
 - `light_parser` 加 xlsx 分支:openpyxl 读 → 每 sheet → `Table` block(cells row/col)→ IR。
-- **SC-A1**:`PIPELINE_PARSER_BACKEND=light` 下 xlsx 入库产 `chunk_type=table` 块;白名单含 xlsx;`test_xlsx_parse` 绿。RTM **S1-4 ❌→✅**。
+- **SC-A1**(收窄,Codex P0-XLSX-NO-TABLE-CHUNKS):light_parser xlsx **解析能力**(openpyxl → `Table` IR + 坏文件健壮;`test_xlsx_parse` 直测 `LightParser.parse` + `SourceFormat.XLSX`)。**端到端入库**(白名单 + S3 table 切块)受纯表格无条款制约 → **留 P2 P-MISC**(§22.3);本任务**不接 s0/s1 端到端**(避静默 0-chunk indexed)。RTM **S1-4 → 🟡**(parser-only)。
 
 ### A2 IR add-only:ocr_conf + 表格 markdown(本地)
 - `Block` 加 `ocr_conf: float | None = None`(add-only,`extra="forbid"` 下安全);light/非 OCR 置 None,OCR 后端回填。
