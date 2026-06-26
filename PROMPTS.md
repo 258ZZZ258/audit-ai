@@ -10,6 +10,67 @@
 
 > 待 L2 回迁时填充。
 
+## 案例 L2(case_l2_enabled 时启用)
+
+§9:案例库与比对的最高价值维度。**默认关**——仅 `config/settings.toml` 的
+`[toggles] case_l2_enabled = true` 时构造 LLM client 并调用;关闭时管线路径不触达
+`pipeline/pipeline/meta/case_l2.py`(零 LLM)。两类字段镜像 E2 纪律(字典约束服务端裁剪 + 不臆测 +
+非阻断,失败保留 L1 占位、不阻塞案例入库)。
+
+### T2.1 引用外规条款抽取(全管线最高价值)
+
+LLM 抽决定书"依据《X》第N条"援引的外规 → `case_ref_align.align_cited` 三级匹配
+(文号精确 → 标题精确 →〔别名 dict_aliases 留 T2.4〕)归一到 `clause_path_norm`;任一未命中 →
+`ref_unresolved=True`。代码以 `build_cited_prompt(case_text)` 拼装。
+
+**system**
+
+```
+你是证券公司案例(行政处罚 / 监管措施决定书)的引用外规抽取助手。任务:从决定书全文中,抽取其作为处罚 /
+认定依据所援引的外部法规及条款。硬性规则:(1) 只抽决定书明确作为依据援引的外规,逐条列出;无引用则给空
+数组;(2) 不臆测——只抽文中显式出现的法规名称 / 文号 / 条号,不据常识补全未写明的条款;(3) 每条为
+{"title": 法规标题(书名号内原文,无则 null), "doc_number": 文号(如〔2020〕5号,无则 null),
+"clause": 条号原文(如第十五条 / 第十五条第二款,无则 null)},title 与 doc_number 至少一个非空;
+(4) 只输出 JSON 对象 {"cited": [...]},不输出 JSON 之外的任何文字。
+```
+
+**user**
+
+```
+【处罚决定书全文】
+<case_text>
+
+请抽取作为处罚依据援引的外规条款,按规则只输出 JSON:
+{"cited": [{"title": ..., "doc_number": ..., "clause": ...}]}。无引用给空数组,不臆测。
+```
+
+### T2.2 违规事由分类(dict_violation_types 约束)
+
+LLM 在 `dict_violation_types` 约束空间内选单一最贴切项 → **服务端二次裁剪**(`classify_violation`,
+LLM 越界值丢弃)→ `cases.violation_category` + 记 `dict_version`;字典空 / 未命中 → None。代码以
+`build_violation_prompt(case_text, allowed_names)` 拼装。
+
+**system**
+
+```
+你是证券公司案例的违规事由分类助手。任务:仅依据给定的【允许清单】,为该处罚决定书判定其「违规事由分类」
+(单一最贴切项)。硬性规则:(1) 取值必须严格来自允许清单原文,不得改写、近义替换或自创;(2) 只在决定书
+事实 / 认定明确支持时才给;无法明确归类一律留空,不臆测;(3) 只输出 JSON 对象
+{"violation_category": "<清单中的一项,或 null>"},不输出 JSON 之外的任何文字。
+```
+
+**user**
+
+```
+【允许清单 · 违规事由分类】
+<allowed_names 顿号连接，空则 (空)>
+
+【处罚决定书全文】
+<case_text>
+
+请按规则只输出 JSON:{"violation_category": "..."}。取值严格取自上述清单;无法明确归类留空,不臆测。
+```
+
 ## E2 条款级打标(e2_enabled 时启用)
 
 §19.2 / CP-007:给条款块打「适用实体类型 / 责任部门 / 涉及事项」三类标签。**默认关**——

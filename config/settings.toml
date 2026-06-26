@@ -29,6 +29,7 @@ root = "./_objectstore"
 l2_enabled = false              # M1 零 LLM
 e1_enabled = true               # E1 义务预打标默认开(零 LLM 正则)
 e2_enabled = false              # E2 LLM 打标(事项/部门/实体类型);默认关,开时经 env 提供 OPENAI_API_KEY
+case_l2_enabled = false         # 案例 L2(引用外规对齐 + 违规事由分类,§9);默认关,开时经 env 提供 OPENAI_API_KEY
 auto_confirm_meta_no_conflict = true # 无元数据冲突时自动放行 META_REVIEW(演示体验开关)
 
 [llm]

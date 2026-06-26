@@ -17,7 +17,7 @@ from datetime import date
 
 from common.ir import BlockType, IRDocument
 from common.pg_models import Document, DocVersion
-from pipeline.meta import case_extract, l1_rules
+from pipeline.meta import case_extract, case_l2, l1_rules
 from pipeline.stage_base import QueueItem, QueueType, StageContext, StageResult
 from pipeline.states import PipelineState
 
@@ -76,11 +76,16 @@ def _ir_text(ir: IRDocument) -> str:
 
 
 def _extract_case(ctx: StageContext, dv: DocVersion, ir: IRDocument) -> None:
-    """规则抽案例要素 → upsert cases 行。
+    """规则抽案例要素 → upsert cases 行;``case_l2_enabled`` 时叠加 L2(引用外规对齐 + 违规事由)。
 
-    penalty_date ISO 字符串转 date;manifest issuer 作处罚机构兜底。
+    penalty_date ISO 字符串转 date;manifest issuer 作处罚机构兜底。L2 富集非阻断
+    (``case_l2.apply`` 内吞异常),失败保留 L1 占位
+    (``cited_regulations=[]`` / ``violation_category=None``)。
     """
-    fields = case_extract.extract_case(_ir_text(ir), {"issuer": dv.issuer})
+    case_text = _ir_text(ir)
+    fields = case_extract.extract_case(case_text, {"issuer": dv.issuer})
     pdate = fields.pop("penalty_date")
     fields["penalty_date"] = date.fromisoformat(pdate) if pdate else None
+    if ctx.config.toggles.case_l2_enabled:  # 默认关 → 零 LLM(不构造 client、不触达本路径)
+        case_l2.apply(ctx, case_text, fields)
     ctx.db.upsert_case(dv.doc_version_id, fields)

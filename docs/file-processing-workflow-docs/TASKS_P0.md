@@ -102,10 +102,10 @@
 
 ### Task T2.1 (B/B1b):案例引用外规 LLM 抽取 + 接对齐(最高价值)
 **Description:** `case_l2.extract_cited` LLM 抽"依据《X》第N条" → 接 T1.2 `align` → 写 `cases.cited_regulations`;miss → `ref_unresolved`。镜像 e2 纪律,默认关。
-**Acceptance criteria:**
-- [ ] `case_l2.extract_cited(client, case_text)` → `[{title, doc_no?, clause?}]`(`chat_json`,prompt 强制只输出 JSON、不臆测)。
-- [ ] 装配:extract → `case_ref_align.align` → `cases.cited_regulations`(JSONB)+ `ref_unresolved`;align miss **不阻塞案例入库**。
-- [ ] `test_case_l2` fake-LLM 抽取形态 + 真模型门控集成;`case_l2_enabled` 默认关;非阻断。
+**Acceptance criteria:** ✅ 落地(PR #19)
+- [x] `case_l2.extract_cited(client, case_text)` → `[{title, doc_number?, clause?}]`(`chat_json`,只输出 `{"cited":[...]}`、不臆测;无对齐锚点项丢弃)。
+- [x] 装配:extract → `PgRegLookup`(生产 RegLookup)+ `case_ref_align.align_cited` → `cases.cited_regulations`(JSONB)+ `ref_unresolved`;align miss **不阻塞案例入库**(`apply` 非阻断)。
+- [x] `test_case_l2` fake-LLM 抽取形态 + 真栈 fake-LLM 集成 + 真模型门控集成;`case_l2_enabled` 默认关;非阻断。
 **Verification:** `pytest pipeline/tests/test_case_l2.py`;门控 `OPENAI_API_KEY=<k> pytest -k integration`
 **Dependencies:** T1.1(模式)、T1.2(align)
 **Files:** `pipeline/pipeline/meta/case_l2.py`、`pipeline/pipeline/stages/s4_meta.py`(装配)、`config/settings.toml`、`pipeline/tests/test_case_l2.py`
@@ -113,10 +113,10 @@
 
 ### Task T2.2 (B/B2):违规事由分类 + dict_violation_types
 **Description:** `case_l2.classify_violation` 约束 `dict_violation_types` + server-side `_enforce` → `cases.violation_category`;空/未命中留 None(consumed-when-present)。
-**Acceptance criteria:**
-- [ ] `classify_violation(client, case_text, allowed)`:LLM + `_enforce` 裁字典;字典空/未命中 → None。
-- [ ] `dict_violation_types` 从 PG 加载;`dict_version` 记入(evidence/字段)。
-- [ ] `test_case_l2`(违规事由分支)fake-LLM + `_enforce` 裁剪 + 空降级。
+**Acceptance criteria:** ✅ 落地(PR #19)
+- [x] `classify_violation(client, case_text, allowed)`:LLM + 服务端裁字典;字典空 → 不调 LLM、越界/未命中 → None。
+- [x] `dict_violation_types` 从 PG 加载;`dict_version` 记入 `cases.violation_category_dict_version`(add-only 迁移 0011;超 TASKS 文件范围、有生产保真 spec_ref)。
+- [x] `test_case_l2`(违规事由分支)fake-LLM + 服务端裁剪 + 空降级。
 **Verification:** `pytest pipeline/tests/test_case_l2.py`
 **Dependencies:** T0.1、T1.1
 **Files:** `pipeline/pipeline/meta/case_l2.py`(classify)、`pipeline/tests/test_case_l2.py`
