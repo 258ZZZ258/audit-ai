@@ -28,6 +28,7 @@ from common.pg_models import (
     ReviewQueue,
 )
 from pipeline.config import load_config
+from pipeline.chunking import ref_resolver
 from pipeline.enrich import e1_obligation, e2_tag
 from pipeline.index import corpus_rows
 from pipeline.index.corpus_rows import ColdBackupIncomplete
@@ -125,6 +126,14 @@ def _safe_e2(ctx: StageContext, dvid: str) -> None:
         logger.warning("E2 条款级打标(%s)失败(不阻断):%s", dvid, e)
 
 
+def _safe_refs(fn, ctx: StageContext, dvid: str) -> None:
+    """跑 ref_resolver 步(clear/run),异常吞掉——standoff 解析失败不阻断 _structuring(§6.7)。"""
+    try:
+        fn(ctx, dvid)
+    except Exception as e:  # noqa: BLE001 standoff 解析失败不阻断管线(同富集纪律)
+        logger.warning("ref_resolver %s(%s)失败(不阻断):%s", fn.__name__, dvid, e)
+
+
 def _structuring(ctx: StageContext, doc_version_id: str) -> StageResult:
     """STRUCTURING 复合(在装配层组合,守 CLAUDE.md「stage 之间不得互相 import」约束):
 
@@ -140,7 +149,9 @@ def _structuring(ctx: StageContext, doc_version_id: str) -> StageResult:
         _safe_e1(e1_obligation.clear, ctx, doc_version_id)  # 先于 s3 删 chunk,避 clause_tags FK
     if e2_on:
         _safe_e1(e2_tag.clear, ctx, doc_version_id)  # 同理:先清 E2 行再删 chunk(scope 限 E2)
+    _safe_refs(ref_resolver.clear_refs, ctx, doc_version_id)  # 先于 s3 删 chunk,避 clause_references FK
     s3_structure.run(ctx, doc_version_id)
+    _safe_refs(ref_resolver.run_resolver, ctx, doc_version_id)  # s3 后:写 clause_references standoff
     if e1_on:
         _safe_e1(e1_obligation.tag, ctx, doc_version_id)
     if e2_on:

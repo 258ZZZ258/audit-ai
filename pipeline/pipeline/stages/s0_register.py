@@ -34,7 +34,7 @@ from pipeline.meta.version_chain import RelationType
 from pipeline.stage_base import StageContext
 from pipeline.states import ErrorCode, PipelineState
 
-WHITELIST_FORMATS = {"docx", "pdf"}
+WHITELIST_FORMATS = {"docx", "pdf", "xlsx"}
 
 
 @dataclass

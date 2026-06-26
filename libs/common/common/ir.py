@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 class SourceFormat(StrEnum):
     DOCX = "docx"
     PDF = "pdf"
+    XLSX = "xlsx"  # 表格直读(openpyxl → Table 块);add-only
 
 
 class BlockType(StrEnum):

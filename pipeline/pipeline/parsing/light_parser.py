@@ -14,6 +14,7 @@ from docx import Document as DocxDoc
 from docx.oxml.ns import qn
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
+from openpyxl import load_workbook
 
 from common.ir import Block, BlockType, Table, TableCell
 from pipeline.chunking.normalize import normalize_radicals, strip_ws
@@ -87,6 +88,34 @@ def _pdf_result(data: bytes, scanned_max: int) -> ParseResult:
     return ParseResult(blocks=blocks, page_count=npages, title=blocks[0].text if blocks else None)
 
 
+def _xlsx_blocks(data: bytes) -> tuple[list[Block], str | None]:
+    """每个非空 sheet → 一个 Table 块(行列原样);sheet 名作 title(首个)。"""
+    wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    blocks: list[Block] = []
+    title: str | None = None
+    idx = 0
+    try:
+        for ws in wb.worksheets:
+            rows = [r for r in ws.iter_rows(values_only=True) if any(v is not None for v in r)]
+            if not rows:
+                continue
+            n_cols = max(len(r) for r in rows)
+            cells = [
+                TableCell(text="" if (r[c] if c < len(r) else None) is None else str(r[c]),
+                          row=ri, col=c)
+                for ri, r in enumerate(rows)
+                for c in range(n_cols)
+            ]
+            tbl = Table(n_rows=len(rows), n_cols=n_cols, cells=cells, header_rows=1)
+            blocks.append(Block(index=idx, type=BlockType.TABLE, table=tbl))
+            idx += 1
+            if title is None:
+                title = ws.title
+    finally:
+        wb.close()
+    return blocks, title
+
+
 class LightParser(ParserAdapter):
     def parse(
         self, data: bytes, source_format: str, *, scanned_char_per_page_max: int
@@ -96,6 +125,15 @@ class LightParser(ParserAdapter):
             return ParseResult(blocks=blocks, page_count=None, title=title)
         if source_format == "pdf":
             return _pdf_result(data, scanned_char_per_page_max)
+        if source_format == "xlsx":
+            try:
+                blocks, title = _xlsx_blocks(data)
+            except Exception as e:  # noqa: BLE001 坏 xlsx(BadZipFile 等)→ 视为无效格式,不崩溃
+                return ParseResult(
+                    error_code=ErrorCode.FORMAT_NOT_WHITELISTED.value,
+                    reason=f"xlsx 解析失败(文件损坏或非有效 xlsx): {e}",
+                )
+            return ParseResult(blocks=blocks, page_count=None, title=title)
         return ParseResult(
             error_code=ErrorCode.FORMAT_NOT_WHITELISTED.value,
             reason=f"light 解析器不支持格式: {source_format}",

@@ -56,11 +56,11 @@ Phase 3 (门控真后端, 真验收甲方环境)
 **Checkpoint 0(Foundation)**:`alembic upgrade head` + `alembic check` 无漂移;`ruff check` 净;`test_ir`/`test_v16_fidelity` 更新通过;现 374 不破。→ **人工 review 后进 Phase 1**。
 
 ### Phase 1 — 纯逻辑 + 真链路 fail-fast(高并行)
-- [ ] **T1.1 (B/B4)** E2 接真模型打通 —— dict PG 加载在真 seed 验证 + `e2_enabled=true` 端到端 + **真模型门控集成测**(有 `OPENAI_API_KEY` 真跑 / 无则 skip)。**S–M**。deps: 无(dicts 已 seed)。→ 翻 RTM **E2-1**。
-- [ ] **T1.2 (B/B1a)** `case_ref_align` 纯对齐 —— "《X》第N条" → 文号精确/标题精确/`clause_path_norm` 三级匹配;超界/未命中 → `ref_unresolved`。纯逻辑零模型。**M**。deps: 无。
-- [ ] **T1.3 (C/C1)** `ref_resolver` R1–R3 —— 文档内确定性指代(本办法/前款/绝对条款)standoff 解析,写 `clause_references`(`method=rule`)。从 S3 后触发。**M**。deps: 无(表已建)。→ 翻 **S3-15(R1–R3)/DM-2**。
-- [ ] **T1.4 (C/C3)** `ref_render` 窗口渲染原语 —— span 倒序插注释、gloss≤30、UNRESOLVED 不渲染。纯逻辑。**S**。deps: 无。
-- [ ] **T1.5 (A/A1)** xlsx 直读(openpyxl)+ 白名单含 xlsx —— 每 sheet → `Table` block → IR。**M**。deps: T0.2(markdown 辅助)。→ 翻 **S1-4**。
+- [x] **T1.1 (B/B4)** E2 接真模型打通 —— dict PG 加载在真 seed 验证 + `e2_enabled=true` 端到端 + **真模型门控集成测**(有 `OPENAI_API_KEY` 真跑 / 无则 skip)。**S–M**。deps: 无(dicts 已 seed)。→ 翻 RTM **E2-1**。
+- [x] **T1.2 (B/B1a)** `case_ref_align` 纯对齐 —— "《X》第N条" → 文号精确/标题精确/`clause_path_norm` 三级匹配;超界/未命中 → `ref_unresolved`。纯逻辑零模型。**M**。deps: 无。
+- [x] **T1.3 (C/C1)** `ref_resolver` R1–R3 —— 文档内确定性指代(本办法/前款/绝对条款)standoff 解析,写 `clause_references`(`method=rule`)。从 S3 后触发。**M**。deps: 无(表已建)。→ 翻 **S3-15(R1–R3)/DM-2**。
+- [x] **T1.4 (C/C3)** `ref_render` 窗口渲染原语 —— span 倒序插注释、gloss≤30、UNRESOLVED 不渲染。纯逻辑。**S**。deps: 无。
+- [x] **T1.5 (A/A1)** xlsx 直读(openpyxl)+ 白名单含 xlsx —— 每 sheet → `Table` block → IR。**M**。deps: T0.2(markdown 辅助)。→ 翻 **S1-4**。
 
 **Checkpoint 1**:纯逻辑测全绿;B4 真链路有 key 真跑 / 无 key skip(不联网);`clause_references` 在 R1–R3 有 resolved 行;xlsx 可入库。→ **人工 review**。
 

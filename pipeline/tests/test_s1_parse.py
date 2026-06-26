@@ -4,6 +4,7 @@ import io
 
 import pytest
 from docx import Document as Docx
+from openpyxl import Workbook
 from PIL import Image, ImageDraw
 from sqlalchemy import delete, select, text
 from ulid import ULID
@@ -115,6 +116,30 @@ def test_pdf_native_pages(env, tmp_path, soffice):
     ir = ctx.object_store.load_ir(dvid)
     assert ir.blocks and all(b.page is not None for b in ir.blocks)  # pdf 原生页码
     assert ctx.db.get(DocVersion, dvid).rendition_object_key is None  # pdf 无渲染件
+
+
+def _xlsx_bytes() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    for row in [["费用项目", "标准"], ["差旅", "500"], ["招待", "300"]]:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_xlsx_routes_to_table_ir(env):
+    # T1.5:xlsx → s1 路由 _parse_xlsx → IR(Table 块,无渲染/页码)→ QC_PENDING
+    ctx, batches = env
+    bid, dvid = _make_doc(ctx, "xlsx", _xlsx_bytes())
+    batches.append(bid)
+    res = s1.run(ctx, dvid)
+    assert res.next_state is PS.QC_PENDING
+    ir = ctx.object_store.load_ir(dvid)
+    assert ir.source_format == "xlsx"
+    tables = [b for b in ir.blocks if b.table is not None]
+    assert len(tables) == 1 and tables[0].table.n_rows == 3
+    assert ctx.db.get(DocVersion, dvid).rendition_object_key is None  # xlsx 无渲染件
 
 
 def test_scanned_pdf_quarantined(env):

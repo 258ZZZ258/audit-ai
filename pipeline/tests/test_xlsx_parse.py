@@ -1,0 +1,45 @@
+"""T1.5 xlsx 直读:openpyxl → Table IR;格式探测/白名单接受 xlsx。
+
+范围 = 解析层(parser 读 xlsx → Table 块 + s0 接受)。端到端入库(QC 条款指标/切块 profile)
+受 §22.3 费用数据「不走切块管线」制约,留 P2 P-MISC,不在本任务。
+"""
+
+import io
+
+from openpyxl import Workbook
+
+from common.ir import BlockType, SourceFormat
+from pipeline.parsing.light_parser import LightParser
+from pipeline.stages.s0_register import WHITELIST_FORMATS, detect_format
+
+
+def _xlsx_bytes(rows: list[list]) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    for r in rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_source_format_has_xlsx():
+    assert SourceFormat.XLSX == "xlsx"  # add-only 枚举
+
+
+def test_detect_and_whitelist_xlsx():
+    data = _xlsx_bytes([["费用项目", "标准"], ["差旅", "500"]])
+    assert detect_format(data) == "xlsx"
+    assert "xlsx" in WHITELIST_FORMATS
+
+
+def test_light_parser_xlsx_to_table_block():
+    data = _xlsx_bytes([["费用项目", "标准"], ["差旅", "500"], ["招待", "300"]])
+    res = LightParser().parse(data, "xlsx", scanned_char_per_page_max=50)
+    assert res.ok
+    tables = [b for b in res.blocks if b.type is BlockType.TABLE]
+    assert len(tables) == 1
+    t = tables[0].table
+    assert t.n_rows == 3 and t.n_cols == 2
+    assert {"费用项目", "标准", "差旅", "500"} <= {c.text for c in t.cells}
+    assert "| 费用项目 | 标准 |" in t.to_markdown()  # 复用 T0.2 markdown 序列化

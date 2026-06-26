@@ -43,6 +43,8 @@ def run(ctx: StageContext, doc_version_id: str) -> StageResult:
         return _parse_docx(ctx, doc_version_id, data)
     if dv.source_format == "pdf":
         return _parse_pdf(ctx, doc_version_id, data)
+    if dv.source_format == "xlsx":
+        return _parse_xlsx(ctx, doc_version_id, data)
     return _quarantine(doc_version_id, ErrorCode.FORMAT_NOT_WHITELISTED.value,
                        f"白名单外格式 {dv.source_format}")
 
@@ -93,6 +95,24 @@ def _parse_pdf(ctx: StageContext, dvid: str, data: bytes) -> StageResult:
     ir = IRDocument(
         doc_version_id=dvid, source_format=SourceFormat.PDF,
         blocks=res.blocks, page_count=res.page_count, title=res.title,
+    )
+    store.put_ir(ir)
+    _record_artifacts(ctx, dvid, rendition=False)
+    return StageResult(next_state=PipelineState.QC_PENDING, artifacts={"ir": store.ir_key(dvid)})
+
+
+def _parse_xlsx(ctx: StageContext, dvid: str, data: bytes) -> StageResult:
+    # xlsx 直读(openpyxl → Table 块,无渲染/无页码对齐)。纯表格无条款,端到端入库受
+    # §22.3 费用数据「不走切块管线」/ QC 条款指标制约 → 留 P2 P-MISC;本路由止于 IR。
+    cfg, store = ctx.config, ctx.object_store
+    res = make_parser().parse(
+        data, "xlsx", scanned_char_per_page_max=cfg.parse.scanned_char_per_page_max
+    )
+    if not res.ok:
+        return _route_failure(dvid, res)
+    ir = IRDocument(
+        doc_version_id=dvid, source_format=SourceFormat.XLSX,
+        blocks=res.blocks, page_count=None, title=res.title,
     )
     store.put_ir(ir)
     _record_artifacts(ctx, dvid, rendition=False)
