@@ -294,9 +294,10 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
 - **未做(SPEC-SPARSE §0)**:`WeightedRanker` 通道重权 / 检索后提分(决策弃);dense 改写/HyDE(N1);`dict_scenario_terms`
   建 PG 表 + 灌库(GAP #11,§15⑥);提权应用 R4/R2/R3/R6;系数 V0 标定;`dict_intent_routes`/N2 重构。
 - **Codex 复审修复(2 warning,均实缺陷)**:
-  - **`QUERY-SPARSE-DOCNUM-SPAN`**:发文字号 regex 前缀 `[一-龥]{0,12}` 无左边界 →「请问银保监发〔2021〕5号」会把
-    "请问"纳入 span、连同非文号 token 提权。修:`_strip_lead` 抽取后裁掉问句/连接词前缀(请问/根据/依据…)收窄到
-    机关代字边界 + 参数化测试 `test_detect_docnum_strips_query_prefix`。
+  - **`QUERY-SPARSE-DOCNUM-SPAN`(2 轮)**:regex 前缀 `{0,12}` 无左边界 → 口语前缀(请问/这个制度依据/麻烦查一下/
+    是否适用…)被纳入 span 一起提权;首轮 `_strip_lead` 停词表被复审指出无法覆盖非停词前缀。终修:**regex 窗口收窄
+    `{0,12}`→`{0,6}`**(真实机关代字 ≤5「银保监办发」,长口语前缀落窗外)+ `_strip_lead` 兜窗内短残留 + 参数化测试
+    覆盖 Codex 三样例。中文无词边界 → 彻底切代字需分词/代字字典(§15-V0,已注释)。
   - **`QUERY-SPARSE-WEAK-INTEGRATION`**:集成把"严格升名次"放宽成"升或持平" → no-op 提权也能过(**实测确为 no-op**:
     小语料 hybrid 已置顶)。修:机制非无效改用**确定性单元 sparse-IP 严格断言**(`test_augment_*_strictly_raises_target_ip`),
     集成改为诚实的端到端召回 + 不回归 + 双关等价(不再伪称"名次升")。

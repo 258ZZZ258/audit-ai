@@ -44,6 +44,10 @@ def test_detect_docnum_strips_query_prefix():
     assert detect_doc_numbers("请问银保监发〔2021〕5号是什么") == ["银保监发〔2021〕5号"]
     assert detect_doc_numbers("根据财会〔2017〕22号的规定") == ["财会〔2017〕22号"]
     assert detect_doc_numbers("请问〔2023〕5号") == ["〔2023〕5号"]  # 前缀 + 裸文号
+    # Codex 复审样例(非停词起头的口语前缀:靠窗口限长 ≤6 + _strip_lead 兜短残留)
+    assert detect_doc_numbers("这个制度依据财会〔2017〕22号执行") == ["财会〔2017〕22号"]
+    assert detect_doc_numbers("麻烦查一下银保监发〔2021〕5号") == ["银保监发〔2021〕5号"]
+    assert detect_doc_numbers("是否适用银保监发〔2021〕5号") == ["银保监发〔2021〕5号"]
 
 
 # ── load_scenario_terms ──────────────────────────────────────────────
