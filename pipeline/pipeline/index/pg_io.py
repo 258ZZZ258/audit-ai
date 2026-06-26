@@ -162,6 +162,14 @@ class PgIO:
             for c in s.scalars(select(Chunk).where(Chunk.doc_version_id == doc_version_id)):
                 c.chunk_status = status
 
+    def set_biz_domains(self, doc_version_id: str, biz_domains: list[str], source: str) -> None:
+        """写 doc_versions 业务域多值 + 来源(s4 L2);``source`` ∈ manifest|llm|confirmed。"""
+        with self.session() as s:
+            dv = s.get(DocVersion, doc_version_id)
+            if dv is not None:
+                dv.biz_domains = biz_domains
+                dv.biz_domain_source = source
+
     def set_version_status(self, doc_version_id: str, status: str) -> None:
         """翻转某文档 version_status(s5 index 写 effective/upcoming;activate 翻 upcoming)。"""
         with self.session() as s:

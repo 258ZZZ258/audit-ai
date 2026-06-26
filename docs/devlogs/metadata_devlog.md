@@ -37,4 +37,23 @@
 - **REGLOOKUP-CORPUS-SCOPE**:`PgRegLookup` join `Document` 钉死 `corpus_type="P-EXT"`——案例引的是外规,同文号/同标题的内规(P-INT)/案例(P-CASE)不得被当外规条款落库污染反查。加 `test_reglookup_scopes_to_p_ext_only`(同号 P-INT/P-EXT 各一,验只取 P-EXT)。
 - **UNRESOLVED-QUEUE**:docstring「进低优队列」收窄为**仅置 `ref_unresolved` 标记**(队列消费 quality_tickets deferred,§18.3),不夸大未建的工作流。
 
+## P0 Phase 2(续):业务域 L2 + profile 分档(T2.3a/T2.3b,2026-06-26;PR 待开)
+
+**背景**:§7.1 L2 业务域多值打标(L-3,最后一个 P0 LLM 触点)。新模块 `meta/l2_llm.py`(默认关 `l2_enabled`),完成 **P0 LLM 4 触点全清**(E2 / 案例引用外规 / 违规事由 / L2 业务域)。
+
+**T2.3a 打标**:`tag_biz_domain(client, doc_text, allowed)` LLM + 服务端裁 `dict_biz_domains`(镜像 E2/case_l2:不臆测 + 字典空不调 LLM)。`dict_biz_domains` 无 dict_version 列 → provenance 落 `biz_domain_source` 标志(不另记版本)。
+
+**T2.3b profile 分档**(核心,**纯逻辑 `biz_l2_decision` + 确定性抽检 `_sampled`**,免栈 8 单测穷举):
+- **manifest 优先**:`dv.biz_domain`(单值)有 → 权威用 manifest(`source=manifest`);LLM 不一致 → 冲突 → META_REVIEW(§7.1 交叉校验)。
+- **manifest 无 → LLM 主来源**(`source=llm`):**P-INT 候选恒入 META_REVIEW**(内规权威担责,即便 auto_confirm 开);P-EXT/QA/CASE **直落 effective** + `profiles.yaml sampling_rate` 确定性抽检 spot-check。
+- 写权威字段经新 `pg_io.set_biz_domains(dvid, biz_domains, source)`;`s4_meta._safe_biz_l2` 非阻断(LLM 失败吞掉,不写不复核)。biz_review 并入自动放行判据(`not conflicts and not biz_review and auto_confirm and not supersedes`)。
+
+**下游取值**(`corpus_rows.build_rows`):Milvus `biz_domain` ARRAY 优先 `dv.biz_domains`(L2 多值),空则**回落 manifest 原单值** `dv.biz_domain`(向后兼容,默认路径 biz_domains 为 None → 行为不变)。
+
+**决策 / 踩坑**:
+- **sampling_rate 语义**(`profiles.yaml` T2.3b 起消费):直落 profile 中额外抽 META_REVIEW spot-check 的比例;P-INT 由 profile 分档恒入闸(sampling 无关)。默认 P-EXT/QA/CASE=**0.0**(纯直落),避免默认把外规全挡回复核;机制由单测(rate=1.0/0.5/0)证明。**确定性抽检**(sha1(dvid) 落点 < rate,非随机)使重跑/测试可复现。
+- 默认 `l2_enabled=false` → s4_meta 不触达本路径,既有 default-path 集成测(test_b_mode 等)不受扰。
+
+**测试**:`test_l2_llm.py`(13:打标裁字典 + biz_l2_decision 穷举 + _sampled)+ `test_corpus_rows_biz.py`(3:下游取值/回落)+ `test_s4_meta.py`(3 真栈:P-INT 候选入闸 / P-EXT 直落 / manifest 冲突优先 manifest)。
+
 > 时间轴:`docs/devlog.md` 阶段 C(C2/C3)、阶段 W(双模式)、阶段 P0 Phase 2。

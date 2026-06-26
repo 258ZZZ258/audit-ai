@@ -1,10 +1,12 @@
 # P-INT(内规)/ P-EXT(外规)/ P-QA(监管问答)/ P-CASE(案例)档案差异。
-# 抽检率(sampling_rate)为生产边缘抽检字段,M1 保留不消费。
+# sampling_rate(T2.3b 起消费):业务域 L2 直落 profile(P-EXT/QA/CASE)中**额外抽** META_REVIEW
+# spot-check 的比例(确定性按 dvid 抽,见 l2_llm._sampled)。P-INT 由 profile 分档恒入闸,sampling 无关。
+# 默认外规/问答/案例 0.0 = 纯直落(无 spot-check);生产可调高做边缘抽检。l2_enabled 关时整体不触达。
 P-INT:
   sampling_rate: 1.0
 P-EXT:
-  sampling_rate: 1.0
+  sampling_rate: 0.0
 P-QA:
-  sampling_rate: 1.0
+  sampling_rate: 0.0
 P-CASE:
-  sampling_rate: 1.0
+  sampling_rate: 0.0

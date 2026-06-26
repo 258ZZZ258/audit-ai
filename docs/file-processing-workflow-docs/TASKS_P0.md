@@ -124,10 +124,10 @@
 
 ### Task T2.3a (B/B3):业务域 L2 打标 + 写权威字段
 **Description:** `l2_llm.tag_biz_domain` 约束 `dict_biz_domains` + `_enforce` → 写 `doc_versions.biz_domains` + `biz_domain_source=llm` + `ai_label`。
-**Acceptance criteria:**
-- [ ] `l2_llm.tag_biz_domain(client, doc_text, allowed_biz)`:LLM + `_enforce` → 多值。
-- [ ] 写 `doc_versions.biz_domains`(JSONB)+ `biz_domain_source="llm"`;记 `dict_version`。
-- [ ] `test_l2_llm` fake-LLM + 字典裁剪 + source 标志;`l2_enabled` 默认关。
+**Acceptance criteria:** ✅ 落地(PR 待开)
+- [x] `l2_llm.tag_biz_domain(client, doc_text, allowed_biz)`:LLM + 服务端 `_enforce` 裁字典 → 多值;字典空不调 LLM。
+- [x] 写 `doc_versions.biz_domains`(JSONB)+ `biz_domain_source`(manifest|llm)。`dict_biz_domains` 无 dict_version 列(seed schema 既定,同 E2 涉及事项)→ provenance 落 `biz_domain_source` 标志,不另记版本(`ai_label` 概念由 source=llm 承载)。
+- [x] `test_l2_llm` fake-LLM + 字典裁剪 + biz_l2_decision 穷举;`l2_enabled` 默认关。
 **Verification:** `pytest pipeline/tests/test_l2_llm.py`
 **Dependencies:** T0.1
 **Files:** `pipeline/pipeline/meta/l2_llm.py`、`config/settings.toml`、`pipeline/tests/test_l2_llm.py`
@@ -135,11 +135,11 @@
 
 ### Task T2.3b (B/B3):业务域 profile 分档确认 + 下游取值
 **Description:** P-INT 逐件入 META_REVIEW(→`confirmed`);P-EXT/QA/CASE LLM 直落 + 抽样;manifest 优先/冲突路径;chunks/Milvus `biz_domain` ARRAY 从 `biz_domains` 取(向后兼容原单值)。
-**Acceptance criteria:**
-- [ ] `s4_meta`:P-INT 业务域候选入 META_REVIEW(`auto_confirm` 不放行);P-EXT/QA/CASE `source=llm` 直落生效;按 profile `sampling_rate` 抽样。
-- [ ] manifest 已给业务域 → 优先;冲突 → META_REVIEW(§7.1 交叉校验)。
-- [ ] `corpus_rows`/s5:Milvus `biz_domain` ARRAY 从 `doc_versions.biz_domains` 取;`biz_domains` 空则回落原单值 `biz_domain`。
-- [ ] 集成测(栈):三档行为 + 下游取值。
+**Acceptance criteria:** ✅ 落地(PR 待开)
+- [x] `s4_meta`:P-INT 业务域候选入 META_REVIEW(`auto_confirm` 不放行);P-EXT/QA/CASE `source=llm` 直落生效;按 profile `sampling_rate` **确定性**抽检 spot-check(`l2_llm._sampled`,非随机可复现)。
+- [x] manifest 已给业务域 → 优先(`source=manifest`);冲突 → META_REVIEW(§7.1 交叉校验)。
+- [x] `corpus_rows`/s5:Milvus `biz_domain` ARRAY 从 `doc_versions.biz_domains` 取;`biz_domains` 空则回落原单值 `biz_domain`(向后兼容)。
+- [x] 集成测(栈,`test_s4_meta`):三档行为(P-INT 入闸 / P-EXT 直落 / manifest 冲突)+ 下游取值(`test_corpus_rows_biz`)。
 **Verification:** `pytest pipeline/tests/test_s4_meta.py pipeline/tests/test_search_meta.py`;栈集成
 **Dependencies:** T2.3a
 **Files:** `pipeline/pipeline/stages/s4_meta.py`、`pipeline/pipeline/index/corpus_rows.py`、`pipeline/tests/test_s4_meta.py`

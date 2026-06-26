@@ -8,7 +8,7 @@
 
 ## 一句话
 
-**入库主干(S0 登记 → S1 解析 → S2 质检 → S3 切块 → S4 元数据 → S5 索引)的契约与确定性骨架生产保真且测试钉死**;硬契约(chunk_id / manifest 11 列 / IR / Milvus schema / PG 核心表)字节级对齐。**两类大缺口**:(1) **生产解析栈全 stub**(DeepDoc/MinerU/PaddleOCR + OCR 扫描件 + xlsx/图片),demo 用 light parser(docx/pdf-text);(2) **LLM 接入 P0 已落 3 条生产链路**(E2 打标 / 案例引用外规 / 违规事由分类,接真模型 + 门控集成测),**剩 L2 业务域元数据 + P1/P2 触点**(表格/案例摘要、修订说明对齐、T1 出题)未接。其余:§18 逃逸闭环、ref_resolver R4 跨文档、§22 P-MISC 路由、评测前置 T1/T3/T5/T6、§14 LLM 治理(敏感词/AI 标识)未做。
+**入库主干(S0 登记 → S1 解析 → S2 质检 → S3 切块 → S4 元数据 → S5 索引)的契约与确定性骨架生产保真且测试钉死**;硬契约(chunk_id / manifest 11 列 / IR / Milvus schema / PG 核心表)字节级对齐。**两类大缺口**:(1) **生产解析栈全 stub**(DeepDoc/MinerU/PaddleOCR + OCR 扫描件 + xlsx/图片),demo 用 light parser(docx/pdf-text);(2) **LLM 接入 P0 4 触点全落生产链路**(E2 打标 / 案例引用外规 / 违规事由 / L2 业务域,接真模型 + 门控集成测),**剩 P1/P2 触点**(L2 摘要·适用对象、表格/案例摘要、修订说明对齐、T1 出题)未接。其余:§18 逃逸闭环、ref_resolver R4 跨文档、§22 P-MISC 路由、评测前置 T1/T3/T5/T6、§14 LLM 治理(敏感词/AI 标识)未做。
 
 ---
 
@@ -87,7 +87,7 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | §7.1 L1 规则抽取(发文字号/日期/机构字典/标题)+ manifest 交叉校验冲突→待人工 | ✅ | `meta/l1_rules.py:cross_check` → META_REVIEW |
-| **§7.1 L2 LLM 辅助(业务域多值/主题摘要/适用对象,14B + 字典约束)** | ❌ | **无 L2 模块/代码**(`l2_enabled` 默认关,注"C2 不调 LLM")→ 见 §Z |
+| **§7.1 L2 LLM 辅助(业务域多值/主题摘要/适用对象,字典约束)** | 🟡 | **业务域多值 ✅ T2.3**(`meta/l2_llm.py`:LLM + `dict_biz_domains` 服务端裁字典 + profile 分档:P-INT 候选入 META_REVIEW、P-EXT/QA/CASE 直落 + 抽检;manifest 优先/冲突;`l2_enabled` 默认关)。主题摘要/适用对象(L-5)P1 → 见 §Z |
 | §7.1 L3 人工确认(密级/状态/版本关系)META_REVIEW 工作台 + 放行 | ✅ | `s4_meta.py`;A/B 模式(`auto_confirm_meta_no_conflict`) |
 | §7.2 版本链 doc_versions 关系(revise_replace/abolish_only) | ✅ | `version_chain.py:RelationType` |
 | §7.2 merge_replace / split_replace | 🟡 | 枚举/路由到人工队列(UNSUPPORTED),无多对一/一对多自动处理 |
@@ -188,13 +188,13 @@
 
 ## Z. LLM 接入需开发项清单(本轮强制:全部计为「需开发」)
 
-> 口径:**P0 已落 3 条真 LLM 生产链路(L-1/L-2/L-4),其余触点待接**。`llm_client.py` 是真 OpenAI 兼容客户端(httpx,JSON 模式,指数退避,key 走 env 绝不入库),**默认零调用**——仅 `e2_enabled`/`case_l2_enabled` 等开关开启时惰性构造。已接项均"接真模型 + 字典/prompt 落地 + fake 单测 + 门控真模型集成";剩网关/配额对接(CP-005)为共性生产项。
+> 口径:**P0 4 触点全落真 LLM 生产链路(L-1/L-2/L-3/L-4),其余 P1/P2 触点待接**。`llm_client.py` 是真 OpenAI 兼容客户端(httpx,JSON 模式,指数退避,key 走 env 绝不入库),**默认零调用**——仅 `e2_enabled`/`case_l2_enabled`/`l2_enabled` 等开关开启时惰性构造。已接项均"接真模型 + 字典/prompt 落地 + fake 单测 + 门控真模型集成";剩网关/配额对接(CP-005)为共性生产项。
 
 | # | LLM 触点 | 规范§ | 当前状态 | 门控开关 | 代码位置 | 需开发内容 | 优先级 |
 |---|---|---|---|---|---|---|---|
 | L-1 | **案例引用外规条款抽取 + 归一对齐**(全管线**最高价值**字段) | §9 | ✅ **T2.1 落地**(LLM 抽 → `PgRegLookup` 归一对齐 → `cited_regulations`;miss→`ref_unresolved`) | `case_l2_enabled`(关) | `meta/case_l2.py` | 已接真模型 + 门控集成测(`test_case_l2`);剩网关配额(CP-005)| **P0✅** |
 | L-2 | **案例违规事由分类**(检索/比对关键维度) | §9 | ✅ **T2.2 落地**(LLM + `dict_violation_types` 服务端裁字典 + dict_version 快照) | `case_l2_enabled`(关) | `meta/case_l2.py` | 已接真模型 + 门控集成测(`test_case_l2`);字典 v0-draft 待评审 §16-6 | **P0✅** |
-| L-3 | **L2 业务域多值打标** | §7.1 | ❌ 无代码 | `l2_enabled`(关) | — | LLM + 业务域字典约束输出(可复用 E2/case_l2 模板) | **P0** |
+| L-3 | **L2 业务域多值打标** | §7.1 | ✅ **T2.3 落地**(LLM + `dict_biz_domains` 裁字典 + profile 分档 + manifest 优先/冲突 → 写 `biz_domains`/`source`) | `l2_enabled`(关) | `meta/l2_llm.py` | 已接真模型 + 门控集成测(`test_l2_llm`/`test_s4_meta`)| **P0✅** |
 | L-4 | **E2 条款级打标(事项/部门/实体类型 entity_type[])** | §19.2 | ✅ **Phase 1 接真模型**(接缝完整 + DeepSeek 门控实测) | `e2_enabled`(关) | `enrich/e2_tag.py` | 已接真模型 + 集成测(`test_e2_tag`);剩 ~19 万调用配额(CP-005-①③) | **P0✅** |
 | L-5 | L2 主题摘要 / 适用对象 | §7.1 | ❌ 无代码 | `l2_enabled`(关) | — | LLM 摘要工厂(规范语言)+ 适用对象实体抽取(字典约束) | P1 |
 | L-6 | 案例处罚对象类型 L2 消歧 | §9 | 🟡 L1 only | 无 | `meta/case_extract.py` | L1 歧义时 LLM 判 法人/自然人/其他 | P1 |
@@ -207,7 +207,7 @@
 | L-13 | §14 LLM 治理:进出敏感词过滤 + AI 标识/已人工确认流转 | §14 | ❌ 无代码 | 无 | 横切 | 网关进出过滤 + 工作台 AI 标注 → 人工确认转态 | P2(生产前必需) |
 | 基建 | LLM client(OpenAI 兼容,env key,默认零调用) | §8.1/§14 | ✅ 接缝就位 | — | `llm_client.py` | 网关 endpoint/配额对接、token 预算校验(CP-005)、PROMPTS.md 集中化(可选) | — |
 
-> **结论:LLM 维度 13 触点 → P0 已落 3 条生产链路**(L-4 E2 / L-1 案例引用外规 / L-2 违规事由),均「接真模型 + 字典/prompt + fake 单测 + 门控真模型集成」。**P0 剩 L-3(L2 业务域)**;P1×5 / P2×4 未接。client 基建就位,网关配额(CP-005)仍待。
+> **结论:LLM 维度 13 触点 → P0 4 触点全落生产链路**(L-4 E2 / L-1 案例引用外规 / L-2 违规事由 / L-3 L2 业务域),均「接真模型 + 字典/prompt + fake 单测 + 门控真模型集成」。**P0 LLM 全清**;剩 P1×5 / P2×4 未接。client 基建就位,网关配额(CP-005)仍待。
 
 ---
 
@@ -215,7 +215,7 @@
 
 ### P0 — 生产保真硬缺口 / 最高价值
 1. **生产解析栈接入**:DeepDoc(office/pdf)+ PaddleOCR(扫描件)+ MinerU(兜底)真实现替换 stub;白名单补 xlsx/jpg/png;IR 补 ocr_conf/block_id/table_id/cells_md(markdown)。**入库主干的最大缺口**。
-2. **LLM P0 剩 L-3(L2 业务域)**——L-1 引用外规 / L-2 违规事由+dict_violation_types / L-4 E2 已接真模型(见 §Z)。
+2. **LLM P0 4 触点全落**(L-1 引用外规 / L-2 违规事由+dict_violation_types / L-3 L2 业务域 / L-4 E2 接真模型,见 §Z)——P0 LLM 全清,剩 P1/P2。
 3. **ref_resolver R4 跨文档**(§6.7):R1–R3 + dict_aliases/clause_references 表已落 Phase 0/1;R4 消费 dict_aliases + pending_target 留 T2.4。
 
 ### P1 — 质检纵深 / 评测 / 版本链

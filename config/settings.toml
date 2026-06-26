@@ -26,7 +26,7 @@ retries = 3                     # ⚠ 指数退避次数
 root = "./_objectstore"
 
 [toggles]
-l2_enabled = false              # M1 零 LLM
+l2_enabled = false              # L2 业务域 LLM 打标(§7.1,T2.3);默认关,开时经 env 提供 OPENAI_API_KEY
 e1_enabled = true               # E1 义务预打标默认开(零 LLM 正则)
 e2_enabled = false              # E2 LLM 打标(事项/部门/实体类型);默认关,开时经 env 提供 OPENAI_API_KEY
 case_l2_enabled = false         # 案例 L2(引用外规对齐 + 违规事由分类,§9);默认关,开时经 env 提供 OPENAI_API_KEY
