@@ -4,7 +4,8 @@
 - 三级匹配:文号精确 → 标题精确 →(别名表 dict_aliases 留 §6.7/T2.4,本模块不接)。
 - 条号经 ``normalize.normalize_clause_no`` 归一,与目标 doc 的 chunk ``clause_path_norm`` **末段**
   (= 条号)比对——案例反查精度到条;命中回填完整 path,超界/无 doc/无法归一 → ``resolved=False``。
-- 任一未解析 → 聚合 ``ref_unresolved=True``,进低优人工队列,**不阻塞案例入库**(§9)。
+- 任一未解析 → 聚合 ``ref_unresolved=True`` **标记**,**不阻塞案例入库**(§9);低优人工补录队列的
+  消费待 ``quality_tickets`` 建表(§18.3,deferred)——**本阶段仅置标记,不入队**。
 """
 
 from __future__ import annotations

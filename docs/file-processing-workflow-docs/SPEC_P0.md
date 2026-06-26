@@ -150,7 +150,7 @@ def _enforce(returned, allowed: set[str]) -> list[str]:
 
 ### B1 (L-1) 案例引用外规条款抽取 + 归一对齐 — 最高价值
 - `case_l2.extract_cited(client, case_text, …)`:LLM 抽 `[{法规标题, 文号?, 条号?}]`(prompt 强制只输出 JSON;不臆测)。
-- `case_ref_align.align(cited, pg)`(纯逻辑,无 LLM):三级匹配 文号精确 → 标题精确 → (别名表留 C)→ `clause_path_norm`(复用 `normalize`)→ 命中写 `cases.cited_regulations=[{doc_no, clause_path_norm, …}]`;任一未命中 → `cases.ref_unresolved=true`(低优人工队列,**不阻塞案例入库**)。
+- `case_ref_align.align_cited(cited, lookup)`(纯逻辑,无 LLM;生产 lookup = `case_l2.PgRegLookup`,限 `corpus_type=P-EXT`):三级匹配 文号精确 → 标题精确 → (别名表留 C)→ `clause_path_norm`(复用 `normalize`)→ 命中写 `cases.cited_regulations=[{doc_no, title, clause_path_norm, resolved}]`;任一未命中 → **置 `cases.ref_unresolved=true` 标记**,**不阻塞案例入库**。**契约:本阶段仅置标记**;低优人工补录队列的消费待 `quality_tickets` 建表(§18.3,deferred)——**不入队**。
 - **SC-B1**:`test_case_ref_align`(文号/标题/条号对齐 + 超界→unresolved,纯逻辑无模型)绿;`test_case_l2`(fake-LLM 抽取形态)绿;真模型门控集成测有 key 时验真输出。RTM **S4-12 ❌→✅**。
 
 ### B2 (L-2) 案例违规事由分类 + dict_violation_types v0-draft
