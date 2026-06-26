@@ -30,6 +30,22 @@
   合并前跑一次**,避免每次修复都重复长跑。
 - SDD 产物落 `docs/<模块>-docs/`(SPEC / PLAN / TASKS / devlog / GAP),如 `docs/query-agent-docs/`。
 
+### 并行 worktree 协作(多开会话时 — 始终遵守)
+
+多个 Claude Code 会话并行(如一侧补管线、另一侧做查询)时,**各用独立 git worktree**。worktree 是同一仓库的
+**链接工作树**(非副本:共享 `.git`/分支/对象库,各 checkout 自己分支;主工作树 = `.git` 目录所在那个):
+`git worktree add <path> -b <branch> origin/main`;commit 即入共享 repo,`git push` 从 worktree 正常推 → PR;
+合并后 `git worktree remove <path>` 清理(分支/commit 留在 repo)。
+
+- **隔离工作树**:绝不在他人正用的工作树里 checkout / 切分支(会回退对方未提交码 + 改其依赖的 schema 文件)。
+- **栈是全局单例**:PG/Milvus 一个 compose 项目、所有 worktree 共用同一 DB/Milvus/collection。**模型门集成串行**——
+  跑前确认对方空闲 + `demo down -v && demo up` 取干净栈(SHA 去重 + pymilvus 全局别名 teardown 互扰),绝不并发跑集成。
+  DB 迁移也全局:并行分支可能把 schema 迁过自己 models 版本(add-only 保证兼容)→ **全仓门留合并时在对齐 code+schema 上跑**。
+- **worktree 无 `.venv`**(在主仓根、gitignore):跑测试用 `PYTHONPATH=<worktree>/{libs/common,pipeline,eval,query}`
+  复用主 `.venv`(editable 装在主 checkout,PYTHONPATH 让 import 解析到 worktree 码);或 worktree 内自建 venv。
+- **审查闭环不变**:commit → push → PR → Codex 审 → 修复闭环(同上)。PR 前想本地让 Codex 审 worktree diff,须
+  **先 commit**(未跟踪文件不进 `git diff`,否则 Codex 漏新码),Codex 以 cwd=worktree 审 `origin/main...HEAD`。
+
 ## 项目状态
 
 M1–M3(V1–V8 全过)+ Web 工作台 + audit-ai 升格 Step 0–7,均完成。**阶段 V16(2026-06,PR #4)**:生产 v1.6
