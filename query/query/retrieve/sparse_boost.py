@@ -15,45 +15,28 @@ from pathlib import Path
 
 from pipeline.chunking.normalize import to_halfwidth
 
-# 发文字号:机关代字(≤6,真实代字如「银保监办发」≤5;括号前限长 → 长口语前缀落窗口外)+
-# 〔年〕(全角（）经 to_halfwidth → (),CJK〔〕不变)+ 第?序号 + 号。
-# 注:中文无词边界,regex 难完美切代字 → 窗口限长 + _strip_lead 兜残留;彻底需分词/字典(§15-V0)。
+# 发文字号 = 机关代字 + 〔年〕(全角（）→ () via to_halfwidth,CJK〔〕不变)+ 第?序号 + 号。
+# 机关代字用**字符白名单**(机关简称 + 文种字)界定边界:口语/语法字(看/了/这/依…)不在集合内,
+# 贪婪也不会卷入 span(稳健于停词黑名单,QUERY-SPARSE-DOCNUM-SPAN;罕见代字需字典/分词,§15-V0)。
 _BRA_OPEN = "〔(\\[【"
 _BRA_CLOSE = "〕)\\]】"
+_DAIZI = (
+    "银保监证期基金信财会计审税国中央行人民政公安司法农水文卫"
+    "环资源应急交通住建发改委办部局厅署院教科工商务海关质检统综纪"
+)
 _DOCNUM_RE = re.compile(
-    rf"[一-龥A-Za-z]{{0,6}}[{_BRA_OPEN}][12]\d{{3}}[{_BRA_CLOSE}]\s*第?\s*\d{{1,4}}\s*[号號]"
+    rf"[{_DAIZI}]{{0,8}}[{_BRA_OPEN}][12]\d{{3}}[{_BRA_CLOSE}]\s*第?\s*\d{{1,4}}\s*[号號]"
 )
 # 制度全名:《…》(2–40 字,不嵌套)
 _TITLE_RE = re.compile(r"《[^《》]{2,40}》")
 
-# 窗口内仍可能残留的问句/连接词/指称前缀(机关代字不以这些起头)→ 抽取后从 span 头部迭代裁掉
-# (QUERY-SPARSE-DOCNUM-SPAN:窗口限长已挡长前缀,本表只兜 ≤6 窗口内的短残留)
-_LEAD_STOP = (
-    "请问", "想问", "想了解", "咨询", "查询", "查一下", "问一下", "帮我", "麻烦",
-    "这个", "制度", "规定", "办法", "文件",
-    "根据", "依据", "按照", "依照", "参照", "关于", "有关", "适用",
-    "一下", "请", "问", "查", "据", "见",
-)
-
-
-def _strip_lead(span: str) -> str:
-    """裁掉发文字号 span 头部的问句/连接词前缀(迭代;保留至少机关代字 + 核心)。"""
-    changed = True
-    while changed:
-        changed = False
-        for w in _LEAD_STOP:
-            if span.startswith(w) and len(span) > len(w):
-                span, changed = span[len(w) :], True
-                break
-    return span
-
 
 def detect_doc_numbers(query: str) -> list[str]:
-    """检发文字号 + 制度全名 span(``to_halfwidth`` 归一;发文字号裁问句前缀);去重保序。"""
+    """检发文字号 + 制度全名 span(``to_halfwidth`` 归一;机关代字字符白名单界定边界);去重保序。"""
     norm = to_halfwidth(query)
     out: list[str] = []
     for m in _DOCNUM_RE.finditer(norm):
-        s = _strip_lead(m.group(0).strip())
+        s = m.group(0).strip()
         if s and s not in out:
             out.append(s)
     for m in _TITLE_RE.finditer(norm):
