@@ -58,6 +58,32 @@ class Table(BaseModel):
     cells: list[TableCell]
     header_rows: int = 1
 
+    def expanded_rows(self) -> list[list[str]]:
+        """合并单元格展开:rowspan/colspan 覆盖的格补该格文本;空位补 ""(供切块/markdown)。"""
+        grid: dict[tuple[int, int], str] = {}
+        for c in self.cells:
+            for dr in range(c.rowspan):
+                for dc in range(c.colspan):
+                    grid.setdefault((c.row + dr, c.col + dc), c.text)
+        return [[grid.get((r, col), "") for col in range(self.n_cols)] for r in range(self.n_rows)]
+
+    def markdown_header_and_data(self) -> tuple[list[str], list[str]]:
+        """markdown 行拆 (表头块[含分隔行], 数据行)。切块按行组拆时每组重复表头块——
+
+        与 to_markdown 同源,保证切块表格块输出与 to_markdown 格式一致(首尾管道 + 分隔行)。
+        """
+        rows = ["| " + " | ".join(r) + " |" for r in self.expanded_rows()]
+        if not (self.n_rows and self.n_cols):
+            return rows, []
+        hr = max(1, self.header_rows)
+        sep = "| " + " | ".join("---" for _ in range(self.n_cols)) + " |"
+        return [*rows[:hr], sep], rows[hr:]
+
+    def to_markdown(self) -> str:
+        """渲染 markdown 表(合并单元格展开 + 表头分隔行)。供切块表格块 / 表格摘要消费。"""
+        header, data = self.markdown_header_and_data()
+        return "\n".join([*header, *data])
+
 
 class Block(BaseModel):
     """文档顺序中的一个内容块。表格块文本置空,内容在 ``table``;其余块 ``table`` 为 None。"""
@@ -71,6 +97,7 @@ class Block(BaseModel):
     page: int | None = None  # page_start;对齐回填前/未命中为 None
     page_end: int | None = None  # 跨页块的结束页;不跨页时 None(== page)
     bbox: BBox | None = None  # light 无坐标时 None
+    ocr_conf: float | None = None  # 块级 OCR 置信度(仅 OCR 文档;参与质检指标6,§5.1;非 OCR 为 None)
     style: str | None = None  # 解析器原生样式名(如 docx 段落样式),辅助结构识别
     table: Table | None = None  # type==TABLE 时非空
 

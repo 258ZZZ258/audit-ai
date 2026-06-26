@@ -87,6 +87,21 @@ def test_table_split_repeats_header():
     assert all("层级" in c.text for c in tbl)  # 每块重复表头
 
 
+def test_table_chunk_is_markdown():
+    # T0.2 验收:切块表格块输出 markdown(首尾管道 + 表头分隔行),与 Table.to_markdown 同源
+    txt = next(c.text for c in build_chunks(make_doc(), BIG) if c.is_table)
+    assert "| 层级 | 权限 |" in txt  # 表头行带首尾管道
+    assert "| --- | --- |" in txt  # 表头分隔行
+    assert "| 经理 | 一万以下 |" in txt  # 数据行带首尾管道
+
+
+def test_table_split_repeats_markdown_header():
+    # 按行组拆时每组重复完整 markdown 表头块(含分隔行)
+    tbl = [c for c in build_chunks(make_doc(), SMALL) if c.is_table]
+    assert len(tbl) >= 2
+    assert all("| 层级 | 权限 |" in c.text and "| --- | --- |" in c.text for c in tbl)
+
+
 def test_short_articles_not_merged():
     # 规则3:第一条(短)与第二条 各自独立,不合并
     chunks = build_chunks(make_doc(), BIG)

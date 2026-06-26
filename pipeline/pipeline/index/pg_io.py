@@ -19,10 +19,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from common.pg_models import (
     Case,
     Chunk,
+    DictAlias,
     DictBizDomain,
     DictDepartment,
     DictEntityType,
     DictIssuer,
+    DictViolationType,
     DocVersion,
     PipelineEvent,
     ReviewQueue,
@@ -230,6 +232,16 @@ class PgIO:
         with self.session() as s:
             return list(s.scalars(select(DictBizDomain)))
 
+    def get_violation_types(self) -> list[DictViolationType]:
+        """违规事由分类字典(案例 L2 约束空间,§9)。"""
+        with self.session() as s:
+            return list(s.scalars(select(DictViolationType)))
+
+    def get_aliases(self) -> list[DictAlias]:
+        """制度简称别名表(§6.7 R4 跨文档指代解析)。"""
+        with self.session() as s:
+            return list(s.scalars(select(DictAlias)))
+
     def seed_dicts(self, seeds_dir: str | Path) -> dict[str, int]:
         """从 CSV 导入字典表(merge 即 upsert,可重复执行)。返回 {表名: 行数}。
 
@@ -241,6 +253,8 @@ class PgIO:
         domains = _read_csv(seeds_dir / "dict_biz_domains.csv")
         entity_types = _read_csv(seeds_dir / "dict_entity_types.csv")
         departments = _read_csv(seeds_dir / "dict_departments.csv")
+        violation_types = _read_csv(seeds_dir / "dict_violation_types.csv")
+        aliases = _read_csv(seeds_dir / "dict_aliases.csv")
         with self.session() as s:
             for r in issuers:
                 s.merge(
@@ -266,11 +280,28 @@ class PgIO:
                         code=r["code"], name=r["name"], dict_version=r.get("dict_version") or None
                     )
                 )
+            for r in violation_types:
+                s.merge(
+                    DictViolationType(
+                        code=r["code"], name=r["name"], dict_version=r.get("dict_version") or None
+                    )
+                )
+            for r in aliases:
+                s.merge(
+                    DictAlias(
+                        alias=r["alias"],
+                        canonical_doc_number=r.get("canonical_doc_number") or None,
+                        canonical_title=r.get("canonical_title") or None,
+                        dict_version=r.get("dict_version") or None,
+                    )
+                )
         return {
             "issuers": len(issuers),
             "biz_domains": len(domains),
             "entity_types": len(entity_types),
             "departments": len(departments),
+            "violation_types": len(violation_types),
+            "aliases": len(aliases),
         }
 
 

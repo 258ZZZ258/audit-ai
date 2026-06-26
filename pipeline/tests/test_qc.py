@@ -10,7 +10,7 @@ from pipeline.config import QcThresholds, load_config
 from pipeline.index.object_store import ObjectStore
 from pipeline.index.pg_io import PgIO
 from pipeline.qc.gate import evaluate
-from pipeline.qc.indicators import _ge, _le
+from pipeline.qc.indicators import _ge, _le, text_quality
 from pipeline.stage_base import StageContext
 from pipeline.stages import s2_qc as s2
 from pipeline.states import PipelineState as PS
@@ -59,6 +59,34 @@ def test_clause_gap_fails_on_indicator_2():
     assert 2 in {i.index for i in r.failures()}
     ind2 = next(i for i in r.indicators if i.index == 2)
     assert 8 in ind2.evidence["missing"]
+
+
+# ── 指标6 OCR 置信度(T0.2):OCR 文档块均值 < 阈值 → 不通过;非 OCR 跳过 ──────────
+def _ir_ocr(confs, dvid="DVOCR") -> IRDocument:
+    blocks = [
+        Block(index=i, type=BlockType.PARAGRAPH, text="正文无乱码", page=1, ocr_conf=c)
+        for i, c in enumerate(confs)
+    ]
+    return IRDocument(
+        doc_version_id=dvid, source_format=SourceFormat.PDF, blocks=blocks, page_count=1
+    )
+
+
+def test_text_quality_low_ocr_conf_fails():
+    qc = load_config().qc
+    r = text_quality(_ir_ocr([0.80, 0.82]), qc)  # 均值 0.81 < 0.85
+    assert not r.passed
+    assert r.evidence["ocr_conf_mean"] < qc.ocr_conf_min
+
+
+def test_text_quality_high_ocr_conf_passes():
+    r = text_quality(_ir_ocr([0.95, 0.97]), load_config().qc)
+    assert r.passed
+
+
+def test_text_quality_no_ocr_conf_skips_check():
+    r = text_quality(_ir([("第一条 内容充实完整无乱码", 1)]), load_config().qc)
+    assert r.passed and "ocr_conf_mean" not in r.evidence
 
 
 def test_page_null_fails_on_indicator_4():
