@@ -72,7 +72,7 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | §9.1 模型网关 / 模型矩阵(CP-005) | 🟡 | LLM 接缝✅(stub 默认 / gateway 可选);Qwen3.5 主答 / Kimi 复核 / bge endpoint 未真接;MCP/SKILL❌ |
-| §9.2 多模型复核(Kimi faithfulness) | 🟡 | R5 `review_tentative` 接口+toggle(`judge_multimodel_review` 默认关);真 Kimi faithfulness 复核留后续(RL-1 真-LLM 闭环) |
+| §9.2 多模型复核(Kimi faithfulness) | 🟡 | R5 `review_tentative` 接口+toggle + **独立 `review_model`(Kimi)接线**(与主答 Qwen 分离,默认关零网络 + fail-closed;`test_r5_review`/`test_llm_stub`/`test_query_config`✅);真 Kimi faithfulness 闭环 `test_r5_review_integration` 门控就位,**待真 gateway+key 跑绿翻 ✅**(RL-1 真-LLM 闭环) |
 | §9.3 敏感词过滤 | ❌ | 未做 |
 | §9.3 AI 内容标识 | 🟡 | `contract.ai_label`✅;导出页脚❌ |
 | §9.3 权限 Casbin + 操作日志 | ❌ | 未做(perm_tag 仅写入不过滤) |
@@ -115,7 +115,7 @@
 
 ### P0 — 红线 / 验收口径
 1. ~~**R5 判定型**(构成要件框定 + 三段式 + 多模型复核接口)~~ ✅(SPEC/PLAN/TASKS-R5;§15-④ demo workaround 待甲方确认产品形态)
-2. **§9.2 真多模型复核**(Kimi faithfulness 真接)— 真 LLM 下"无裸结论"代码级保障(接口已就位,RL-1 真-LLM 闭环)
+2. **§9.2 真多模型复核**(Kimi faithfulness 真接)— 真 LLM 下"无裸结论"代码级保障。**接线已实装**(SPEC/PLAN/TASKS-REVIEW:独立 `review_model` 与主答分离 + 默认关零网络 + fail-closed;单测✅、门控集成测就位)→ **剩:真 gateway+key 跑绿门控集成测**,RL-1 真-LLM 闭环翻 ✅
 3. **§9.3 权限 Casbin + 操作日志** — 权限/安全验收
 
 ### P1 — 核心功能路由

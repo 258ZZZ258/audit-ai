@@ -36,7 +36,10 @@ class QueryConfig(BaseModel):
     llm_backend: Literal["stub", "gateway"] = "stub"   # QUERY_LLM_BACKEND 覆盖
     rerank_backend: Literal["none", "bge"] = "none"    # QUERY_RERANK_BACKEND 覆盖
     rerank_model: str = "BAAI/bge-reranker-v2-m3"  # ⚠ §5.5 bge 模型名/路径;QUERY_RERANK_MODEL 覆盖
-    llm_model: str = "gpt-5.4-nano"  # ⚠ gateway 时模型名;env OPENAI_MODEL 可覆盖
+    llm_model: str = "gpt-5.4-nano"  # ⚠ gateway 时主答模型名;env OPENAI_MODEL 可覆盖
+    # ⚠ §9.2 忠实性复核模型(Kimi),与主答 llm_model 分离(§9.1);默认 kimi-2.5 为意图占位,
+    # 真名待甲方网关注册表;env QUERY_REVIEW_MODEL(query 专属)/ OPENAI_REVIEW_MODEL 覆盖。
+    review_model: str = "kimi-2.5"
     # §5.4 sparse 精确通道(默认关 → byte 等价;系数 ⚠ V0 标定)
     docnum_boost: bool = False  # ⚠ §5.4 发文字号/全名 sparse 提权;QUERY_DOCNUM_BOOST 覆盖
     docnum_boost_factor: float = 2.0  # ⚠ V0 发文字号 token 提权系数
@@ -56,6 +59,11 @@ def _apply_env(raw: dict) -> None:
         raw["rerank_model"] = env["QUERY_RERANK_MODEL"]
     if "OPENAI_MODEL" in env:
         raw["llm_model"] = env["OPENAI_MODEL"]
+    # 复核模型:OPENAI_REVIEW_MODEL(通用)先,QUERY_REVIEW_MODEL(query 专属)后 → 后者优先。
+    if "OPENAI_REVIEW_MODEL" in env:
+        raw["review_model"] = env["OPENAI_REVIEW_MODEL"]
+    if "QUERY_REVIEW_MODEL" in env:
+        raw["review_model"] = env["QUERY_REVIEW_MODEL"]
     if "QUERY_DOCNUM_BOOST" in env:
         raw["docnum_boost"] = env["QUERY_DOCNUM_BOOST"]
     if "QUERY_SCENARIO_EXPAND" in env:

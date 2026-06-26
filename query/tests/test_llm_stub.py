@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from query.config import QueryConfig
@@ -38,3 +40,34 @@ def test_unknown_backend_raises():
     cfg.llm_backend = "bogus"  # 绕过构造校验(validate_assignment 默认关)测工厂防御分支
     with pytest.raises(ValueError, match="QUERY_LLM_BACKEND"):
         make_llm_client(cfg)
+
+
+# ── §9.2:make_llm_client model 覆盖(add-only)—— gateway 传 model;默认 = llm_model ──────
+def test_gateway_passes_explicit_review_model(monkeypatch):
+    # 复核客户端传 review_model → gateway 用之建客户端(主答/复核模型分离,§9.1)。
+    captured = {}
+    monkeypatch.setattr(
+        "pipeline.llm_client.make_llm_client",
+        lambda model: captured.setdefault("model", model) or SimpleNamespace(),
+    )
+    cfg = QueryConfig(llm_backend="gateway", llm_model="qwen-main", review_model="kimi-review")
+    make_llm_client(cfg, model=cfg.review_model)
+    assert captured["model"] == "kimi-review"  # 收到 review_model,非主答 llm_model
+
+
+def test_gateway_default_model_is_llm_model(monkeypatch):
+    # 无 model 调用 = cfg.llm_model(向后兼容:既有 graph/调用零变化)。
+    captured = {}
+    monkeypatch.setattr(
+        "pipeline.llm_client.make_llm_client",
+        lambda model: captured.setdefault("model", model) or SimpleNamespace(),
+    )
+    cfg = QueryConfig(llm_backend="gateway", llm_model="qwen-main", review_model="kimi-review")
+    make_llm_client(cfg)
+    assert captured["model"] == "qwen-main"  # 默认走主答 llm_model
+
+
+def test_stub_ignores_model():
+    # stub 分支忽略 model(零网络,确定性);model 不影响返回 stub 实例。
+    c = make_llm_client(QueryConfig(llm_backend="stub"), model="kimi-review")
+    assert isinstance(c, StubLLMClient)
