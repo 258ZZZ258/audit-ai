@@ -185,11 +185,11 @@
 - **P1 检索**:~~§5.4 sparse 提权+扩展~~ ✅ 机制+单元+集成绿(SPEC/PLAN/TASKS-SPARSE)。(~~R6/R4/R5~~ ✅ 八路全实装 · ~~§5.5 重排~~ ✅ 接缝+本地 bge)
 - **P2 查询理解前端**:N0 · N1 HyDE · N3 分解。
 - **P3 横切/工程**:§7.2 流式 · §11 导出 · §9.3 敏感词/Langfuse/SSO/AI 页脚 · §12 容量 · §13 V0 评估(RAGAS/断层率/评估集)。
-- **依赖资产**:~~§2-entity/biz/chunktype 检索过滤(扩 milvus_io.search,GAP #12)~~ ✅(R4 `extra_expr`;E2 真打标+词典加载待补)· §2-clauseref resolver · §2-scenario/introutes 字典建表 · §2-tagsE1 期限/E2 富集过滤。
+- **依赖资产**:~~§2-entity/biz/chunktype 检索过滤(扩 milvus_io.search,GAP #12)~~ ✅(R4 `extra_expr`;E2 真打标+词典加载待补)· §2-clauseref resolver · §2-scenario/introutes 字典建表 · §2-tagsE1 期限/E2 富集过滤 · **`dict_issuer_codes`(机关代字字典,§15-V0)**:§5.4 机关代字边界现用字符白名单(永不退化为裸〔年〕号;残留=简称冷僻字截短,良性),彻底覆盖待字典/分词(见 GAP #13)。
 
 ## §15 待确认图例(阻塞标记)
 
-① 网关轻量小模型(HyDE/路由/分类/分解/维度抽取) · ② embedding sparse 双输出 endpoint+版本钉死 · ③ E2 外规覆盖范围(R4 穷举边界) · ④ R5 不裸答产品形态(demo workaround 已落:三段式+人工复核必需+代码后检;**待甲方确认验收口径**) · ⑤ cases"引用外规条款"结构化字段(桥接/SQL 前提) · ⑥ 字典评审/维护(scenario_terms/entity_types/违规类别——覆盖拒答可靠性) · ⑦ 网关并发配额/限流(QPS/HyDE-on) · ⑧ MCP/SKILL 接入规范。
+① 网关轻量小模型(HyDE/路由/分类/分解/维度抽取) · ② embedding sparse 双输出 endpoint+版本钉死 · ③ E2 外规覆盖范围(R4 穷举边界) · ④ R5 不裸答产品形态(demo workaround 已落:三段式+人工复核必需+代码后检;**待甲方确认验收口径**) · ⑤ cases"引用外规条款"结构化字段(桥接/SQL 前提) · ⑥ 字典评审/维护(scenario_terms/entity_types/违规类别/**机关代字 `dict_issuer_codes`(§5.4)**——覆盖拒答 + 文号边界) · ⑦ 网关并发配额/限流(QPS/HyDE-on) · ⑧ MCP/SKILL 接入规范。
 
 > 多数 §15 项是**生产确认待办**,demo 已用 workaround 交付(本地 BGE-M3=② · consumed-when-present=⑤ · 规则分类=① · 务实判据=⑥)。真正 demo 阶段未触的大块:R5 产品形态(④)、网关/Langfuse/Casbin/SSO 横切、V0 评估。
 

@@ -134,6 +134,7 @@
 10. `clause_references` resolver(R1/R2 多跳;表已建,数据/逻辑待补,见 `libs/common/common/pg_models.py` TODO)
 11. `dict_scenario_terms` / `dict_intent_routes` 建表 + 灌种子(18 问 + 应用场景 + 真实日志);**`dict_biz_domains`/`dict_entity_types` 接 PG 加载注入 classify/R4**(现未接 → R4 biz/entity 过滤默认不命中)
 12. ~~entity_type / biz_domain 检索前置过滤 → 扩 `pipeline.index.milvus_io.search` 接受附加 expr~~ ✅(R4 `extra_expr` add-only;E2 真打标 + 词典加载待补)
+13. **`dict_issuer_codes`(机关代字字典)—— §15-V0**:§5.4 发文字号提权用**字符白名单**界定机关代字边界(口语前缀不卷入 + 文种字全覆盖故永不退化为裸〔年〕号);残留:机关**简称**冷僻用字会被截短(良性,仍含文种+核心)。彻底覆盖需机关代字字典/分词,列 §15-V0(系数标定同期)。见 `query/query/retrieve/sparse_boost.py` `_DAIZI`。
 
 ---
 

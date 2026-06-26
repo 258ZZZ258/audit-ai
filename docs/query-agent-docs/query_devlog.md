@@ -292,7 +292,8 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     manifest 冲突 → 卡 META_REVIEW(非 INDEXED,B 模式不放行)。修:正文用**冒号边界**(`文号:银保监发〔2021〕5号`)
     使文号正则前缀只吃「银保监发」、干净抽出 = manifest `doc_number`(`_norm_dn` 一致)→ 无冲突 → 自动放行。
 - **未做(SPEC-SPARSE §0)**:`WeightedRanker` 通道重权 / 检索后提分(决策弃);dense 改写/HyDE(N1);`dict_scenario_terms`
-  建 PG 表 + 灌库(GAP #11,§15⑥);提权应用 R4/R2/R3/R6;系数 V0 标定;`dict_intent_routes`/N2 重构。
+  建 PG 表 + 灌库(GAP #11,§15⑥);提权应用 R4/R2/R3/R6;系数 V0 标定;`dict_intent_routes`/N2 重构;
+  **`dict_issuer_codes`(机关代字字典)彻底解决机关简称长尾截短(GAP #13 / §15-V0)**。
 - **Codex 复审修复(2 warning,均实缺陷)**:
   - **`QUERY-SPARSE-DOCNUM-SPAN`/`-WHITELIST`(4 轮)**:regex 前缀无左边界 → 口语前缀(请问/这个制度依据/麻烦查一下/
     看看/了解/详见/按…)被卷入提权。1 轮 `_strip_lead` 停词表、2 轮窗口 `{0,12}→{0,6}` 均被指出"黑名单/固定窗口无法
