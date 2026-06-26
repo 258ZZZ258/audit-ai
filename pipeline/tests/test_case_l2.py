@@ -145,7 +145,7 @@ def test_l2_fields_wires_cited_align_and_violation():
     )
     out = case_l2.l2_fields("案情", client=client, lookup=lookup, allowed_violations=allowed)
     assert out["cited_regulations"] == [
-        {"doc_number": "〔2020〕5号", "title": "条例", "clause_path_norm": "2/15", "resolved": True}
+        {"doc_no": "〔2020〕5号", "title": "条例", "clause_path_norm": "2/15", "resolved": True}
     ]
     assert out["ref_unresolved"] is False
     assert out["violation_category"] == "信息披露违规"
@@ -184,7 +184,7 @@ def test_apply_merges_l2_into_fields(monkeypatch):
         "l2_fields",
         lambda *a, **k: {
             "cited_regulations": [
-                {"doc_number": "X", "title": None, "clause_path_norm": "3", "resolved": True}
+                {"doc_no": "X", "title": None, "clause_path_norm": "3", "resolved": True}
             ],
             "ref_unresolved": False,
             "violation_category": "信息披露违规",
@@ -296,7 +296,7 @@ def test_apply_real_pg_fake_llm_resolves_and_classifies(pg_ctx):
     # 真 PgRegLookup 按文号命中 + 条号归一对齐到 clause_path_norm
     assert fields["cited_regulations"] == [
         {
-            "doc_number": doc_no,
+            "doc_no": doc_no,
             "title": "测试外规办法",
             "clause_path_norm": "2/15",
             "resolved": True,
@@ -306,6 +306,64 @@ def test_apply_real_pg_fake_llm_resolves_and_classifies(pg_ctx):
     # 违规事由来自真字典 + dict_version 取自真 seed
     assert fields["violation_category"] == target
     assert fields["violation_category_dict_version"] == vts[target]
+
+
+def test_reglookup_scopes_to_p_ext_only(pg_ctx):
+    """同文号下 P-INT 不污染:`PgRegLookup` 只取 P-EXT 外规(防同号内规被当外规条款落库)。
+
+    Codex CASE-L2-REGLOOKUP-CORPUS-SCOPE 回归:播同文号 + 同标题的 P-INT 与 P-EXT 各一篇,
+    断言 lookup 命中 P-EXT 且拿到的是 P-EXT 的条款,而非 P-INT 的。
+    """
+    from sqlalchemy import delete
+    from ulid import ULID
+
+    from common.pg_models import Chunk, Document, DocVersion, ImportBatch
+
+    _cfg, pg, _ctx = pg_ctx
+    doc_no, title = "〔2099〕同号测试号", "同号办法"
+    bid = "cl2scope_" + str(ULID())
+    lid_int, dv_int = str(ULID()), str(ULID())
+    lid_ext, dv_ext = str(ULID()), str(ULID())
+    with pg.session() as s:
+        s.add(ImportBatch(batch_id=bid, source_dir="x"))
+        s.add(Document(logical_id=lid_int, corpus_type="P-INT"))
+        s.add(Document(logical_id=lid_ext, corpus_type="P-EXT"))
+        s.flush()
+        for lid, dvid in [(lid_int, dv_int), (lid_ext, dv_ext)]:
+            s.add(
+                DocVersion(
+                    doc_version_id=dvid, logical_id=lid, batch_id=bid, source_format="docx",
+                    source_hash="h" + dvid[:8], raw_object_key="k", pipeline_status="INDEXED",
+                    version_status="effective", doc_number=doc_no, title=title,
+                )
+            )
+        s.flush()
+        # P-INT 条款=3、P-EXT 条款=15:若误取 P-INT,clause_norms 会是 {"3"}
+        s.add(
+            Chunk(
+                chunk_id=("scin" + dv_int)[:24], doc_version_id=dv_int, text="第三条",
+                clause_path="3", clause_path_norm="3", seq=0, page_start=1,
+                is_parent=False, is_table=False, chunk_status="effective",
+            )
+        )
+        s.add(
+            Chunk(
+                chunk_id=("scex" + dv_ext)[:24], doc_version_id=dv_ext, text="第十五条",
+                clause_path="15", clause_path_norm="15", seq=0, page_start=1,
+                is_parent=False, is_table=False, chunk_status="effective",
+            )
+        )
+    try:
+        reg = case_l2.PgRegLookup(pg).find(doc_no, title)
+        assert reg is not None
+        assert reg.doc_version_id == dv_ext  # 取 P-EXT 外规,非同号 P-INT
+        assert reg.clause_norms == frozenset({"15"})  # P-EXT 的条款,非 P-INT 的 "3"
+    finally:
+        with pg.session() as s:
+            s.execute(delete(Chunk).where(Chunk.doc_version_id.in_([dv_int, dv_ext])))
+            s.execute(delete(DocVersion).where(DocVersion.doc_version_id.in_([dv_int, dv_ext])))
+            s.execute(delete(Document).where(Document.logical_id.in_([lid_int, lid_ext])))
+            s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid))
 
 
 def test_case_l2_real_model_chain_and_dict_constraint(pg_ctx):
@@ -332,6 +390,6 @@ def test_case_l2_real_model_chain_and_dict_constraint(pg_ctx):
     # cited_regulations 形态正确;每条 resolved 项确有 clause_path_norm
     assert isinstance(fields["cited_regulations"], list)
     for r in fields["cited_regulations"]:
-        assert set(r) == {"doc_number", "title", "clause_path_norm", "resolved"}
+        assert set(r) == {"doc_no", "title", "clause_path_norm", "resolved"}
         if r["resolved"]:
             assert r["clause_path_norm"]

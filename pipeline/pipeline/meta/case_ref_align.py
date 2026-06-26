@@ -48,7 +48,9 @@ def align_cited(cited: list[dict], lookup: RegLookup) -> tuple[list[dict], bool]
     """对齐引用列表;返回 (对齐结果[], ref_unresolved)。
 
     cited 项:``{title?, doc_number?, clause?}``(clause = 条号原文,可含「第…条/款」)。
-    结果项:``{doc_number, title, clause_path_norm, resolved}``。
+    结果项:``{doc_no, title, clause_path_norm, resolved}``——键名 ``doc_no``(非 DB 列名
+    ``doc_number``)对齐 query 反查消费者契约(``query/case/bridge.py`` /
+    ``query/judge/r5_judgment.py`` 读 ``doc_no`` + ``clause_path_norm`` 建反查 / 解析 chunk_id)。
     """
     out: list[dict] = []
     unresolved = False
@@ -83,8 +85,9 @@ def align_cited(cited: list[dict], lookup: RegLookup) -> tuple[list[dict], bool]
 
 
 def _row(doc_number: str | None, title: str | None, cpn: str | None, resolved: bool) -> dict:
+    # 键名 doc_no:对齐 query 反查消费者契约(bridge / r5_judgment 读 doc_no + clause_path_norm)。
     return {
-        "doc_number": doc_number,
+        "doc_no": doc_number,
         "title": title,
         "clause_path_norm": cpn,
         "resolved": resolved,

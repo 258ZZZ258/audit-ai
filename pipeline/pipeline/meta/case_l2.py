@@ -3,8 +3,10 @@
 两类 L2 字段(L1 占位 → LLM 抽取):
 - **引用外规条款(T2.1,全管线最高价值)**:LLM 抽决定书"依据《X》第N条"援引的外规 →
   ``case_ref_align.align_cited`` 三级匹配(文号/标题/〔别名留 T2.4〕)归一到 ``clause_path_norm`` →
-  写 ``cases.cited_regulations``(JSONB);任一未命中 → ``ref_unresolved=True``(进低优队列,
-  **不阻塞案例入库**,§9)。
+  写 ``cases.cited_regulations``(JSONB,单条 ``{doc_no, title, clause_path_norm, resolved}``,
+  键名对齐 query 反查契约);任一未命中 → **置 ``cases.ref_unresolved=True`` 标记**,
+  **不阻塞案例入库**(§9)。低优人工补录队列的消费待 quality_tickets 建表(§18.3,deferred)——
+  **本阶段仅置标记,不入队**。
 - **违规事由分类(T2.2)**:LLM 在 ``dict_violation_types`` 约束空间内选单一最贴切项 →
   **服务端二次裁剪**(LLM 越界值丢弃)→ ``cases.violation_category`` + 记 ``dict_version``;
   字典空 / 未命中 → None(consumed-when-present)。
@@ -22,7 +24,7 @@ import logging
 
 from sqlalchemy import select
 
-from common.pg_models import Chunk, DocVersion
+from common.pg_models import Chunk, Document, DocVersion
 from pipeline.llm_client import make_llm_client
 from pipeline.meta.case_ref_align import RegDoc, RegLookup, align_cited
 
@@ -123,30 +125,35 @@ def classify_violation(
 
 
 class PgRegLookup:
-    """生产外规查询(``case_ref_align.RegLookup`` 实现):PG 按文号 / 标题命中 effective 外规,
-    聚合其全部 chunk 的 ``clause_path_norm`` 供超界校验。
+    """生产外规查询(``case_ref_align.RegLookup`` 实现):PG 按文号 / 标题命中 effective **外规
+    (P-EXT)**,聚合其全部 chunk 的 ``clause_path_norm`` 供超界校验。
+
+    **corpus 限定 P-EXT**:案例引用的是外规(§9「引用外规条款」)。若不限语料,同文号 / 同标题的
+    内规(P-INT)或案例(P-CASE)会被误取,把其 chunk 当外规条款落进 ``cited_regulations``,污染
+    query 案例反查 → 故 join ``Document`` 钉死 ``corpus_type="P-EXT"``。
     """
 
     def __init__(self, db) -> None:
         self._db = db
 
+    @staticmethod
+    def _find_ext(s, predicate) -> DocVersion | None:
+        """按 predicate 命中 effective 的 **P-EXT** doc_version(非外规即便文号/标题撞也不取)。"""
+        return s.scalars(
+            select(DocVersion)
+            .join(Document, DocVersion.logical_id == Document.logical_id)
+            .where(
+                predicate,
+                DocVersion.version_status == "effective",
+                Document.corpus_type == "P-EXT",
+            )
+        ).first()
+
     def find(self, doc_number: str | None, title: str | None) -> RegDoc | None:
         with self._db.session() as s:
-            dv = None
-            if doc_number:
-                dv = s.scalars(
-                    select(DocVersion).where(
-                        DocVersion.doc_number == doc_number,
-                        DocVersion.version_status == "effective",
-                    )
-                ).first()
-            if dv is None and title:  # 文号未命中 → 标题精确兜底
-                dv = s.scalars(
-                    select(DocVersion).where(
-                        DocVersion.title == title,
-                        DocVersion.version_status == "effective",
-                    )
-                ).first()
+            dv = self._find_ext(s, DocVersion.doc_number == doc_number) if doc_number else None
+            if dv is None and title:  # 文号未命中 → 标题精确兜底(仍限 P-EXT)
+                dv = self._find_ext(s, DocVersion.title == title)
             if dv is None:
                 return None
             norms = frozenset(
