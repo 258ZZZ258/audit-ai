@@ -27,7 +27,7 @@
 
 | 路由 | 状态 | 说明 |
 |---|---|---|
-| R1 依据查询(§6.1) | 🟡 大部分 | 混合检索✅ 充分性自检✅(务实) 引用约束生成✅ 四级锚点✅ **案例附挂✅**(R3,可关);缺:sparse 发文字号提权❌、entity_type 强过滤❌ |
+| R1 依据查询(§6.1) | 🟡 大部分 | 混合检索✅ 充分性自检✅(务实) 引用约束生成✅ 四级锚点✅ **案例附挂✅**(R3,可关)**sparse 发文字号提权✅**(§5.4);缺:entity_type 强过滤❌ |
 | R2 变更查询(§6.2) | ✅ 实装 | 版本链回查 + 条款级 diff + 修订原因回查(缺失明示、不推测)+ §6.2 四栏;背景栏/多跳/字句级 diff 留后续(见 SPEC-R2 §0) |
 | R3 相似案例 + 案例桥接(§6.3) | ✅ 实装 | case 分区检索✅ + 要素回填卡片✅(一案一卡)+ 附挂到 R1✅(语义∪精确反查)+ 精确反查桥接原语✅(`cited_regulations` **consumed-when-present**,默认空降级语义-only);桥接-as-入口(behavior→R5)留后续(R5 占位)、L2 `cited_regulations` 生产/`case_summary` 强过滤留后续 |
 | R4 多文档列举(§6.4) | ✅ 实装 | 枚举模式高 k(`retrieve_enumerate` 50/50,不激进截断)+ **Milvus 标量预过滤**(`chunk_type=clause` 硬偏好 + `biz_domain`/`entity_type`,扩 `milvus_io.search` 加 `extra_expr` add-only,防注入白名单)+ **E1 义务 PG 后过滤**(`clause_tags.is_obligation`,consumed-when-present 空降级)+ 按 doc 聚合 TABLE + 四级 citations + 不保证穷举外规边界声明;`entity_type`(E2 默认关)/biz 词典未接 PG 加载 → consumed-when-present;sparse 提权/重排留后续 |
@@ -45,7 +45,7 @@
 | §5.1 混合检索 dense+sparse+RRF | ✅ | 复用 `milvus_io` |
 | §5.2 分区并行配额(内规∥外规 top25) | ✅ | `retrieve/hybrid` 双分区合并 |
 | §5.3 强制过滤位 | 🟡 | status✅前置、perm_tag🟡(写入不过滤=设计意图);entity_type/biz_domain **机制已落**(R4 `extra_expr` 经 `milvus_io.search`,consumed-when-present)、E2 默认关+词典未接 PG 加载故默认不命中 |
-| §5.4 sparse 精确通道(发文字号提权 + 词典扩展) | ❌ | 用默认 RRF,无差异化权重 / 无 `dict_scenario_terms` 扩展 |
+| §5.4 sparse 精确通道(发文字号提权 + 词典扩展) | ✅ | **实装 + 单元 + 集成绿**(SPEC/PLAN/TASKS-SPARSE):查询层 `augment_sparse` —— 发文字号/全名 regex 检出 → 重 embed → token 加权并入 query sparse(保持 `RRFRanker`、零 pipeline 改动);`dict_scenario_terms`(v0-draft seed,consumed-when-present)口语→法言扩展;仅主 `retrieve`(R1/R5)、只动 sparse;`docnum_boost`/`scenario_expand` 默认关 byte 等价。**集成 `test_sparse_boost_integration` 3 passed**(干净栈+真 BGE-M3);系数 ⚠ §15 V0 标定;dict 内容 §15⑥ |
 | §5.5 重排 bge-reranker top50→top8 | ✅ | 接缝实装(`rerank/reranker`:none passthrough 默认 / bge 本地 `FlagReranker`)+ Milvus rerank-hop(`search` `with_text`)+ 仅主 retrieve(R1/R5);`rerank=none` 默认 byte 等价;真 reranker 模型需 `QUERY_RERANK_MODEL`(缺则 skip,绝不联网)|
 | §5.6 父子块供证 | ✅ | `fetch_parent_text` |
 | §5.7 充分性自检 | 🟡 | 务实版,接口按 §8.1 保真 |
@@ -98,7 +98,7 @@
 | `cases` | ✅ | **R3 已消费**(要素回填卡片 + `cited_regulations` 精确反查)+ **R6 参数化 SQL 聚合/列表**;`violation_category`(L2)consumed-when-present |
 | `clause_references` | ❌ | 空表(无 resolver),R1/R2 多跳未用 |
 | `clause_tags` E1/E2 | 🟡 | **R4 已消费 E1 `is_obligation`**(义务后过滤,`fetch_obligation_chunk_ids`);期限(`norm_duration_days`)/E2 事项过滤未做 |
-| `dict_*` | 🟡 | entity_types/biz_domains/departments 存在;scenario_terms / intent_routes 未建 |
+| `dict_*` | 🟡 | entity_types/biz_domains/departments 存在;**`dict_scenario_terms` v0-draft seed**(§5.4 查询层读 CSV;PG 表/灌库未建 → GAP #11,§15⑥)/ intent_routes 未建 |
 
 ## 9. §1.3 四个关键取舍落地
 
@@ -120,7 +120,7 @@
 
 ### P1 — 核心功能路由
 4. ~~R2 变更查询~~ ✅ / ~~R3 相似案例+案例桥接~~ ✅ / ~~R6 统计型~~ ✅ / ~~R4 多文档列举~~ ✅(SPEC/PLAN/TASKS-R4)/ **R5 判定型(仅此一路仍占位)**
-5. ~~§5.5 重排(bge-reranker)~~ ✅(SPEC/PLAN/TASKS-RERANK;接缝+本地 bge+none 默认等价)/ §5.4 sparse 精确通道提权
+5. ~~§5.5 重排(bge-reranker)~~ ✅(SPEC/PLAN/TASKS-RERANK;接缝+本地 bge+none 默认等价)/ ~~§5.4 sparse 精确通道(提权+扩展)~~ ✅ 机制+单元+集成绿(SPEC/PLAN/TASKS-SPARSE)
 
 ### P2 — 查询理解前端
 6. N0 多轮归并 / N1 HyDE(默认 on/off 待 V0 A/B)/ N3 问题分解

@@ -29,3 +29,25 @@ def test_rerank_model_default_and_env(tmp_path, monkeypatch):
     assert load_query_config(tmp_path).rerank_model == "BAAI/bge-reranker-v2-m3"  # §5.5 默认
     monkeypatch.setenv("QUERY_RERANK_MODEL", "/local/bge-reranker")
     assert load_query_config(tmp_path).rerank_model == "/local/bge-reranker"
+
+
+def test_sparse_boost_defaults(tmp_path):
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    cfg = load_query_config(tmp_path)
+    assert cfg.docnum_boost is False  # §5.4 默认关 → byte 等价
+    assert cfg.scenario_expand is False
+    assert cfg.docnum_boost_factor == 2.0  # ⚠ V0 占位
+    assert cfg.scenario_expand_factor == 1.0
+    assert "seeds" in cfg.scenario_terms_path  # 默认锚 repo 根 seeds/
+    assert cfg.scenario_terms_path.endswith("dict_scenario_terms.csv")
+
+
+def test_sparse_boost_env_override(tmp_path, monkeypatch):
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    monkeypatch.setenv("QUERY_DOCNUM_BOOST", "1")
+    monkeypatch.setenv("QUERY_SCENARIO_EXPAND", "1")
+    monkeypatch.setenv("QUERY_SCENARIO_TERMS_PATH", "/tmp/x.csv")
+    cfg = load_query_config(tmp_path)
+    assert cfg.docnum_boost is True  # "1" → bool 强转
+    assert cfg.scenario_expand is True
+    assert cfg.scenario_terms_path == "/tmp/x.csv"

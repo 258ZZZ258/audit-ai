@@ -252,3 +252,42 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     修:tokenizer/model 两处 `from_pretrained` 均加 **`local_files_only=True`**(本地缺失→抛,fail closed,同"加载失败
     不退化 none")+ `test_bge_load_forces_local_files_only`(monkeypatch 断言参数传入);实测**去掉 `HF_HUB_OFFLINE` env
     后真模型仍从本地 modelscope 路径加载、集成绿**(代码级离线 enforced)。
+
+---
+
+## §5.4 sparse 精确通道(发文字号提权 + 词典扩展)—— 八路后第二个横切检索增强(2026-06-26,SPEC/PLAN/TASKS-SPARSE)
+
+> worktree `feat/query-docnum-boost`(与另一 Claude Code 的 P0 隔离;同一 `.git` 双工作树)。**全绿**:
+> `test_sparse_boost` 17 + `test_query_config` +2;**集成 `test_sparse_boost_integration` 3 passed**(干净栈 + 真 BGE-M3);
+> **全 query 模型门 223 passed / 2 skipped 无回归**(R1–R8/rerank/sparse 整路集成 + `test_pg_io` 新种子 inert)。
+
+- **已决(AskUserQuestion)**:① 范围 = 发文字号提权 **+** 词典扩展(新建 `seeds/dict_scenario_terms.csv` v0-draft);
+  ② 机制 = **查询层 sparse token 提权**(保持 `RRFRanker`、零 pipeline 改动);③ 应用 = **主 retrieve(R1/R5)**。
+- **关键设计 / 取舍**:
+  - **RRF 基于秩、无法表达通道权重** → 字面"sparse 权重提升"不能靠重权 RRF。**弃 `WeightedRanker`**(Milvus 2.4 为
+    原始加权和,COSINE/IP 量级失配易被 sparse 主导);改**选择性 token 提权**:检出发文字号/全名 span → 重 embed →
+    其 lexical 权重按系数**并入 query sparse** → 含该 token 的 chunk sparse 名次升 → RRF 浮顶。等效达意且更稳。
+  - **uniform 缩放对 RRF 无效**(秩不变)→ 必须**选择性**(只动命中 span/法言词的 token)。
+  - **两机制统一为一个查询层 sparse 增强**(`augment_sparse`):提权=放大发文字号 token;扩展=注入 dict 法言词 token。
+    **只动 sparse、不碰 dense**(dense 改写归 HyDE/N1)。**双开关默认关 → 返回 `base_sparse` 同一对象 → byte 等价**;
+    开但无命中 → 空集 → 仍等价(`test_augment_noop_*` 守同一性)。
+  - **词典 consumed-when-present**:`load_scenario_terms` 缺/空/坏行 → `{}`/跳过;`Retriever.__init__` 仅 `scenario_expand`
+    开才读文件(关→{} 免 IO)。dict 内容受 **§15⑥**(业务专家评审)阻塞 → 仅 v0-draft seed,不承诺覆盖率(同 R4 dict 范式)。
+- **实现**:`retrieve/sparse_boost.py`(`detect_doc_numbers` regex + `load_scenario_terms` + `_matched_legal_terms` +
+  `augment_sparse` 纯函数,embed 注入鸭子类型、零栈可测);`hybrid.retrieve` 经 `_sparse_for` 注入
+  (`retrieve_enumerate`/`retrieve_cases` **不动** → R4/R3 不接);`config` +`docnum_boost`/`scenario_expand`(默认 False)+
+  两系数(⚠V0)+ `scenario_terms_path`(锚 repo 根)+ 3 env;`seeds/dict_scenario_terms.csv`(v0-draft,源 §3.2)。
+- **踩坑 / 核实**:
+  - **`to_halfwidth` 只转全角 ASCII(0xFF01–0xFF5E)+ 全角空格** → 全角数字/（）归一,但 **CJK〔〕(U+3014/5)不变**
+    → 发文字号 regex 必须**显式含 〔〕**(及 ()（）[]【】)。
+  - **`seed_dicts` 不扰**(§7 Ask-first 核实):`PgIO.seed_dicts`(pg_io.py:233)**显式读命名文件**,**非 glob `seeds/*.csv`**
+    → 新增 `dict_scenario_terms.csv` 对 `demo up` 灌库 **inert**(仅查询层读)。
+  - **worktree 无 .venv**:`PYTHONPATH=<worktree>/{query,pipeline,libs/common}` 复用主 `.venv` 跑单元(`sparse_boost.py`
+    仅存于 worktree → import 成功即证 env 解析到 worktree 码)。集成需真模型 + 干净独占栈,与另一 CC 不抢。
+  - **集成断言取「名次升或持平」**(加权并入只增不降目标 sparse 秩,稳健);**严格名次跃升属 §15 V0 标定**。
+  - **集成 fixture 踩坑(META_REVIEW)**:发文字号嵌正文 → meta L1(`HEAD_BLOCKS=8` 版头内)抽为 doc_number → 与
+    manifest 冲突 → 卡 META_REVIEW(非 INDEXED,B 模式不放行)。修:正文用**冒号边界**(`文号:银保监发〔2021〕5号`)
+    使文号正则前缀只吃「银保监发」、干净抽出 = manifest `doc_number`(`_norm_dn` 一致)→ 无冲突 → 自动放行。
+- **未做(SPEC-SPARSE §0)**:`WeightedRanker` 通道重权 / 检索后提分(决策弃);dense 改写/HyDE(N1);`dict_scenario_terms`
+  建 PG 表 + 灌库(GAP #11,§15⑥);提权应用 R4/R2/R3/R6;系数 V0 标定;`dict_intent_routes`/N2 重构。
+- **Codex 复审**:可交(集成 + 全 query 模型门 223/2 + ruff 全绿;本切片在 worktree,绿后并入)。

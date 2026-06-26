@@ -15,6 +15,10 @@ from pydantic import BaseModel
 
 # query/query/config.py → parents[2] = <repo> → /config(与 pipeline.config 同源)
 DEFAULT_CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
+# §5.4 词典扩展种子(锚 repo 根,同 config;consumed-when-present,缺 → 扩展为空)
+DEFAULT_SCENARIO_TERMS = str(
+    Path(__file__).resolve().parents[2] / "seeds" / "dict_scenario_terms.csv"
+)
 
 
 class QueryConfig(BaseModel):
@@ -33,6 +37,12 @@ class QueryConfig(BaseModel):
     rerank_backend: Literal["none", "bge"] = "none"    # QUERY_RERANK_BACKEND 覆盖
     rerank_model: str = "BAAI/bge-reranker-v2-m3"  # ⚠ §5.5 bge 模型名/路径;QUERY_RERANK_MODEL 覆盖
     llm_model: str = "gpt-5.4-nano"  # ⚠ gateway 时模型名;env OPENAI_MODEL 可覆盖
+    # §5.4 sparse 精确通道(默认关 → byte 等价;系数 ⚠ V0 标定)
+    docnum_boost: bool = False  # ⚠ §5.4 发文字号/全名 sparse 提权;QUERY_DOCNUM_BOOST 覆盖
+    docnum_boost_factor: float = 2.0  # ⚠ V0 发文字号 token 提权系数
+    scenario_expand: bool = False  # ⚠ §5.4 dict 扩 sparse 命中面;QUERY_SCENARIO_EXPAND 覆盖
+    scenario_expand_factor: float = 1.0  # ⚠ V0 法言词扩展系数
+    scenario_terms_path: str = DEFAULT_SCENARIO_TERMS  # QUERY_SCENARIO_TERMS_PATH 覆盖
 
 
 def _apply_env(raw: dict) -> None:
@@ -46,6 +56,12 @@ def _apply_env(raw: dict) -> None:
         raw["rerank_model"] = env["QUERY_RERANK_MODEL"]
     if "OPENAI_MODEL" in env:
         raw["llm_model"] = env["OPENAI_MODEL"]
+    if "QUERY_DOCNUM_BOOST" in env:
+        raw["docnum_boost"] = env["QUERY_DOCNUM_BOOST"]
+    if "QUERY_SCENARIO_EXPAND" in env:
+        raw["scenario_expand"] = env["QUERY_SCENARIO_EXPAND"]
+    if "QUERY_SCENARIO_TERMS_PATH" in env:
+        raw["scenario_terms_path"] = env["QUERY_SCENARIO_TERMS_PATH"]
 
 
 def load_query_config(config_dir: str | os.PathLike | None = None) -> QueryConfig:

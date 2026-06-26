@@ -15,14 +15,14 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **46** | 40% | 红线 / R1 / R2 / R3 / **R4** / **R5** / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 / **§5.5 重排** |
-| 🟡 部分 | **33** | 28% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取/§9.2 复核(接口·toggle)、§14 验收部分项 |
-| ❌ 未实装 | **36** | 31% | 查询理解前端(N0/N1/N3)、§5.4、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
+| ✅ 实装+测试 | **47** | 41% | 红线 / R1 / R2 / R3 / **R4** / **R5** / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 / **§5.5 重排** / **§5.4 sparse 提权+扩展** |
+| 🟡 部分 | **35** | 30% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取/§9.2 复核(接口·toggle)、§14 验收部分项 |
+| ❌ 未实装 | **33** | 28% | 查询理解前端(N0/N1/N3)、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
 | ➖ 非查询逻辑 | **1** | — | §2.3 容量(摄取/部署) |
 | **合计** | **116** | | |
 
 - **红线(RL-1/2/3 + §0.1-2)**:核心引用真实性/四级回溯/可解释拒答 **✅**;"无裸结论"在 R1/R5 路径 ✅(形态无 verdict 槽 + 代码后检 verdict+试探性),真 LLM 下的 §9.2 复核接口已就位但默认关 → RL-1 记 🟡(真-LLM 闭环留后续)。
-- **八路路由(全实装)**:R1🟡(主体✅,sparse提权/entity过滤/流式 ❌)· R2✅ · R3✅ · **R4✅** · **R5✅**(三段式硬约束 + 不出裸结论 + 桥接入口 + §9.2 接口)· **R6✅** · R7🟡(回 N0 缺)· R8✅。**无占位**。
+- **八路路由(全实装)**:R1🟡(主体✅,sparse提权✅【§5.4】,entity过滤/流式 ❌)· R2✅ · R3✅ · **R4✅** · **R5✅**(三段式硬约束 + 不出裸结论 + 桥接入口 + §9.2 接口)· **R6✅** · R7🟡(回 N0 缺)· R8✅。**无占位**。
 - **~47 行带 §15 待确认 caveat**,其中 R5 产品形态(④)、网关/Langfuse/Casbin/SSO 横切、V0 评估是 demo 阶段真正未触的大块。
 
 ---
@@ -58,7 +58,7 @@
 | §2-clauseref | clause_references 多跳查表 | ❌ | 空表无 resolver(GAP #10) | — |
 | §2-tagsE1 | E1 义务/期限过滤 | 🟡 | R4 消费 `is_obligation`(`fetch_obligation_chunk_ids`,`test_r4_listing_integration` 义务剔除);期限 `norm_duration_days` 过滤 ❌ | — |
 | §2-tagsE2 | E2 事项/部门/entity 过滤 | ❌ | 未消费 | ③⑥ |
-| §2-scenario | dict_scenario_terms 桥接+扩展 | ❌ | 未建表 | ⑥ |
+| §2-scenario | dict_scenario_terms 桥接+扩展 | 🟡 | §5.4 **v0-draft seed + 查询层扩展**(`load_scenario_terms`,consumed-when-present);PG 表/灌库未建(GAP #11)| ⑥ |
 | §2-introutes | dict_intent_routes 路由样例 | ❌ | 未建表(用内置规则种子) | — |
 | §2-entitydict | dict_entity_types 抽取约束 | 🟡 | classify 可注入;未接 PG 加载 | ⑥ |
 | §2-role | 三类语料角色分工 | 🟡 | 架构(分区路由),待补回归测;R1/R2/R3 消费 | — |
@@ -90,7 +90,7 @@
 | §5.2 | 分区并行配额 top25 | ✅ | `test_hybrid_integration` | — |
 | §5.3 | 强制过滤位 | 🟡 | status✅ perm_tag🟡;entity/biz/chunk_type **机制已落**(R4 `extra_expr`,consumed-when-present) | ⑥ |
 | §5.3-hist | 问历史放开 status | 🟡 | include_superseded 参数(R2 用) | — |
-| §5.4 | sparse 发文字号提权+扩展 | ❌ | 默认 RRF 序 | ⑥ |
+| §5.4 | sparse 发文字号提权+扩展 | ✅ | `test_sparse_boost`(detect/augment/双关 byte 等价)+`test_query_config`(开关+env)+**集成 `test_sparse_boost_integration` 3 passed**(名次升/扩展召回/双关等价,干净栈+真 BGE-M3);系数 ⚠ V0 标定 | ⑥ |
 | §5.5 | bge-reranker top50→top8 | ✅ | SPEC-RERANK §8;`test_reranker`(none passthrough/bge 重排)`test_milvus_search_text`(with_text 等价)`test_rerank_integration`(rerank-hop 真 text + none 等价);本地 reranker | ① |
 | §5.6 | 父子块供证 | ✅ | `test_anchors_integration`(fetch_parent_text) | — |
 | §5.7 | 充分性自检→覆盖判据 | 🟡 | 务实版(`test_sufficiency`) | ⑥ |
@@ -102,7 +102,7 @@
 | R1-filter | 重排+status/perm/entity 过滤 | 🟡 | status✅;**重排✅**(§5.5 接缝,`test_rerank_integration`);entity ❌ | — |
 | R1-suff | 充分性→生成/拒答 | ✅ | `test_r1_integration`/`test_sufficiency` | ⑥ |
 | R1-gen | 引用约束生成+案例附挂+导出 | 🟡 | 生成✅ 附挂✅(R3);流式/导出 ❌ | — |
-| R1-sparse | 发文字号 sparse 提权+entity 强过滤 | ❌ | 见 §5.4 / §2-entity | — |
+| R1-sparse | 发文字号 sparse 提权+entity 强过滤 | 🟡 | 提权✅(§5.4 `test_sparse_boost_integration`);entity 强过滤 ❌(见 §2-entity)| — |
 | R2-version | 版本栏(版本链) | ✅ | `test_r2_change_integration` | — |
 | R2-diff | 条款级 diff | ✅ | `test_version_diff` | — |
 | R2-reason | 修订原因逐字+缺失明示禁推测 | ✅ | `test_r2_change`(format_reason) | — |
@@ -182,7 +182,7 @@
 ## 缺口清单(按 GAP backlog 优先级)
 
 - **P0 红线/验收**:~~R5 全组~~ ✅(三段式+不出裸结论+桥接+§9.2 接口;§15-④ demo workaround)· **§9.2 真多模型复核**(Kimi faithfulness 真接,RL-1 真-LLM 闭环)· §9.3-perm 权限验收(§14-c)。
-- **P1 检索**:§5.4 sparse 提权。(~~R6/R4/R5~~ ✅ 八路全实装 · ~~§5.5 重排~~ ✅ 接缝+本地 bge)
+- **P1 检索**:~~§5.4 sparse 提权+扩展~~ ✅ 机制+单元+集成绿(SPEC/PLAN/TASKS-SPARSE)。(~~R6/R4/R5~~ ✅ 八路全实装 · ~~§5.5 重排~~ ✅ 接缝+本地 bge)
 - **P2 查询理解前端**:N0 · N1 HyDE · N3 分解。
 - **P3 横切/工程**:§7.2 流式 · §11 导出 · §9.3 敏感词/Langfuse/SSO/AI 页脚 · §12 容量 · §13 V0 评估(RAGAS/断层率/评估集)。
 - **依赖资产**:~~§2-entity/biz/chunktype 检索过滤(扩 milvus_io.search,GAP #12)~~ ✅(R4 `extra_expr`;E2 真打标+词典加载待补)· §2-clauseref resolver · §2-scenario/introutes 字典建表 · §2-tagsE1 期限/E2 富集过滤。
