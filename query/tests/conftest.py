@@ -59,6 +59,8 @@ IndexedStack = namedtuple("IndexedStack", "pg mio ctx dvid query")
 CaseStack = namedtuple("CaseStack", "pg mio ctx internal_dvid case_dvid query case_query")
 #: R4 列举栈(复用 indexed_stack + 额外两件同主题「信息披露」内规:a 含义务条款、b 无义务)
 EnumStack = namedtuple("EnumStack", "pg mio ctx dvid_a dvid_b biz_code")
+#: §5.4 sparse 提权/扩展栈(复用 indexed_stack + 一件:发文字号条款 + 合同竞争条款 + 受托理财条款)
+SparseStack = namedtuple("SparseStack", "pg mio ctx dvid docnum_query oral_query")
 
 
 def _clean_internal_docx(tmp_path):
@@ -301,6 +303,55 @@ def enumerate_stack(indexed_stack, tmp_path_factory):
 
     _purge_doc(pg, mio, dvid_b, lid_b, bid_b)
     _purge_doc(pg, mio, dvid_a, lid_a, bid_a)
+
+
+#: §5.4 发文字号查询(含发文字号 + 语义「合同管理」→ 不提权时 dense 易偏向合同竞争条款)
+SPARSE_DOCNUM_QUERY = "银保监发〔2021〕5号 合同管理要求"
+#: §5.4 口语查询(jargon「见底到顶」,dense 难直接桥接;靠 dict 映射到法言词命中目标条款)
+SPARSE_ORAL_QUERY = "见底到顶这类提法可以吗"
+
+
+#: §5.4 发文字号(嵌第一条正文供提权命中);manifest doc_number 设同值 → L1 无冲突
+SPARSE_DOCNUM = "银保监发〔2021〕5号"
+
+
+def _sparse_docx(tmp_path):
+    """§5.4 件:第一条含发文字号(冒号边界 → L1 抽取与 manifest 一致);第二条合同管理(竞争块);
+    第三条含法言词「买卖时机/具体建议」(无 jargon,验词典扩展)。首段=manifest 标题 → B 模式放行。
+    """
+    tag = str(ULID())
+    d = tmp_path / ("qs_" + tag[:8])
+    d.mkdir()
+    fn, title = "sparse.docx", "合规管理办法"
+    doc = Docx()
+    doc.add_paragraph(title)
+    doc.add_paragraph("第一章 总则")
+    doc.add_paragraph("第一节 一般规定")
+    # 冒号边界 → 文号正则前缀只吃「银保监发」→ 抽取=SPARSE_DOCNUM=manifest doc_number(无冲突)
+    doc.add_paragraph(f"第一条 本条适用文号:{SPARSE_DOCNUM},具体编号{tag}。")
+    doc.add_paragraph(f"第二条 合同管理要求合同应当经法务审查后由授权人签署编号{tag}2。")
+    doc.add_paragraph(f"第三条 投资顾问不得就买卖时机向客户提供具体建议编号{tag}3。")
+    doc.save(d / fn)
+    wb = Workbook()
+    wb.active.append(_MANIFEST_COLS)
+    wb.active.append(
+        [fn, title, SPARSE_DOCNUM, "INTERNAL", "内部", "P-INT",
+         "LEGAL", None, None, "内规", None]
+    )
+    mp = d / "manifest.xlsx"
+    wb.save(mp)
+    return d, mp
+
+
+@pytest.fixture(scope="session")
+def sparse_stack(indexed_stack, tmp_path_factory):
+    """§5.4:复用 indexed_stack 真栈 + 额外 ingest 一件(发文字号/合同/受托理财 三条)到 INDEXED。"""
+    pg, mio, ctx = indexed_stack.pg, indexed_stack.mio, indexed_stack.ctx
+    tmp = tmp_path_factory.mktemp("q_sparse")
+    d, m = _sparse_docx(tmp)
+    dvid, lid, bid = _ingest_one(pg, ctx, d, m)
+    yield SparseStack(pg, mio, ctx, dvid, SPARSE_DOCNUM_QUERY, SPARSE_ORAL_QUERY)
+    _purge_doc(pg, mio, dvid, lid, bid)
 
 
 @pytest.fixture(scope="session")

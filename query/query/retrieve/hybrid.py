@@ -17,6 +17,7 @@ from pipeline.config import load_config
 from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
 from query.config import QueryConfig, load_query_config
+from query.retrieve.sparse_boost import augment_sparse, load_scenario_terms
 
 #: 检索分区(§5.2):内规 / 外规各打各的配额
 _PARTITIONS = ("P-INT", "P-EXT")
@@ -69,6 +70,10 @@ class Retriever:
         self._qcfg = qcfg
         # rerank_backend=none → NoneReranker(passthrough,byte 等价);bge → 本地 reranker
         self._reranker = reranker if reranker is not None else make_reranker(qcfg)
+        # §5.4 词典扩展种子(consumed-when-present;scenario_expand 关 → {} 免 IO)
+        self._scenario_terms = (
+            load_scenario_terms(qcfg.scenario_terms_path) if qcfg.scenario_expand else {}
+        )
 
     @classmethod
     def from_config(cls, qcfg: QueryConfig | None = None) -> Retriever:
@@ -82,11 +87,12 @@ class Retriever:
         """分区配额检索 → 合并去重 → RRF 序 → §5.5 重排(none=passthrough)→ 取 topk。"""
         with_text = self._qcfg.rerank_backend != "none"  # 仅重排时取 Milvus text(零开销默认)
         emb = self._embed.embed([query])[0]
+        sparse = self._sparse_for(query, emb)  # §5.4 提权/扩展(双关关 → emb.sparse,byte 等价)
         merged: dict[str, Candidate] = {}
         for corpus in _PARTITIONS:
             res = self._milvus.search(
                 emb.dense,
-                emb.sparse,
+                sparse,
                 topk=self._qcfg.partition_topk,
                 include_superseded=include_superseded,
                 corpus=corpus,
@@ -100,6 +106,21 @@ class Retriever:
         ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)  # RRF 序(none 终态)
         ranked = self._reranker.rerank(query, ranked)  # bge 重排;none passthrough(等价)
         return ranked[: self._qcfg.topk]
+
+    def _sparse_for(self, query: str, emb) -> dict:
+        """§5.4 提权/扩展。双关关 → ``emb.sparse`` 原样(byte 等价 + 只动 sparse)。"""
+        if not (self._qcfg.docnum_boost or self._qcfg.scenario_expand):
+            return emb.sparse
+        return augment_sparse(
+            query,
+            emb.sparse,
+            embed=self._embed,
+            scenario_terms=self._scenario_terms,
+            docnum_factor=self._qcfg.docnum_boost_factor,
+            expand_factor=self._qcfg.scenario_expand_factor,
+            docnum_on=self._qcfg.docnum_boost,
+            expand_on=self._qcfg.scenario_expand,
+        )
 
     def retrieve_enumerate(
         self, query: str, *, extra_expr: str | None = None, include_superseded: bool = False
