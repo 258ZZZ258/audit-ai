@@ -307,8 +307,8 @@ def enumerate_stack(indexed_stack, tmp_path_factory):
 
 #: §5.4 发文字号查询(含发文字号 + 语义「合同管理」→ 不提权时 dense 易偏向合同竞争条款)
 SPARSE_DOCNUM_QUERY = "银保监发〔2021〕5号 合同管理要求"
-#: §5.4 口语查询(dict 映射 代客理财→受托理财;条款只含法言词「受托理财」)
-SPARSE_ORAL_QUERY = "代客理财是否违规"
+#: §5.4 口语查询(jargon「见底到顶」,dense 难直接桥接;靠 dict 映射到法言词命中目标条款)
+SPARSE_ORAL_QUERY = "见底到顶这类提法可以吗"
 
 
 #: §5.4 发文字号(嵌第一条正文供提权命中);manifest doc_number 设同值 → L1 无冲突
@@ -317,7 +317,7 @@ SPARSE_DOCNUM = "银保监发〔2021〕5号"
 
 def _sparse_docx(tmp_path):
     """§5.4 件:第一条含发文字号(冒号边界 → L1 抽取与 manifest 一致);第二条合同管理(竞争块);
-    第三条含法言词「受托理财」(无「代客理财」)。首段=manifest 标题 → B 模式放行。
+    第三条含法言词「买卖时机/具体建议」(无 jargon,验词典扩展)。首段=manifest 标题 → B 模式放行。
     """
     tag = str(ULID())
     d = tmp_path / ("qs_" + tag[:8])
@@ -330,7 +330,7 @@ def _sparse_docx(tmp_path):
     # 冒号边界 → 文号正则前缀只吃「银保监发」→ 抽取=SPARSE_DOCNUM=manifest doc_number(无冲突)
     doc.add_paragraph(f"第一条 本条适用文号:{SPARSE_DOCNUM},具体编号{tag}。")
     doc.add_paragraph(f"第二条 合同管理要求合同应当经法务审查后由授权人签署编号{tag}2。")
-    doc.add_paragraph(f"第三条 公司不得以受托理财名义违规开展资产管理业务编号{tag}3。")
+    doc.add_paragraph(f"第三条 投资顾问不得就买卖时机向客户提供具体建议编号{tag}3。")
     doc.save(d / fn)
     wb = Workbook()
     wb.active.append(_MANIFEST_COLS)

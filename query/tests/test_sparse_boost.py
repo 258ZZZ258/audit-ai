@@ -39,6 +39,13 @@ def test_detect_no_false_positive():
     assert detect_doc_numbers("我有2021个问题要问") == []  # 纯数字(无括号+号)不误命中
 
 
+def test_detect_docnum_strips_query_prefix():
+    # QUERY-SPARSE-DOCNUM-SPAN:裁掉问句/连接词前缀,只留机关代字+核心(不把"请问/根据"一起提权)
+    assert detect_doc_numbers("请问银保监发〔2021〕5号是什么") == ["银保监发〔2021〕5号"]
+    assert detect_doc_numbers("根据财会〔2017〕22号的规定") == ["财会〔2017〕22号"]
+    assert detect_doc_numbers("请问〔2023〕5号") == ["〔2023〕5号"]  # 前缀 + 裸文号
+
+
 # ── load_scenario_terms ──────────────────────────────────────────────
 def test_load_scenario_terms(tmp_path):
     p = tmp_path / "d.csv"
@@ -122,6 +129,35 @@ def test_augment_docnum_only_skips_dict():
         docnum_on=True, scenario_terms={"代客理财": ["受托理财"]},
     )
     assert out is base
+
+
+def _ip(a, b):
+    """稀疏内积(共享 token 权重乘积和)= sparse 通道的打分量。"""
+    return sum(w * b[t] for t, w in a.items() if t in b)
+
+
+def test_augment_docnum_strictly_raises_target_ip():
+    # 机制非无效(STRICT,确定性):提权**严格增大** query 与"含发文字号 chunk"的 sparse 内积。
+    # (检索 rank 改善是大语料 / §15 V0 性质;§5.1 hybrid 小语料已置顶,见集成 docstring)
+    base = {"合同": 1.0}
+    chunk = {"docnum_tok": 1.0, "合同": 0.5}  # 目标 chunk:含发文字号 token
+    emb = _FakeEmbed({"银保监发〔2021〕5号": {"docnum_tok": 1.0}})
+    out = augment_sparse(
+        "银保监发〔2021〕5号 合同", base, embed=emb, docnum_on=True, docnum_factor=2.0
+    )
+    assert _ip(out, chunk) > _ip(base, chunk)  # 0.5 → 2.5(发文字号 token 加权并入)
+
+
+def test_augment_expand_strictly_raises_target_ip():
+    # 词典扩展同理:注入法言词**严格增大**与"含法言词 chunk"的 sparse 内积(从无到有命中)。
+    base = {"提法": 1.0}
+    chunk = {"legal_tok": 1.0}  # 目标 chunk:只含法言词 token(口语 query 不命中)
+    emb = _FakeEmbed({"买卖时机": {"legal_tok": 1.0}})
+    out = augment_sparse(
+        "见底到顶提法", base, embed=emb,
+        expand_on=True, expand_factor=1.0, scenario_terms={"见底到顶": ["买卖时机"]},
+    )
+    assert _ip(out, chunk) > _ip(base, chunk)  # 0 → 1.0
 
 
 # ── T3:Retriever 接线(主 retrieve 注入;enumerate/cases 不接)─────────────

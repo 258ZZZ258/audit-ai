@@ -45,29 +45,35 @@ def _rank(out, cid):
     return ids.index(cid) if cid in ids else len(ids) + 1
 
 
-def test_docnum_boost_improves_rank(sparse_stack):
+def test_docnum_boost_recall_no_regression(sparse_stack):
+    """§5.1 hybrid 小语料已把发文字号精确命中置顶(off_rank=0)→ 端到端验:提权下目标仍召回、不回归。
+    "严格抬升名次"是大语料 / §15 V0 性质;机制非无效由单元 sparse-IP 测证。
+    """
     target = _leaf_chunk_with(sparse_stack.pg, sparse_stack.dvid, "银保监发")
     assert target, "未找到含发文字号的叶子 chunk"
     q = sparse_stack.docnum_query
     off = _retr(sparse_stack).retrieve(q)  # docnum_boost 默认关
     on = _retr(sparse_stack, docnum_boost=True).retrieve(q)
-    assert target in [c.chunk_id for c in off]
-    assert target in [c.chunk_id for c in on]
-    assert _rank(on, target) <= _rank(off, target)  # 提权 → 名次升或持平(加权不降秩)
+    assert target in [c.chunk_id for c in on]  # 端到端召回
+    assert _rank(on, target) <= _rank(off, target)  # 提权不回归(只增不降目标 sparse 秩)
 
 
-def test_scenario_expand_improves_rank(sparse_stack, tmp_path):
+def test_scenario_expand_recall_no_regression(sparse_stack, tmp_path):
+    """词典扩展端到端:口语 jargon 经 dict 映射注入法言词 → 召回目标条款、不回归。
+    "严格抬升"受限于小语料 dense 桥接(同 docnum);机制非无效由单元 sparse-IP 测证。
+    """
+    # jargon「见底到顶」→ 法言「买卖时机|具体建议」(目标条款只含法言词,不含 jargon)
     csv_path = tmp_path / "scn.csv"
-    csv_path.write_text("oral_term,legal_terms\n代客理财,受托理财\n", encoding="utf-8")
-    target = _leaf_chunk_with(sparse_stack.pg, sparse_stack.dvid, "受托理财")
-    assert target, "未找到含受托理财的叶子 chunk"
-    q = sparse_stack.oral_query  # "代客理财是否违规"(条款无此词,只有法言词「受托理财」)
+    csv_path.write_text("oral_term,legal_terms\n见底到顶,买卖时机|具体建议\n", encoding="utf-8")
+    target = _leaf_chunk_with(sparse_stack.pg, sparse_stack.dvid, "买卖时机")
+    assert target, "未找到含法言词的叶子 chunk"
+    q = sparse_stack.oral_query  # "见底到顶这类提法可以吗"
     off = _retr(sparse_stack).retrieve(q)  # scenario_expand 关
     on = _retr(
         sparse_stack, scenario_expand=True, scenario_terms_path=str(csv_path)
     ).retrieve(q)
-    assert target in [c.chunk_id for c in on]  # 扩展 → 召回法言条款
-    assert _rank(on, target) <= _rank(off, target)  # 扩展 → 名次升或持平
+    assert target in [c.chunk_id for c in on]  # 扩展 → 召回法言条款(端到端)
+    assert _rank(on, target) <= _rank(off, target)  # 不回归
 
 
 def test_sparse_both_off_smoke(sparse_stack):

@@ -24,12 +24,36 @@ _DOCNUM_RE = re.compile(
 # 制度全名:《…》(2–40 字,不嵌套)
 _TITLE_RE = re.compile(r"《[^《》]{2,40}》")
 
+# 查询中发文字号前常见的问句/连接词(机关代字不以这些起头)→ 抽取后从 span 头部裁掉,
+# 避免把"请问/根据/依据"等非文号 token 一起提权(收窄到机关代字边界,QUERY-SPARSE-DOCNUM-SPAN)
+_LEAD_STOP = (
+    "请问", "想问", "想了解", "咨询", "查询", "查一下", "问一下",
+    "根据", "依据", "按照", "依照", "参照", "关于", "有关", "适用",
+    "请", "问", "查", "依", "按", "据", "见",
+)
+
+
+def _strip_lead(span: str) -> str:
+    """裁掉发文字号 span 头部的问句/连接词前缀(迭代;保留至少机关代字 + 核心)。"""
+    changed = True
+    while changed:
+        changed = False
+        for w in _LEAD_STOP:
+            if span.startswith(w) and len(span) > len(w):
+                span, changed = span[len(w) :], True
+                break
+    return span
+
 
 def detect_doc_numbers(query: str) -> list[str]:
-    """检发文字号 + 制度全名 span(先 ``to_halfwidth`` 归一全角数字/括号);去重保序。"""
+    """检发文字号 + 制度全名 span(``to_halfwidth`` 归一;发文字号裁问句前缀);去重保序。"""
     norm = to_halfwidth(query)
     out: list[str] = []
-    for m in (*_DOCNUM_RE.finditer(norm), *_TITLE_RE.finditer(norm)):
+    for m in _DOCNUM_RE.finditer(norm):
+        s = _strip_lead(m.group(0).strip())
+        if s and s not in out:
+            out.append(s)
+    for m in _TITLE_RE.finditer(norm):
         s = m.group(0).strip()
         if s and s not in out:
             out.append(s)

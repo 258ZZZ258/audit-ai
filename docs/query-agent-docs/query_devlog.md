@@ -258,8 +258,8 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
 ## §5.4 sparse 精确通道(发文字号提权 + 词典扩展)—— 八路后第二个横切检索增强(2026-06-26,SPEC/PLAN/TASKS-SPARSE)
 
 > worktree `feat/query-docnum-boost`(与另一 Claude Code 的 P0 隔离;同一 `.git` 双工作树)。**全绿**:
-> `test_sparse_boost` 17 + `test_query_config` +2;**集成 `test_sparse_boost_integration` 3 passed**(干净栈 + 真 BGE-M3);
-> **全 query 模型门 223 passed / 2 skipped 无回归**(R1–R8/rerank/sparse 整路集成 + `test_pg_io` 新种子 inert)。
+> `test_sparse_boost` 20 + `test_query_config` +2;**集成 `test_sparse_boost_integration` 3 passed**(干净栈 + 真 BGE-M3);
+> **全 query 模型门 226 passed / 2 skipped 无回归**(R1–R8/rerank/sparse 整路集成 + `test_pg_io` 新种子 inert)。
 
 - **已决(AskUserQuestion)**:① 范围 = 发文字号提权 **+** 词典扩展(新建 `seeds/dict_scenario_terms.csv` v0-draft);
   ② 机制 = **查询层 sparse token 提权**(保持 `RRFRanker`、零 pipeline 改动);③ 应用 = **主 retrieve(R1/R5)**。
@@ -284,10 +284,20 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     → 新增 `dict_scenario_terms.csv` 对 `demo up` 灌库 **inert**(仅查询层读)。
   - **worktree 无 .venv**:`PYTHONPATH=<worktree>/{query,pipeline,libs/common}` 复用主 `.venv` 跑单元(`sparse_boost.py`
     仅存于 worktree → import 成功即证 env 解析到 worktree 码)。集成需真模型 + 干净独占栈,与另一 CC 不抢。
-  - **集成断言取「名次升或持平」**(加权并入只增不降目标 sparse 秩,稳健);**严格名次跃升属 §15 V0 标定**。
+  - **提权在小语料是 no-op(实测 off_rank=0)**:§5.1 hybrid(dense+sparse)已把含发文字号 chunk 置顶,RRF 基于秩
+    → 已在榜首者无可再升。故**集成只验端到端召回 + 不回归 + 双关 byte 等价**;提权的**严格非无效**(token 注入使目标
+    sparse 内积↑)由单元 `test_augment_*_strictly_raises_target_ip` 证;**检索 rank 改善是大语料 / §15 V0 性质**
+    (海量近义文档中浮顶精确命中),非小语料可证。
   - **集成 fixture 踩坑(META_REVIEW)**:发文字号嵌正文 → meta L1(`HEAD_BLOCKS=8` 版头内)抽为 doc_number → 与
     manifest 冲突 → 卡 META_REVIEW(非 INDEXED,B 模式不放行)。修:正文用**冒号边界**(`文号:银保监发〔2021〕5号`)
     使文号正则前缀只吃「银保监发」、干净抽出 = manifest `doc_number`(`_norm_dn` 一致)→ 无冲突 → 自动放行。
 - **未做(SPEC-SPARSE §0)**:`WeightedRanker` 通道重权 / 检索后提分(决策弃);dense 改写/HyDE(N1);`dict_scenario_terms`
   建 PG 表 + 灌库(GAP #11,§15⑥);提权应用 R4/R2/R3/R6;系数 V0 标定;`dict_intent_routes`/N2 重构。
-- **Codex 复审**:可交(集成 + 全 query 模型门 223/2 + ruff 全绿;本切片在 worktree,绿后并入)。
+- **Codex 复审修复(2 warning,均实缺陷)**:
+  - **`QUERY-SPARSE-DOCNUM-SPAN`**:发文字号 regex 前缀 `[一-龥]{0,12}` 无左边界 →「请问银保监发〔2021〕5号」会把
+    "请问"纳入 span、连同非文号 token 提权。修:`_strip_lead` 抽取后裁掉问句/连接词前缀(请问/根据/依据…)收窄到
+    机关代字边界 + 参数化测试 `test_detect_docnum_strips_query_prefix`。
+  - **`QUERY-SPARSE-WEAK-INTEGRATION`**:集成把"严格升名次"放宽成"升或持平" → no-op 提权也能过(**实测确为 no-op**:
+    小语料 hybrid 已置顶)。修:机制非无效改用**确定性单元 sparse-IP 严格断言**(`test_augment_*_strictly_raises_target_ip`),
+    集成改为诚实的端到端召回 + 不回归 + 双关等价(不再伪称"名次升")。
+  - 复审后:`test_sparse_boost` 20 + 全 query 模型门 **226 passed / 2 skipped** + ruff 全绿。待 Codex 复审。

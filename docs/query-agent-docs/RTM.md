@@ -90,7 +90,7 @@
 | §5.2 | 分区并行配额 top25 | ✅ | `test_hybrid_integration` | — |
 | §5.3 | 强制过滤位 | 🟡 | status✅ perm_tag🟡;entity/biz/chunk_type **机制已落**(R4 `extra_expr`,consumed-when-present) | ⑥ |
 | §5.3-hist | 问历史放开 status | 🟡 | include_superseded 参数(R2 用) | — |
-| §5.4 | sparse 发文字号提权+扩展 | ✅ | `test_sparse_boost`(detect/augment/双关 byte 等价)+`test_query_config`(开关+env)+**集成 `test_sparse_boost_integration` 3 passed**(名次升/扩展召回/双关等价,干净栈+真 BGE-M3);系数 ⚠ V0 标定 | ⑥ |
+| §5.4 | sparse 发文字号提权+扩展 | ✅ | `test_sparse_boost`(detect+前缀裁切/augment/**sparse-IP 严格证非无效**/双关 byte 等价)+`test_query_config`(开关+env)+**集成 3 passed**(端到端召回/不回归/双关等价,干净栈+真 BGE-M3);rank 改善属大语料/§15 V0(小语料 hybrid 已置顶 off_rank=0);系数 ⚠ V0 | ⑥ |
 | §5.5 | bge-reranker top50→top8 | ✅ | SPEC-RERANK §8;`test_reranker`(none passthrough/bge 重排)`test_milvus_search_text`(with_text 等价)`test_rerank_integration`(rerank-hop 真 text + none 等价);本地 reranker | ① |
 | §5.6 | 父子块供证 | ✅ | `test_anchors_integration`(fetch_parent_text) | — |
 | §5.7 | 充分性自检→覆盖判据 | 🟡 | 务实版(`test_sufficiency`) | ⑥ |
