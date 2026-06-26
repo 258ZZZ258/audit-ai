@@ -1,7 +1,7 @@
-"""T1.5 xlsx 直读:openpyxl → Table IR;格式探测/白名单接受 xlsx。
+"""T1.5 xlsx 直读(parser 能力):openpyxl → Table IR;detect_format 识别 xlsx(但不入白名单)。
 
-范围 = 解析层(parser 读 xlsx → Table 块 + s0 接受)。端到端入库(QC 条款指标/切块 profile)
-受 §22.3 费用数据「不走切块管线」制约,留 P2 P-MISC,不在本任务。
+范围 = 解析层(parser 读 xlsx → Table 块)。端到端入库(白名单/s1 路由/切块 profile)受纯表格
+无条款制约,**留 P2 P-MISC**(§22.3 费用数据「不走切块管线」),不在本任务。
 """
 
 import io

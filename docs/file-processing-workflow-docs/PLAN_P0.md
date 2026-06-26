@@ -60,9 +60,9 @@ Phase 3 (门控真后端, 真验收甲方环境)
 - [x] **T1.2 (B/B1a)** `case_ref_align` 纯对齐 —— "《X》第N条" → 文号精确/标题精确/`clause_path_norm` 三级匹配;超界/未命中 → `ref_unresolved`。纯逻辑零模型。**M**。deps: 无。
 - [x] **T1.3 (C/C1)** `ref_resolver` R1–R3 —— 文档内确定性指代(本办法/前款/绝对条款)standoff 解析,写 `clause_references`(`method=rule`)。从 S3 后触发。**M**。deps: 无(表已建)。→ 翻 **S3-15(R1–R3)/DM-2**。
 - [x] **T1.4 (C/C3)** `ref_render` 窗口渲染原语 —— span 倒序插注释、gloss≤30、UNRESOLVED 不渲染。纯逻辑。**S**。deps: 无。
-- [x] **T1.5 (A/A1)** xlsx 直读(openpyxl)+ 白名单含 xlsx —— 每 sheet → `Table` block → IR。**M**。deps: T0.2(markdown 辅助)。→ 翻 **S1-4**。
+- [x] **T1.5 (A/A1)** xlsx 直读(openpyxl)**parser 能力** —— 每 sheet → `Table` block → IR + 坏文件健壮。**端到端入库(白名单/路由)留 P2 P-MISC**(纯表格 S3 不适用)。**M**。deps: T0.2。→ **S1-4 🟡**(parser-only)。
 
-**Checkpoint 1**:纯逻辑测全绿;B4 真链路有 key 真跑 / 无 key skip(不联网);`clause_references` 在 R1–R3 有 resolved 行;xlsx 可入库。→ **人工 review**。
+**Checkpoint 1**:纯逻辑测全绿;B4 真链路有 key 真跑 / 无 key skip(不联网);`clause_references` 在 R1–R3 有 resolved 行;xlsx parser 能力可用(端到端留 P2)。→ **人工 review**。
 
 ### Phase 2 — 功能构建(依赖 Foundation)
 - [ ] **T2.1 (B/B1b)** 案例引用外规 LLM 抽取 —— `case_l2.extract_cited`(JSON,不臆测)→ 接 T1.2 `align` → 写 `cases.cited_regulations`。**M**。deps: T1.1(模式)、T1.2(align)。→ 翻 **S4-12**(最高价值)。

@@ -131,7 +131,7 @@ def _enforce(returned, allowed: set[str]) -> list[str]:
 - **SC-A2**:`test_ir_ocr_conf`(字段 add-only + 校验)、`test_table_markdown`(合并单元格展开)绿;`test_v16_fidelity`/`test_ir` 更新通过;指标 6 在有 ocr_conf 时生效。RTM **S1-7 / S1-8 / S2-6**。
 
 ### A3 格式白名单 + 路由扩展(本地骨架)
-- `WHITELIST_FORMATS` 扩 `{docx, pdf, xlsx, jpg, png}`;magic number 探测加 jpg/png/xlsx。
+- `WHITELIST_FORMATS` 扩 `{docx, pdf, jpg, png}`(**xlsx 端到端入库留 P2 P-MISC**,T1.5 收窄);magic number 探测加 jpg/png/xlsx(detect 识别,xlsx 不入白名单)。
 - factory 路由:format → backend(docx/pdf-text→deepdoc 或 light;pdf-notext/jpg/png→paddleocr;失败→mineru)。**默认仍 light**;jpg/png 在无 OCR 后端时落 E202 隔离(不静默丢)。
 - **SC-A3**:`test_s0_register` 扩格式用例绿;路由表单测(format→backend)绿;jpg/png 无 OCR 后端时 QUARANTINED 而非崩溃。RTM **S0-8 🟡→✅ / O-5**。
 
@@ -218,7 +218,7 @@ def _enforce(returned, allowed: set[str]) -> list[str]:
 ## 12. Success Criteria(汇总,可测)
 
 RTM 行翻 ✅ 并挂测试:
-- A:**S1-4**(xlsx)✅ · **S2-6**(ocr_conf)✅ · **S1-7/S1-8**(IR/表格 markdown)✅ · **S0-8/O-5**(白名单)✅ · **S1-1/2/3**(真后端门控,记 🟡 生产验收)。
+- A:**S1-4**(xlsx parser-only,端到端留 P2)🟡 · **S2-6**(ocr_conf)✅ · **S1-7/S1-8**(IR/表格 markdown)✅ · **S0-8/O-5**(白名单 docx/pdf;xlsx/jpg/png 留 P2)🟡 · **S1-1/2/3**(真后端门控,记 🟡 生产验收)。
 - B:**S4-12**(引用外规)✅ · **S4-11/DM-3**(违规事由+字典,consumed-when-present)✅ · **S4-2**(L2 业务域)✅ · **E2-1**(E2 真模型)✅。
 - C:**S3-15/DM-2**(ref_resolver R1–R3 + clause_references)✅ · **DM-4**(dict_aliases)✅。
 - 全仓回归:现 **374 passed** 不破;新增测试全绿;`ruff check` 净;`alembic check` 无漂移。

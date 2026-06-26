@@ -159,7 +159,7 @@ def test_registers_docx_and_pdf(reg):
 
 
 def test_whitelist_quarantine(reg):
-    # 白名单外格式(unknown:非 PDF/非 zip 魔数)→ 隔离。xlsx 已纳入白名单(T1.5),改用 unknown 测隔离
+    # 白名单外格式(unknown 魔数)→ 隔离;xlsx 端到端留 P2 不入白名单,故用 unknown 测
     ctx, base, batches = reg
     bid = _bid()
     batches.append(bid)
