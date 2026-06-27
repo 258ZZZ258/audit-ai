@@ -664,3 +664,27 @@ DeepDoc/E2·E3/L2 LLM/perm_tag 过滤/OCR/endpoint 桩/注释保留表/§21 T1·
 **PR 状态**:PR #20(feat/p0-phase2-case-l2,stacked on #18)。Codex 复审 clean(`findings: []`);**全量门控 638 passed / 3 skipped / 0 failed**(干净栈 + 真 BGE-M3,3 skip = 无 key 的 LLM 真模型 + `[embed]` extra rerank);待合并。
 
 详见 `docs/devlogs/metadata_devlog.md` §「P0 Phase 2」。
+
+---
+
+## 阶段 P0 Phase 2(续):业务域 L2 + profile 分档(2026-06-26;PR 待开)
+
+**范围**:T2.3a + T2.3b(用户选定 A 轮)。新模块 `meta/l2_llm.py`(默认关 `l2_enabled`),完成
+**P0 LLM 4 触点全清**(E2 / 案例引用外规 / 违规事由 / **L2 业务域**)。
+
+**关键交付**:
+
+| 文件 | 职责 |
+|---|---|
+| `meta/l2_llm.py` | `tag_biz_domain`(LLM + 裁 `dict_biz_domains`)+ `biz_l2_decision`(纯逻辑 profile 分档)+ `_sampled`(确定性抽检) |
+| `stages/s4_meta.py` | `_safe_biz_l2` 非阻断装配;biz_review 并入自动放行判据 |
+| `index/pg_io.py` | `set_biz_domains(dvid, biz_domains, source)` |
+| `index/corpus_rows.py` | Milvus `biz_domain` ARRAY 取 `biz_domains`(空回落单值) |
+| `config/profiles.yaml` | `sampling_rate` 起消费(直落 profile spot-check 比例) |
+
+**分档**:manifest 优先(冲突→META_REVIEW)· P-INT 候选恒入闸(即便 auto_confirm)· P-EXT/QA/CASE
+直落 effective + 确定性抽检。详见 `metadata_devlog.md`。
+
+**测试**:`test_l2_llm`(13)+ `test_corpus_rows_biz`(3)+ `test_s4_meta`(3 真栈三档);**波及范围全绿**。
+
+详见 `docs/devlogs/metadata_devlog.md` §「P0 Phase 2(续)」。

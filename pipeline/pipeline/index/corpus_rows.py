@@ -75,7 +75,8 @@ def build_rows(
     issuer_level = _issuer_level(db, dv)
     eff = _yyyymmdd(dv.effective_date)
     perm = [dv.perm_tag] if dv.perm_tag else []  # 单值 → ARRAY(§8.2)
-    biz = [dv.biz_domain] if dv.biz_domain else []
+    # 业务域 ARRAY:优先 L2 多值 biz_domains(§7.1);空则回落 manifest 原单值 biz_domain(向后兼容)。
+    biz = list(dv.biz_domains) if dv.biz_domains else ([dv.biz_domain] if dv.biz_domain else [])
     return [
         CorpusRow(
             chunk_id=c.chunk_id, dense=dense, sparse=sparse,

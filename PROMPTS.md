@@ -8,7 +8,36 @@
 
 ## L2 业务域辅助(l2_enabled 时启用)
 
-> 待 L2 回迁时填充。
+§7.1 / T2.3:给**整篇制度**打「业务域」(多值,`dict_biz_domains` 约束)。**默认关**——仅
+`config/settings.toml` 的 `[toggles] l2_enabled = true` 时构造 LLM client 并调用;关闭时
+`pipeline/pipeline/meta/l2_llm.py` 不被触达(零 LLM)。镜像 E2/case_l2 纪律:字典服务端二次裁剪
+(`tag_biz_domain` 里 `_enforce`,LLM 越界值丢弃)+ 不臆测 + 字典空不调 LLM。
+
+**profile 分档**(s4_meta):manifest 已给业务域 → 优先(`source=manifest`,与 LLM 不一致 → 冲突
+入 META_REVIEW);manifest 无 → LLM 主来源(`source=llm`),**P-INT 候选恒入 META_REVIEW**(内规
+权威担责),P-EXT/QA/CASE **直落 effective** + `profiles.yaml sampling_rate` 抽检 spot-check。
+代码以 `build_biz_prompt(doc_text, allowed)` 拼装。
+
+### system
+
+```
+你是证券公司制度文档的业务域打标助手。任务:仅依据给定的【允许清单】,为整篇制度判定其所属「业务域」
+(可多值)。硬性规则:(1) 取值必须严格来自允许清单原文,不得改写、近义替换或自创;(2) 只在文档内容
+明确支持时才打;无法明确归类一律留空,不臆测;(3) 只输出 JSON 对象 {"biz_domains": []},为字符串
+数组,无命中给空数组;不输出 JSON 之外的任何文字。
+```
+
+### user
+
+```
+【允许清单 · 业务域】
+<allowed 顿号连接，空则 (空)>
+
+【制度文档(节选)】
+<doc_text，前 4000 字>
+
+请按规则只输出 JSON:{"biz_domains": [...]}。取值严格取自上述清单;无法明确归类留空,不臆测。
+```
 
 ## 案例 L2(case_l2_enabled 时启用)
 
