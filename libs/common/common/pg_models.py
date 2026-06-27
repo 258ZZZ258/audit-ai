@@ -328,6 +328,8 @@ class Case(AuditMixin, Base):
     respondent: Mapped[str | None] = mapped_column(String(256))  # 处罚对象
     respondent_type: Mapped[str | None] = mapped_column(String(16))  # 机构 | 个人
     violation_category: Mapped[str | None] = mapped_column(String(64))  # 违规事由分类(L2)
+    # 违规事由分类所用 dict_violation_types 版本快照(L2,§9):支持字典升版后按版本整批重分类。
+    violation_category_dict_version: Mapped[str | None] = mapped_column(String(32))
     cited_regulations: Mapped[list | None] = mapped_column(JSONB)  # 引用外规条款(归一对齐)
     penalty_type: Mapped[str | None] = mapped_column(String(64))  # 处罚类型
     amount_wan: Mapped[float | None] = mapped_column(Float)  # 金额(万元)

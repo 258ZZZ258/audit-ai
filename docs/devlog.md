@@ -632,3 +632,35 @@ DeepDoc/E2·E3/L2 LLM/perm_tag 过滤/OCR/endpoint 桩/注释保留表/§21 T1·
 **PR 状态**:PR #18(feat/p0-phase1)待合入 main;全仓模型门控全量门跑完后合并。
 
 详见 `docs/devlogs/structuring_devlog.md` §「P0 Phase 1」。
+
+---
+
+## 阶段 P0 Phase 2(案例 L2):引用外规对齐 + 违规事由分类(2026-06-26;PR #20)
+
+**范围**:T2.1 + T2.2(用户选定 Phase 2 最高价值子簇)。新模块 `meta/case_l2.py` + 迁移 0011 +
+`s4_meta` 装配,接 §9 案例库两个最高价值 LLM 字段(默认关 `case_l2_enabled`)。
+
+**关键交付**:
+
+| 文件 | 职责 |
+|---|---|
+| `meta/case_l2.py` | T2.1 `extract_cited`+`PgRegLookup`+`l2_fields`+`apply`;T2.2 `classify_violation` |
+| `alembic/0011` | `cases` +`violation_category_dict_version`(add-only,违规事由 dict 版本快照) |
+| `stages/s4_meta.py` | `_extract_case` 装配:`case_l2_enabled` 时叠加 L2(非阻断) |
+| `config.py`/`settings.toml`/`PROMPTS.md` | toggle + 两条 prompt 落地 |
+
+**决策要点**:
+- **镜像 E2 纪律**:字典服务端裁剪 + 不臆测 + 富集无状态机阻断权(`apply` 吞异常)+ 默认关零 LLM。
+- **`PgRegLookup`** 兑现 T1.2 `case_ref_align` 早留的"生产=PG 查询见 T2.1":按文号/标题命中 effective
+  外规 + 聚合 `clause_path_norm`,复用三级匹配 + 条号归一。
+- **dict_version 持久化**(超 TASKS 文件范围,生产保真,有 spec_ref):加 `cases.violation_category_dict_version`
+  typed 列;迁移 id 须 ≤32 字符(撞 `alembic_version` VARCHAR(32))。详见 `metadata_devlog.md`。
+
+**RTM 翻动**:S4-12(引用外规 L2)、S4-11(违规事由 L2)→ ✅(挂 `test_case_l2`);DM-3 注更新(L2 消费已接)。
+覆盖 ✅ 77→79。
+
+**测试**:`test_case_l2.py` 14 纯单元 + 真栈 fake-LLM 集成 + 门控真模型;**全仓回归 409 passed / 11 skipped / 0 failed**(stack up,无 key/embedding 模型项 skip)。
+
+**PR 状态**:PR #20(feat/p0-phase2-case-l2,stacked on #18)。Codex 复审 clean(`findings: []`);**全量门控 638 passed / 3 skipped / 0 failed**(干净栈 + 真 BGE-M3,3 skip = 无 key 的 LLM 真模型 + `[embed]` extra rerank);待合并。
+
+详见 `docs/devlogs/metadata_devlog.md` §「P0 Phase 2」。

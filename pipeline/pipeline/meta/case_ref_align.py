@@ -4,7 +4,8 @@
 - 三级匹配:文号精确 → 标题精确 →(别名表 dict_aliases 留 §6.7/T2.4,本模块不接)。
 - 条号经 ``normalize.normalize_clause_no`` 归一,与目标 doc 的 chunk ``clause_path_norm`` **末段**
   (= 条号)比对——案例反查精度到条;命中回填完整 path,超界/无 doc/无法归一 → ``resolved=False``。
-- 任一未解析 → 聚合 ``ref_unresolved=True``,进低优人工队列,**不阻塞案例入库**(§9)。
+- 任一未解析 → 聚合 ``ref_unresolved=True`` **标记**,**不阻塞案例入库**(§9);低优人工补录队列的
+  消费待 ``quality_tickets`` 建表(§18.3,deferred)——**本阶段仅置标记,不入队**。
 """
 
 from __future__ import annotations
@@ -48,7 +49,9 @@ def align_cited(cited: list[dict], lookup: RegLookup) -> tuple[list[dict], bool]
     """对齐引用列表;返回 (对齐结果[], ref_unresolved)。
 
     cited 项:``{title?, doc_number?, clause?}``(clause = 条号原文,可含「第…条/款」)。
-    结果项:``{doc_number, title, clause_path_norm, resolved}``。
+    结果项:``{doc_no, title, clause_path_norm, resolved}``——键名 ``doc_no``(非 DB 列名
+    ``doc_number``)对齐 query 反查消费者契约(``query/case/bridge.py`` /
+    ``query/judge/r5_judgment.py`` 读 ``doc_no`` + ``clause_path_norm`` 建反查 / 解析 chunk_id)。
     """
     out: list[dict] = []
     unresolved = False
@@ -83,8 +86,9 @@ def align_cited(cited: list[dict], lookup: RegLookup) -> tuple[list[dict], bool]
 
 
 def _row(doc_number: str | None, title: str | None, cpn: str | None, resolved: bool) -> dict:
+    # 键名 doc_no:对齐 query 反查消费者契约(bridge / r5_judgment 读 doc_no + clause_path_norm)。
     return {
-        "doc_number": doc_number,
+        "doc_no": doc_number,
         "title": title,
         "clause_path_norm": cpn,
         "resolved": resolved,

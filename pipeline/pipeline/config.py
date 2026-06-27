@@ -53,6 +53,7 @@ class TogglesConfig(BaseModel):
     l2_enabled: bool  # M1 默认 false(零 LLM)
     e1_enabled: bool
     e2_enabled: bool = False  # E2 LLM 打标(事项/部门/实体类型);默认关 → 零 LLM
+    case_l2_enabled: bool = False  # 案例 L2(引用外规对齐 + 违规事由分类);默认关 → 零 LLM
     auto_confirm_meta_no_conflict: bool = False
 
 

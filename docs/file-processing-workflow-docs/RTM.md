@@ -16,9 +16,9 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **77** | 56% | 入库主干契约 · S0 登记 · S3 条款树/切块/QA · S2 七指标(含指标6 ocr_conf)· S4 L1/版本链 · S5 索引/冷备 · E1 富集 · **Phase 0/1:IR markdown/E2 真模型/ref_resolver R1–R3** · T2/T4 · 编排/一致性/重建 |
-| 🟡 部分 | **35** | 25% | 生产解析栈 stub · **xlsx parser-only(端到端 P2)** · IR 缺 block_id/table_id · 面包屑缺文号 · 案例 L1-only · T3/T6 框架 · perm_tag 写不过滤 · 错误码子集 · **ref_resolver R4/dict_aliases 消费留 T2.4** · §18 边缘带/REPARSE |
-| ❌ 未实装 | **21** | 15% | OCR/MinerU · L2 元数据 · 案例违规事由/引用外规 L2 · 修订说明对齐 · §18 指标8/9/仲裁/高危token/quality_tickets · §6.6 图谱窗口 · T1/T5 · P-MISC 路由 · dict_violation_types 消费 · §14 敏感词 |
+| ✅ 实装+测试 | **79** | 57% | 入库主干契约 · S0 登记 · S3 条款树/切块/QA · S2 七指标(含指标6 ocr_conf)· S4 L1/版本链 · S5 索引/冷备 · E1 富集 · **Phase 0/1:IR markdown/E2 真模型/ref_resolver R1–R3** · **Phase 2:案例 L2 引用外规对齐(S4-12)/违规事由分类(S4-11)** · T2/T4 · 编排/一致性/重建 |
+| 🟡 部分 | **35** | 25% | 生产解析栈 stub · **xlsx parser-only(端到端 P2)** · IR 缺 block_id/table_id · 面包屑缺文号 · 案例对象类型/金额 L1-only · T3/T6 框架 · perm_tag 写不过滤 · 错误码子集 · **ref_resolver R4/dict_aliases 消费留 T2.4** · §18 边缘带/REPARSE |
+| ❌ 未实装 | **19** | 14% | OCR/MinerU · L2 业务域元数据 · 修订说明对齐 · §18 指标8/9/仲裁/高危token/quality_tickets · §6.6 图谱窗口 · T1/T5 · P-MISC 路由 · §14 敏感词 |
 | ➖ 边界外 | **5** | 4% | E4 路由(二期)· T7(CP-007)· §22.3/.4/.5 费用/项目/模板交接 |
 | **合计** | **138** | | |
 
@@ -127,10 +127,10 @@
 | S4-8 | **修订条目 ↔ diff LLM 对齐 + 置信度** | ❌ | §7.2;无代码 | 🤖 | ③ |
 | S4-9 | cases L1(处罚机构/文号/日期) | ✅ | §9;`test_case_extract` | | |
 | S4-10 | cases 处罚对象类型 **L2** | 🟡 | §9;L1 only(`test_case_extract`),LLM❌ | 🤖 | |
-| S4-11 | cases **违规事由分类 L2**(dict_violation_types) | ❌ | §9;占位 None | 🤖 | ⑥ |
-| S4-12 | cases **引用外规条款 L2 + 归一对齐**(最高价值) | ❌ | §9;占位 [] | 🤖 | ⑤ |
+| S4-11 | cases **违规事由分类 L2**(dict_violation_types) | ✅ | §9;LLM + 服务端裁字典 + dict_version 快照(`test_case_l2`,默认关/非阻断) | 🤖 | ⑥ |
+| S4-12 | cases **引用外规条款 L2 + 归一对齐**(最高价值) | ✅ | §9;LLM 抽取 → PgRegLookup 三级匹配归一(`test_case_l2`:单元+真栈+门控真模型) | 🤖 | ⑤ |
 | S4-13 | cases 处罚金额 **L2 兜底** | 🟡 | §9;L1 only(`test_case_extract`) | 🤖 | |
-| S4-14 | ref_unresolved 标记(对齐失败不阻塞) | ✅ | §9;`test_case_extract` | | |
+| S4-14 | ref_unresolved 标记(对齐失败不阻塞) | ✅ | §9;`test_case_extract`(L1 恒 False)+ `test_case_l2`(L2 对齐 miss 置位) | | |
 | S4-15 | 案例核心五字段完整率≥90% 质检闸 | ❌ | §9;无校验组件 | | ⑥ |
 
 ### §8 S5 向量化与索引
@@ -182,9 +182,9 @@
 ### §10 数据模型 / 契约
 | Req | 需求 | 状态 | 证据 | 🤖 | §16 |
 |---|---|---|---|---|---|
-| DM-1 | 核心表 + V1.6 add-only 列(chunks/clause_tags) | ✅ | §10;`alembic 0001–0008`/`test_v16_fidelity` | | |
+| DM-1 | 核心表 + V1.6 add-only 列(chunks/clause_tags/cases) | ✅ | §10;`alembic 0001–0011`/`test_v16_fidelity` | | |
 | DM-2 | clause_references 表 | ✅ | §10/§6.7;表建+R1–R3 填充(`test_ref_resolver`)+FK CASCADE(迁移 0010) | | |
-| DM-3 | dict_violation_types | 🟡 | §10;表建+v0-draft seed(迁移 0009,`test_seeds_p0`);字典待评审 §16-6,L2 消费留 T2.2 | | ⑥ |
+| DM-3 | dict_violation_types | 🟡 | §10;表建+v0-draft seed(迁移 0009)+ **L2 消费已接**(T2.2,`test_case_l2`);字典 v0-draft 待评审 §16-6 | | ⑥ |
 | DM-4 | dict_aliases(制度简称别名) | 🟡 | §6.7/§10;表建+seed(迁移 0009,`test_seeds_p0`);R4 消费留 T2.4 | | |
 | DM-5 | dict_scenario_terms(情景术语桥接) | 🟡 | §23;仅声明未建表/seed | | ⑥ |
 | DM-6 | quality_tickets / doc_graph_stats / obligation_keywords | 🟡 | §18/§19;前二未建,后者 config 替代 | | |
@@ -228,7 +228,7 @@
 
 ## 缺口清单(按 GAP backlog 优先级)
 
-- **P0 生产保真硬缺口**:生产解析栈(S1-1…S1-4/S1-7/S1-8:DeepDoc/OCR/MinerU/xlsx/IR ocr_conf)· **LLM P0 四项**(S4-12 引用外规 / S4-11 违规事由+DM-3 / S4-2 L2 业务域 / E2-1 接真模型)· ref_resolver 填充(S3-15 + DM-4 dict_aliases)。
+- **P0 生产保真硬缺口(剩余)**:生产解析栈(S1-1/2/3 DeepDoc/OCR/MinerU + S1-7 IR block_id/table_id)· **LLM P0 剩 S4-2(L2 业务域)**(S4-12 引用外规 / S4-11 违规事由+DM-3 / E2-1 接真模型 已落)· ref_resolver R4 跨文档(S3-15 R4 + DM-4 dict_aliases 消费,T2.4)。
 - **P1 质检纵深/评测/版本链**:§18 逃逸(§18-1…§18-7 + DM-6 quality_tickets)· 评测 T1/T3/T5/T6(+DM-7)· 版本链(S4-8 LLM 对齐 / S4-7 / S4-5)· 案例完整率闸(S4-15)+ 案例 L2 余项(S4-10/S4-13)。
 - **P2 治理/profile/体验**:P-MISC 路由(MISC-1)· §14 LLM 治理(SEC-4)· 表格/案例摘要 LLM(S3-7/S3-11/S3-12)· 面包屑补全(S3-8)· 错误码全段(ORCH-4)· 抽检回退/golden gate(S2-10/S2-11)。
 - **边界外/二期**:E3/§6.6 图谱(E3/S3-14)· dict_scenario_terms(DM-5)· §22.3/.4/.5(MISC-2/3/4)· E4/T7(➖)。
@@ -237,10 +237,10 @@
 
 | RTM Req | GAP § | 触点 | 状态 | 优先级 |
 |---|---|---|---|---|
-| S4-12 | L-1 | 案例引用外规条款抽取+对齐(最高价值) | ❌ | P0 |
-| S4-11 | L-2 | 案例违规事由分类(+dict_violation_types) | ❌ | P0 |
+| S4-12 | L-1 | 案例引用外规条款抽取+对齐(最高价值) | ✅ 真栈+门控(`test_case_l2`) | P0 |
+| S4-11 | L-2 | 案例违规事由分类(+dict_violation_types) | ✅ 真栈+门控(`test_case_l2`) | P0 |
 | S4-2 | L-3 | L2 业务域多值打标 | ❌ | P0 |
-| E2-1 | L-4 | E2 条款级打标(接真模型) | 🟡 默认关 | P0 |
+| E2-1 | L-4 | E2 条款级打标(接真模型) | ✅ 门控真模型(`test_e2_tag`) | P0 |
 | S4-2 | L-5 | L2 主题摘要 / 适用对象 | ❌ | P1 |
 | S4-10 | L-6 | 案例对象类型 L2 消歧 | 🟡 L1 | P1 |
 | S4-13 | L-7 | 案例金额 L2 兜底 | 🟡 L1 | P1 |
@@ -251,7 +251,7 @@
 | S3-11 | L-12 | 案例 LLM 辅助分段 | 🟡 规则 | P2 |
 | SEC-4 | L-13 | §14 敏感词过滤 + AI 标识 | ❌ | P2 |
 
-> `llm_client.py` 基建就位(真 OpenAI 兼容,默认零调用),但**无一条生产链路**。13 触点全部需"接真模型 + 字典/prompt 落地 + 集成测试 + 网关配额对接"。
+> `llm_client.py` 基建就位(真 OpenAI 兼容,默认零调用)。**P0 LLM 已落 3 条生产链路**:L-4 E2(Phase 1)、L-1 案例引用外规 / L-2 违规事由(Phase 2);均「接真模型 + 字典/prompt 落地 + fake 单测 + 门控真模型集成」。剩 L-3(L2 业务域)+ P1/P2 共 10 触点待接(网关配额对接 CP-005 仍待)。
 
 ## §16 待确认图例(阻塞标记)
 
