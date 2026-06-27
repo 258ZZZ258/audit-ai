@@ -15,14 +15,14 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **47** | 41% | 红线 / R1 / R2 / R3 / **R4** / **R5** / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 / **§5.5 重排** / **§5.4 sparse 提权+扩展** |
-| 🟡 部分 | **35** | 30% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取/§9.2 复核(接口·toggle)、§14 验收部分项 |
+| ✅ 实装+测试 | **51** | 44% | 红线(含 **RL-1/§9.2 真复核闭环**,⏳待跑绿)/ R1 / R2 / R3 / **R4** / **R5** / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 / **§5.5 重排** / **§5.4 sparse 提权+扩展** |
+| 🟡 部分 | **31** | 27% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取、§14 验收部分项 |
 | ❌ 未实装 | **33** | 28% | 查询理解前端(N0/N1/N3)、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
 | ➖ 非查询逻辑 | **1** | — | §2.3 容量(摄取/部署) |
 | **合计** | **116** | | |
 
-- **红线(RL-1/2/3 + §0.1-2)**:核心引用真实性/四级回溯/可解释拒答 **✅**;"无裸结论"在 R1/R5 路径 ✅(形态无 verdict 槽 + 代码后检 verdict+试探性),真 LLM 下的 §9.2 复核闭环**已实装**(独立 `review_model` 与主答分离 + 默认关零网络 + fail-closed,单测✅;门控集成测就位、待真 gateway+key 跑绿)→ RL-1 仍记 🟡(真模型跑绿后翻 ✅)。
-- **八路路由(全实装)**:R1🟡(主体✅,sparse提权✅【§5.4】,entity过滤/流式 ❌)· R2✅ · R3✅ · **R4✅** · **R5✅**(三段式硬约束 + 不出裸结论 + 桥接入口 + §9.2 接口)· **R6✅** · R7🟡(回 N0 缺)· R8✅。**无占位**。
+- **红线(RL-1/2/3 + §0.1-2)**:核心引用真实性/四级回溯/可解释拒答 **✅**;"无裸结论"在 R1/R5 路径 ✅(形态无 verdict 槽 + 代码后检 verdict+试探性);真 LLM 下的 §9.2 复核闭环**已实装**(独立 `review_model` 与主答分离 + 默认关零网络 + fail-closed + 喂条文原文,单测✅;门控集成测就位)→ **RL-1 记 ✅**,**⏳ 待真 gateway+key 跑绿留痕**(真模型门控测尚未执行)。
+- **八路路由(全实装)**:R1🟡(主体✅,sparse提权✅【§5.4】,entity过滤/流式 ❌)· R2✅ · R3✅ · **R4✅** · **R5✅**(三段式硬约束 + 不出裸结论 + 桥接入口 + §9.2 真复核闭环)· **R6✅** · R7🟡(回 N0 缺)· R8✅。**无占位**。
 - **~47 行带 §15 待确认 caveat**,其中 R5 产品形态(④)、网关/Langfuse/Casbin/SSO 横切、V0 评估是 demo 阶段真正未触的大块。
 
 ---
@@ -32,7 +32,7 @@
 ### 红线 / §1.3 取舍 / §0 边界
 | Req | 需求 | 状态 | 证据(SPEC §SC / test) | §15 |
 |---|---|---|---|---|
-| RL-1 | 无编造引用 / 无裸结论 | 🟡 | SPEC §8-红线;`test_evidence_guards`✅ + R5 `test_framing`(形态无 verdict 槽 + strip verdict/试探性)✅;§9.2 真-LLM 复核闭环**已实装**(`review_model` 与主答分离 + 默认关零网络 + fail-closed:`test_r5_review`✅)+ 门控集成 `test_r5_review_integration` 就位(gateway+key 真跑 / 无 key skip,**尚未真模型跑绿**)→ 跑绿后翻 ✅ | ④ |
+| RL-1 | 无编造引用 / 无裸结论 | ✅ | SPEC §8-红线;`test_evidence_guards`✅ + R5 `test_framing`(形态无 verdict 槽 + strip verdict/试探性)✅;§9.2 真-LLM 复核闭环已实装(`review_model` 与主答分离 + 默认关零网络 + fail-closed + 喂条文原文:`test_r5_review`✅)+ 门控集成 `test_r5_review_integration`(gateway+key 真跑 / 无 key skip)。**⏳ 待跑绿留痕**:真模型门控测尚未执行(本地无 key) | ④ |
 | RL-2 | 拒答可解释(穷尽分区+最接近 N 条) | ✅ | SPEC §8 SC3;`test_coverage_refusal` | ⑥ |
 | RL-3 | 引用真实性 clause_id ⊆ 上下文 | ✅ | SPEC §8 SC2;`test_citation_faithfulness` | — |
 | §0.1-2 | 依据四级回溯 | ✅ | SPEC §8 SC1;`test_anchors_integration` | — |
@@ -120,7 +120,7 @@
 | R5-elem | 构成要件提取(LLM) | 🟡 | clause直呈实装(`test_framing`);LLM 抽取 `judge_constituent_llm` 默认关(接缝)| — |
 | R5-3seg | 三段式硬约束输出 | ✅ | SPEC-R5 §8 SC1;`test_framing`(无 verdict 槽)`test_r5_judgment`/集成(②框定+③标识) | ④ |
 | R5-noraw | 不出违规/合规裸结论 | ✅ | SPEC-R5 §8 SC2;`test_framing`(`strip_bare_conclusion` verdict+试探性)`test_r5_judgment_integration`(断言无裸结论) | ④ |
-| R5-review | 多模型复核 | 🟡 | `test_r5_review`(接口+toggle 关 passthrough/开降级 + **复核客户端模型分离/关时不建** wiring)✅;`test_llm_stub`(`make_llm_client` model 覆盖)✅;真 Kimi faithfulness 闭环 `test_r5_review_integration` 门控就位(待真 gateway 跑绿) | — |
+| R5-review | 多模型复核 | ✅ | `test_r5_review`(接口+toggle 关 passthrough/开降级 + **复核客户端模型分离/关时不建** wiring + 喂条文原文)✅;`test_llm_stub`(`make_llm_client` model 覆盖)✅;真 Kimi faithfulness 闭环 `test_r5_review_integration` 门控就位。**⏳ 待真 gateway 跑绿留痕** | — |
 | R5-render | route_type=judgmental 人工复核框 | ✅ | SPEC-R5 §8 SC1;`test_r5_judgment`(`review_required=true`) | ④ |
 | R5-noloop | 单轮不进推理循环 | ✅ | `test_graph`(单跳直通 r5_judgment,无 agentic 循环) | — |
 | R6-dim | 维度抽取(规则版) | ✅ | SPEC-R6 §8 SC1;`test_dimensions` | — |
@@ -148,8 +148,8 @@
 | §9.1-matrix | 模型矩阵(Qwen/Kimi/bge) | ❌ | 未真接 | ① |
 | §9.1-embed | embedding endpoint dense+sparse 双输出验证 | ❌ | 走本地 BGE-M3 | ② |
 | §9.1-mcp | 检索/SQL 工具 MCP 注册 | ❌ | 未做 | ⑧ |
-| §9.2 | 多模型复核 Kimi faithfulness | 🟡 | R5 `review_tentative` 接口+toggle + **独立 `review_model` 接线**(`test_r5_review`/`test_llm_stub`/`test_query_config`✅);真 Kimi faithfulness 闭环 `test_r5_review_integration` 门控就位(默认关零网络;待真 gateway 跑绿翻 ✅) | — |
-| §9.2-r5 | R5 试探性表述复核 | 🟡 | `strip_bare_conclusion` 覆盖试探性(always-on)✅ + `review_tentative` 接口(toggle 默认关)+ 真 `review_model` 接线(`test_r5_review` wiring✅);真 LLM 语义复核闭环 `test_r5_review_integration` 门控就位(待真 gateway 跑绿) | ④ |
+| §9.2 | 多模型复核 Kimi faithfulness | ✅ | R5 `review_tentative` + **独立 `review_model` 接线 + 喂条文原文**(`test_r5_review`/`test_llm_stub`/`test_query_config`✅);真 Kimi faithfulness 闭环 `test_r5_review_integration` 门控就位(默认关零网络)。**⏳ 待真 gateway 跑绿留痕** | — |
+| §9.2-r5 | R5 试探性表述复核 | ✅ | `strip_bare_conclusion` 覆盖试探性(always-on)✅ + `review_tentative` + 真 `review_model` 接线 + 喂条文原文(`test_r5_review` wiring✅);真 LLM 语义复核闭环 `test_r5_review_integration` 门控就位。**⏳ 待真 gateway 跑绿留痕** | ④ |
 | §9.3-sensitive | 敏感词双向过滤 | ❌ | 未做 | — |
 | §9.3-ailabel | AI 内容标识+导出页脚 | 🟡 | contract.ai_label✅;导出页脚 ❌ | — |
 | §9.3-perm | Casbin+操作日志 | ❌ | 未做 | — |
