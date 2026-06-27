@@ -31,6 +31,23 @@ def test_rerank_model_default_and_env(tmp_path, monkeypatch):
     assert load_query_config(tmp_path).rerank_model == "/local/bge-reranker"
 
 
+def test_review_model_default_and_env(tmp_path, monkeypatch):
+    # §9.2 复核模型(Kimi):默认 kimi-2.5(§9.1 意图占位);QUERY_REVIEW_MODEL 覆盖。
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    assert load_query_config(tmp_path).review_model == "kimi-2.5"
+    monkeypatch.setenv("QUERY_REVIEW_MODEL", "kimi-2.5-turbo")
+    assert load_query_config(tmp_path).review_model == "kimi-2.5-turbo"
+
+
+def test_review_model_openai_alias_and_precedence(tmp_path, monkeypatch):
+    # OPENAI_REVIEW_MODEL 亦覆盖;两者并存时 QUERY_REVIEW_MODEL(query 专属)优先。
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    monkeypatch.setenv("OPENAI_REVIEW_MODEL", "kimi-openai-alias")
+    assert load_query_config(tmp_path).review_model == "kimi-openai-alias"
+    monkeypatch.setenv("QUERY_REVIEW_MODEL", "kimi-query-specific")
+    assert load_query_config(tmp_path).review_model == "kimi-query-specific"
+
+
 def test_sparse_boost_defaults(tmp_path):
     (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
     cfg = load_query_config(tmp_path)

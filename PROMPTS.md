@@ -53,3 +53,35 @@
 请按规则只输出 JSON:{"entity_type": [...], "departments": [...], "matters": [...]}。
 取值严格取自上述清单;无显式限定留空,不臆测。
 ```
+
+## §9.2 R5 忠实性复核(judge_multimodel_review 时启用)
+
+制度查询智能体 §9.2 / CP-007:R5 判定型三段式 ②框定 产出后,由**独立复核模型**(Kimi,
+`review_model`,与主答 Qwen `llm_model` 分离,§9.1)逐块校验「该试探性表述是否被所引条款支持」
+(faithfulness)。**默认关**——仅 `[query] judge_multimodel_review = true` 且 `llm_backend = gateway`
+时构造复核客户端并调用;关闭时 `query/query/judge/review.py` `review_tentative` 直接 passthrough(零网络),
+「无依据结论」红线由 `framing.strip_bare_conclusion` 形态后检兜底。
+
+**fail-closed(硬规则,LLM05)**:LLM 输出不可信——仅当 `supported` 是**严格 bool `true`** 才判支持;
+缺失 / 非 bool(如字符串 `"false"` 真值为 True)/ 任何其它值 → **判不支持**,该块降「待人工核实」,
+绝不让畸形响应放过踩红线的表述。**不支持 → 降级**(不触发重生成);**仅施于 R5 判定型**。
+
+**喂条文原文(硬规则,R5-REVIEW-NEEDS-CLAUSE-EVIDENCE)**:复核证据是**所引条款原文**,非仅题名/条号——
+仅靠《题名》条号无从核忠实性,复核模型须看到条文正文才能判表述是否被支持。代码以
+`query/query/judge/review.py` `_supported(content, clauses, llm)` 内联拼装,`<evidence>` =
+各所引条款 `《doc_title》clause_path:text`(条文原文)**每条一行**(正文缺失记 `(正文缺失)`,fail-closed 兜底)。
+
+### system
+
+```
+你是引用忠实性复核助手。判断给定表述是否被【所引条款原文】支持,只回 JSON {"supported": true 或 false}。
+```
+
+### user
+
+```
+表述:<content>
+所引条款原文:
+<evidence>
+该表述是否被上述条款原文支持?
+```

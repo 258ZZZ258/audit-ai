@@ -305,3 +305,41 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     小语料 hybrid 已置顶)。修:机制非无效改用**确定性单元 sparse-IP 严格断言**(`test_augment_*_strictly_raises_target_ip`),
     集成改为诚实的端到端召回 + 不回归 + 双关等价(不再伪称"名次升")。
   - 复审后:`test_sparse_boost` 20 + 全 query 模型门 **226 passed / 2 skipped** + ruff 全绿。待 Codex 复审。
+
+## §9.2 Kimi 忠实性复核 —— RL-1 真-LLM 闭环(2026-06-26,SPEC/PLAN/TASKS-REVIEW)
+
+> worktree `feat/query-faithfulness-review`(与 P0 文档管线 `feat/p0-phase2-biz-domain` 双工作树隔离)。
+> **接口/toggle/fail-closed/LLM seam 已在 R5 轮实装** → 本切片只**接真复核模型 + 闭环测试**,零接口重写、零 pipeline 改动。
+> **全绿**:`test_query_config` +2 / `test_llm_stub` +3 / `test_r5_review` +2(wiring)/ `test_r5_review_integration` 2 skipped(门控);
+> **全 query 套件 204 passed / 29 skipped**、ruff 净、无回归。
+
+- **已决(AskUserQuestion,2026-06-26)**:① 复核用**独立 `review_model`(Kimi)**,与主答 `llm_model`(Qwen)分离(§9.1);
+  ② 不支持的试探性表述 → **降「待人工核实」**(沿用已实装,**不触发重生成**);③ 范围 = **仅 R5 判定型**。
+- **关键设计 / 取舍**:
+  - **`make_llm_client(cfg, *, model=None)` add-only**:gateway 用 `model or cfg.llm_model` 建客户端 → 复核传 `review_model`
+    即与主答分离;**不传 = 主答模型**(既有 graph/调用零变化)。stub 分支忽略 `model`(零网络)。
+  - **复核客户端仅 toggle 开时建**:`r5_judgment.answer_judgment` 内 `review_llm = make_llm_client(qcfg, model=review_model)
+    if judge_multimodel_review else llm` → **关 → 不建客户端、`review_tentative` 直通主答 llm(零网络、byte 等价)**;
+    `build_framing` 仍用主答 `llm`。`review.py`/`_supported`/fail-closed **不改**(本切片是其互补的真-LLM 层)。
+  - **`review_model` 默认 `kimi-2.5`** 为 §9.1 意图占位(真名待甲方网关注册表 §15-①);env `QUERY_REVIEW_MODEL`(query 专属)
+    优先于 `OPENAI_REVIEW_MODEL`(通用)。
+- **实现**:`config` +`review_model` + 两 env 覆盖;`llm/client.py` `make_llm_client` model 参;`judge/r5_judgment.py` 复核客户端接线
+  (+`from query.llm import make_llm_client`);`PROMPTS.md` §9.2 忠实性复核 prompt(镜像 `_supported`,标 fail-closed+默认关);
+  新 `query/tests/test_r5_review_integration.py`(门控真闭环)。
+- **踩坑 / 核实**:
+  - **worktree + editable-install 解析陷阱(关键)**:主 `.venv` 的 `pip install -e` 用 **MetaPathFinder**(`_EditableFinder`,
+    `MAPPING={'query': '<主 checkout>/query/query'}`)→ 直接用主 venv 跑会**测到主 checkout 码、非 worktree**。
+    所幸 `sys.meta_path` 中默认 **`PathFinder` 先于(append 的)`_EditableFinder`** → `PYTHONPATH=<worktree>/{query,pipeline,libs/common,eval}`
+    使 `PathFinder` 先解析到 worktree(实测 `query.__file__` 指向 worktree)。**worktree 跑测试一律带此 PYTHONPATH。**
+  - **真模型门控测本地无 key 未执行**(只验**干净 skip**:`QUERY_LLM_BACKEND=gateway`+`OPENAI_API_KEY` 缺 → 2 skipped、零网络)
+    → 故 **RL-1 / §9.2 仍诚实记 🟡**(实装+单测+门控就位),**待真 gateway+key 跑绿后翻 ✅**(不在未执行门控测上overclaim 红线)。
+- **Codex 复审修复(PR #21,1 warning,实缺陷)**:
+  - **`R5-REVIEW-NEEDS-CLAUSE-EVIDENCE`**:初版 `review_tentative` 只喂 `citations`(锚点 `《题名》条号`,**无条文正文**)→
+    `_supported` 无从核忠实性,真模型只能凭题名 plausibility 判断、闭环形同虚设(RL-1 是 P0 红线)。**接受 spec-drift**
+    (SPEC-REVIEW §0「不改 review_tentative/_supported」前提是接口够用,实则不够——SC2「校验是否被所引条款支持」无条文
+    不可达)→ 改 `review_tentative(blocks, clauses, llm)` 喂 **`clauses`(含 `text` 条文原文)**;`_supported` 经
+    `_clause_evidence` 拼 `《题名》条号:正文` 每条一行(正文缺失 → `(正文缺失)`,fail-closed 兜底)。`r5_judgment` 传
+    已有的 `clauses`(零额外查询)。**回归**:`test_review_prompt_includes_clause_text`(断言条文原文进 prompt)+ 集成测
+    改为**基于条文证据**(同题名/条号、条文不支持某表述 → 降级)。`review.py` fail-closed 语义不变。
+- **未做(SPEC-REVIEW §0)**:触发重生成 / 全量双跑 / 其他路由复核 / 主答模型切换 / 改 `_supported` fail-closed 语义;
+  真 Kimi gateway endpoint 可用性(甲方,§9.1/§15-①)。**待 Codex 复审② + 真 gateway 跑绿。**

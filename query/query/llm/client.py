@@ -18,10 +18,13 @@ class LLMClient(Protocol):
     def chat_json(self, system: str, user: str) -> dict: ...
 
 
-def make_llm_client(cfg: QueryConfig) -> LLMClient:
+def make_llm_client(cfg: QueryConfig, *, model: str | None = None) -> LLMClient:
     """按 ``cfg.llm_backend``(默认 ``stub``)返回实现。
 
     gateway **懒导入** ``pipeline.llm_client``(避免默认装/连网,且 import 期不拉重依赖)。
+    ``model`` **add-only**:gateway 时用 ``model or cfg.llm_model`` 建客户端——复核传
+    ``cfg.review_model``(Kimi)即与主答 ``llm_model``(Qwen)分离(§9.1);**不传 = 主答模型**
+    (既有调用零变化)。stub 分支忽略 ``model``(零网络、确定性)。
     """
     backend = cfg.llm_backend
     if backend == "stub":
@@ -31,5 +34,5 @@ def make_llm_client(cfg: QueryConfig) -> LLMClient:
     if backend == "gateway":
         from pipeline.llm_client import make_llm_client as _make_pipeline_llm  # 懒导入,复用 PR#4
 
-        return _make_pipeline_llm(cfg.llm_model)
+        return _make_pipeline_llm(model or cfg.llm_model)
     raise ValueError(f"未知 QUERY_LLM_BACKEND: {backend!r}(stub | gateway)")
