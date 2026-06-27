@@ -104,12 +104,14 @@ def answer_judgment(query, retriever, pg, llm, qcfg) -> QueryResult:
     blocks = build_framing(clauses, query, llm, qcfg)          # ② 框定 + ③ 标识(无 verdict 槽)
     # §9.2 复核:开 → 用独立 review_model(Kimi)建复核客户端,与主答(Qwen)分离(§9.1);
     # 关 → 不建客户端(零网络),review_tentative 直通主答 llm。
+    # 喂 clauses(含条文原文)而非 citations(仅锚点):忠实性须对条文原文校验
+    # (R5-REVIEW-NEEDS-CLAUSE-EVIDENCE)。
     review_llm = (
         make_llm_client(qcfg, model=qcfg.review_model)
         if qcfg.judge_multimodel_review
         else llm
     )
-    blocks = review_tentative(blocks, citations, review_llm, qcfg)
+    blocks = review_tentative(blocks, clauses, review_llm, qcfg)
     return QueryResult(
         route_type=RouteType.JUDGMENTAL,
         answer_blocks=blocks,

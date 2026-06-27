@@ -8,8 +8,28 @@ from query.contract import AnswerBlock, BlockType
 from query.judge import r5_judgment
 from query.judge.review import review_tentative
 
-_CITS = [SimpleNamespace(doc_title="反洗钱管理办法", clause_path="第三条")]
+# 复核证据 = 所引条款(含**正文**);仅题名/条号不足以判忠实性(R5-REVIEW-NEEDS-CLAUSE-EVIDENCE)。
+_CLAUSES = [
+    {
+        "doc_title": "反洗钱管理办法",
+        "clause_path": "第三条",
+        "text": "金融机构应当对大额交易和可疑交易进行报告。",
+    }
+]
 _BLOCKS = [AnswerBlock(BlockType.TEXT, "适用前提:开户推广;适用对象:营业部", stream=False)]
+
+
+def test_review_prompt_includes_clause_text():
+    # 核心:复核 prompt 必须带**条文原文**(非仅《题名》条号)——否则无从核忠实性。
+    seen = {}
+
+    def chat_json(system, user):
+        seen["user"] = user
+        return {"supported": True}
+
+    qcfg = SimpleNamespace(judge_multimodel_review=True)
+    review_tentative(_BLOCKS, _CLAUSES, llm=SimpleNamespace(chat_json=chat_json), qcfg=qcfg)
+    assert "金融机构应当对大额交易和可疑交易进行报告" in seen["user"]  # 条文原文进 prompt
 
 
 def _llm(supported: bool):
@@ -18,20 +38,20 @@ def _llm(supported: bool):
 
 def test_review_off_passthrough():
     qcfg = SimpleNamespace(judge_multimodel_review=False)
-    out = review_tentative(_BLOCKS, _CITS, llm=_llm(False), qcfg=qcfg)
+    out = review_tentative(_BLOCKS, _CLAUSES, llm=_llm(False), qcfg=qcfg)
     assert out == _BLOCKS  # 关 → 原样(不调 LLM、不改块)
 
 
 def test_review_on_unsupported_downgrades():
     qcfg = SimpleNamespace(judge_multimodel_review=True)
-    out = review_tentative(_BLOCKS, _CITS, llm=_llm(False), qcfg=qcfg)
+    out = review_tentative(_BLOCKS, _CLAUSES, llm=_llm(False), qcfg=qcfg)
     assert out[0].content != _BLOCKS[0].content  # 不支持 → 降级
     assert "待人工核实" in out[0].content
 
 
 def test_review_on_supported_keeps():
     qcfg = SimpleNamespace(judge_multimodel_review=True)
-    out = review_tentative(_BLOCKS, _CITS, llm=_llm(True), qcfg=qcfg)
+    out = review_tentative(_BLOCKS, _CLAUSES, llm=_llm(True), qcfg=qcfg)
     assert out[0].content == _BLOCKS[0].content  # 支持 → 原样
 
 
@@ -40,11 +60,11 @@ def test_review_malformed_bool_fails_closed():
     qcfg = SimpleNamespace(judge_multimodel_review=True)
     for bad in ("false", "true", 1, None, {}):  # 字符串/数字/缺值:均非 bool True → 不支持
         llm = SimpleNamespace(chat_json=lambda s, u, _b=bad: {"supported": _b})
-        out = review_tentative(_BLOCKS, _CITS, llm=llm, qcfg=qcfg)
+        out = review_tentative(_BLOCKS, _CLAUSES, llm=llm, qcfg=qcfg)
         assert "待人工核实" in out[0].content, bad
     # 完全缺 supported 键 → fail closed
     llm = SimpleNamespace(chat_json=lambda s, u: {})
-    assert "待人工核实" in review_tentative(_BLOCKS, _CITS, llm=llm, qcfg=qcfg)[0].content
+    assert "待人工核实" in review_tentative(_BLOCKS, _CLAUSES, llm=llm, qcfg=qcfg)[0].content
 
 
 # ── T3:answer_judgment 复核客户端接线(模型分离 + 关时不建客户端,零栈)──────────────
@@ -61,7 +81,7 @@ def _run_answer_judgment(monkeypatch, *, review_on, main_llm, review_client):
         captured["model"] = model
         return review_client
 
-    def fake_review(blocks, citations, llm, qcfg):
+    def fake_review(blocks, clauses, llm, qcfg):
         captured["review_llm"] = llm
         return list(blocks)
 

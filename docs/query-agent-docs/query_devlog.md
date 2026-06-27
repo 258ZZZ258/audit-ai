@@ -331,9 +331,15 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     `MAPPING={'query': '<主 checkout>/query/query'}`)→ 直接用主 venv 跑会**测到主 checkout 码、非 worktree**。
     所幸 `sys.meta_path` 中默认 **`PathFinder` 先于(append 的)`_EditableFinder`** → `PYTHONPATH=<worktree>/{query,pipeline,libs/common,eval}`
     使 `PathFinder` 先解析到 worktree(实测 `query.__file__` 指向 worktree)。**worktree 跑测试一律带此 PYTHONPATH。**
-  - **`_supported` prompt 只喂 `《doc_title》clause_path`(无条文正文)** → 闭环集成测用「**主题契合 vs 完全无关**」对比
-    构造支持/不支持两块(而非细粒度条文比对),在 title-only 信号下仍给真模型稳定判别。
   - **真模型门控测本地无 key 未执行**(只验**干净 skip**:`QUERY_LLM_BACKEND=gateway`+`OPENAI_API_KEY` 缺 → 2 skipped、零网络)
     → 故 **RL-1 / §9.2 仍诚实记 🟡**(实装+单测+门控就位),**待真 gateway+key 跑绿后翻 ✅**(不在未执行门控测上overclaim 红线)。
-- **未做(SPEC-REVIEW §0)**:触发重生成 / 全量双跑 / 其他路由复核 / 主答模型切换 / 改 `review_tentative` fail-closed 语义;
-  真 Kimi gateway endpoint 可用性(甲方,§9.1/§15-①)。**待 Codex 复审 + 真 gateway 跑绿。**
+- **Codex 复审修复(PR #21,1 warning,实缺陷)**:
+  - **`R5-REVIEW-NEEDS-CLAUSE-EVIDENCE`**:初版 `review_tentative` 只喂 `citations`(锚点 `《题名》条号`,**无条文正文**)→
+    `_supported` 无从核忠实性,真模型只能凭题名 plausibility 判断、闭环形同虚设(RL-1 是 P0 红线)。**接受 spec-drift**
+    (SPEC-REVIEW §0「不改 review_tentative/_supported」前提是接口够用,实则不够——SC2「校验是否被所引条款支持」无条文
+    不可达)→ 改 `review_tentative(blocks, clauses, llm)` 喂 **`clauses`(含 `text` 条文原文)**;`_supported` 经
+    `_clause_evidence` 拼 `《题名》条号:正文` 每条一行(正文缺失 → `(正文缺失)`,fail-closed 兜底)。`r5_judgment` 传
+    已有的 `clauses`(零额外查询)。**回归**:`test_review_prompt_includes_clause_text`(断言条文原文进 prompt)+ 集成测
+    改为**基于条文证据**(同题名/条号、条文不支持某表述 → 降级)。`review.py` fail-closed 语义不变。
+- **未做(SPEC-REVIEW §0)**:触发重生成 / 全量双跑 / 其他路由复核 / 主答模型切换 / 改 `_supported` fail-closed 语义;
+  真 Kimi gateway endpoint 可用性(甲方,§9.1/§15-①)。**待 Codex 复审② + 真 gateway 跑绿。**

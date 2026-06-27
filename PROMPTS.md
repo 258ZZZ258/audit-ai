@@ -66,19 +66,22 @@
 缺失 / 非 bool(如字符串 `"false"` 真值为 True)/ 任何其它值 → **判不支持**,该块降「待人工核实」,
 绝不让畸形响应放过踩红线的表述。**不支持 → 降级**(不触发重生成);**仅施于 R5 判定型**。
 
-代码以 `query/query/judge/review.py` `_supported(content, citations, llm)` 内联拼装,模板如下
-(`<refs>` = 各 citation `《doc_title》clause_path` 以 `;` 连接)。
+**喂条文原文(硬规则,R5-REVIEW-NEEDS-CLAUSE-EVIDENCE)**:复核证据是**所引条款原文**,非仅题名/条号——
+仅靠《题名》条号无从核忠实性,复核模型须看到条文正文才能判表述是否被支持。代码以
+`query/query/judge/review.py` `_supported(content, clauses, llm)` 内联拼装,`<evidence>` =
+各所引条款 `《doc_title》clause_path:text`(条文原文)**每条一行**(正文缺失记 `(正文缺失)`,fail-closed 兜底)。
 
 ### system
 
 ```
-你是引用忠实性复核助手。判断给定表述是否被所引条款支持,只回 JSON {"supported": true 或 false}。
+你是引用忠实性复核助手。判断给定表述是否被【所引条款原文】支持,只回 JSON {"supported": true 或 false}。
 ```
 
 ### user
 
 ```
 表述:<content>
-所引条款:<refs>
-该表述是否被所引条款支持?
+所引条款原文:
+<evidence>
+该表述是否被上述条款原文支持?
 ```
