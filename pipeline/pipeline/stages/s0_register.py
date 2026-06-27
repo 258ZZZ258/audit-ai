@@ -34,6 +34,7 @@ from pipeline.meta.version_chain import RelationType
 from pipeline.stage_base import StageContext
 from pipeline.states import ErrorCode, PipelineState
 
+# xlsx 端到端入库(条款树 S3 不适用纯表格)留 P2 P-MISC(§22.3);light_parser 已具 xlsx 解析能力
 WHITELIST_FORMATS = {"docx", "pdf"}
 
 

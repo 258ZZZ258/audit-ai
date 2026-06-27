@@ -240,6 +240,31 @@ def test_run_e2_clear_does_not_touch_e1(seeded):
     assert {r.tag_type for r in e1_rows} == {"is_obligation", "duration"}
 
 
+# ── T1.1 真模型门控集成:有 OPENAI_API_KEY 才跑(绝不联网),验真链路 + 字典约束对真模型生效 ──
+def test_run_e2_real_model_stays_in_dict(seeded):
+    import os
+
+    if not os.environ.get("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY 未设置——E2 真模型门控集成测跳过(绝不联网)")
+    from pipeline.llm_client import make_llm_client
+
+    pg, ctx, dvid = seeded
+    allowed_ents = {d.name for d in ctx.db.get_entity_types()}
+    allowed_depts = {d.name for d in ctx.db.get_departments()}
+    allowed_matters = {d.name for d in ctx.db.get_biz_domains()}
+    client = make_llm_client()  # 端点/模型由 env(OPENAI_API_KEY/BASE_URL/MODEL)配置,端点无关
+    r = e2.run_e2(ctx, dvid, client=client)  # 真 LLM 端到端(不抛 = 真链路通)
+    assert r.total == 2  # 2 非 parent 块都过真模型
+    # 服务端字典约束对真模型生效:任何落库值都在字典内(LLM 越界值被 _enforce 裁掉)
+    for t in _e2_tags(pg, dvid):
+        if t.tag_type == "e2_entity_type":
+            assert set(t.entity_type or []) <= allowed_ents
+        elif t.tag_type == "department":
+            assert t.tag_value in allowed_depts
+        elif t.tag_type == "matter":
+            assert t.tag_value in allowed_matters
+
+
 # ── 装配:_structuring 默认关 → 零 LLM(不构造 client、不调用)──────────────
 @pytest.fixture
 def cfg_ctx():

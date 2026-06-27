@@ -35,7 +35,7 @@
 | §4.1 docx→DeepDoc office / pdf-text→DeepDoc pdf | 🟡 | `parsing/factory.py` DeepDoc **stub**;demo 用 light(python-docx/pdfplumber) |
 | §4.1 pdf-notext/图片 → PaddleOCR(GPU)→版面重建 | ❌ | PaddleOCR **stub**;扫描件直接 E202-DEMO 隔离,无 OCR |
 | §4.1 复杂版式失败 → MinerU 重试一次 | ❌ | MinerU **stub**,无兜底重试 |
-| §4.1 xlsx → openpyxl 直读 → 表格 IR | ❌ | 未实现(xlsx 非白名单) |
+| §4.1 xlsx → openpyxl 直读 → 表格 IR | 🟡 | light_parser xlsx **解析能力**(T1.5,`test_xlsx_parse`);端到端入库(白名单/s1 路由)留 P2 P-MISC |
 | §4.1 文本层判定 <50 字/页 → OCR | ✅ | `light_parser.py` density 判定(走隔离而非 OCR) |
 | §4.1 解析失败 → PARSE_FAILED(E203) | ✅ | `s1_parse.py:_fail` |
 | §4.3 CPU/GPU 独立队列 | ❌ | 单进程轮询;队列分离留生产 Temporal |

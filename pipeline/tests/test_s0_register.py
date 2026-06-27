@@ -159,10 +159,13 @@ def test_registers_docx_and_pdf(reg):
 
 
 def test_whitelist_quarantine(reg):
+    # 白名单外格式(unknown 魔数)→ 隔离;xlsx 端到端留 P2 不入白名单,故用 unknown 测
     ctx, base, batches = reg
     bid = _bid()
     batches.append(bid)
-    d, mp = _make_batch(base, bid, [_row("c.xlsx", corpus_type="P-INT")], {"c.xlsx": _xlsx()})
+    d, mp = _make_batch(
+        base, bid, [_row("c.bin", corpus_type="P-INT")], {"c.bin": b"\x00\x01\x02 not whitelisted"}
+    )
     o = register_batch(ctx, bid, d, mp).outcomes[0]
     assert o.status == "QUARANTINED" and o.error_code == "E101-DEMO"
     # B2:隔离件进统一队列(quarantine 类型),queue list 可见

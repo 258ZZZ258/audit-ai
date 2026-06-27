@@ -237,9 +237,13 @@ class ClauseReference(AuditMixin, Base):
     __tablename__ = "clause_references"
 
     ref_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    chunk_id: Mapped[str] = mapped_column(ForeignKey("chunks.chunk_id"), index=True)
+    # ON DELETE CASCADE:standoff 附属随 chunk/版本删除自动清(删 chunk 的各路径无需手动清,
+    # 与 ref_resolver 填充配套;§6.7)。clause_tags 仍手动删(富集打标,既有模式不动)。
+    chunk_id: Mapped[str] = mapped_column(
+        ForeignKey("chunks.chunk_id", ondelete="CASCADE"), index=True
+    )
     doc_version_id: Mapped[str] = mapped_column(
-        ForeignKey("doc_versions.doc_version_id"), index=True
+        ForeignKey("doc_versions.doc_version_id", ondelete="CASCADE"), index=True
     )
     span_start: Mapped[int | None] = mapped_column(Integer)  # 引用在 chunks.text 的字符跨度
     span_end: Mapped[int | None] = mapped_column(Integer)

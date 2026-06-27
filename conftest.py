@@ -127,7 +127,7 @@ def unique_docx():
         doc.save(d / fn)
         wb = Workbook()
         wb.active.append(_MANIFEST_COLS)
-        wb.active.append([fn, "合同管理办法", f"测试第{tag[:6]}号", "INTERNAL",
+        wb.active.append([fn, "合同管理办法", f"测试第{tag}号", "INTERNAL",
                           "内部", "P-INT", "LEGAL", None, None, "内规", None])
         mp = d / "manifest.xlsx"
         wb.save(mp)

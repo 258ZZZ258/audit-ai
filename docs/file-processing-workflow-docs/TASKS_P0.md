@@ -83,18 +83,18 @@
 **Files:** `pipeline/pipeline/chunking/ref_render.py`、`pipeline/tests/test_ref_render.py`
 **Estimated scope:** S
 
-### Task T1.5 (A/A1):xlsx 直读 + 白名单含 xlsx
-**Description:** light parser 加 xlsx 分支(openpyxl):每 sheet → `Table` block → IR;`SourceFormat` 加 xlsx(add-only);白名单含 xlsx。
+### Task T1.5 (A/A1):xlsx 直读(parser 能力)
+**Description:** light parser 加 xlsx 分支(openpyxl):每 sheet → `Table` block → IR;`SourceFormat` 加 xlsx(add-only)。**端到端入库(白名单/s1 路由)留 P2 P-MISC**(纯表格 S3 不适用,避静默 0-chunk indexed)。
 **Acceptance criteria:**
-- [ ] `ir.py` `SourceFormat` +`XLSX="xlsx"`(add-only);`light_parser` xlsx 分支用 openpyxl 产 `Table` block(cells row/col)。
-- [ ] `WHITELIST_FORMATS` += xlsx;`detect_format` 识别 xlsx(zip/`xl/` 魔数)。
-- [ ] `test_xlsx_parse`:简单 xlsx → `chunk_type=table` 块入库。
+- [x] `ir.py` `SourceFormat` +`XLSX`(add-only);`light_parser` xlsx 分支 openpyxl 产 `Table` block + 坏文件健壮(BadZipFile → 无效格式,不崩溃)。
+- [x] `detect_format` 识别 xlsx(魔数);**端到端入库白名单/路由留 P2 P-MISC**(纯表格 S3 不适用,避静默 0-chunk indexed,Codex P0-XLSX-NO-TABLE-CHUNKS)。
+- [x] `test_xlsx_parse`:`LightParser.parse` xlsx → `Table` 块 + markdown;`SourceFormat.XLSX`(parser-only,不接 s0/s1 端到端)。
 **Verification:** `pytest pipeline/tests/test_xlsx_parse.py pipeline/tests/test_s0_register.py`
 **Dependencies:** T0.2(`to_markdown` 辅助)
 **Files:** `pipeline/pipeline/parsing/light_parser.py`、`libs/common/common/ir.py`、`pipeline/pipeline/stages/s0_register.py`、`pipeline/tests/test_xlsx_parse.py`
 **Estimated scope:** M
 
-> **Checkpoint 1:** 纯逻辑测全绿;B4 真链路有 key 真跑 / 无 key skip;`clause_references` 在 R1–R3 有 resolved 行;xlsx 可入库。→ 人工 review。
+> **Checkpoint 1:** 纯逻辑测全绿;B4 真链路有 key 真跑 / 无 key skip;`clause_references` 在 R1–R3 有 resolved 行;xlsx parser 能力可用(端到端留 P2)。→ 人工 review。
 
 ---
 
@@ -160,7 +160,7 @@
 ### Task T2.5 (A/A3):白名单 jpg/png + 路由表 format→backend
 **Description:** magic number 加 jpg/png/xlsx;factory 路由 format→backend;jpg/png 无 OCR 后端时 → QUARANTINED(不静默丢)。
 **Acceptance criteria:**
-- [ ] `detect_format` 识别 jpg/png/xlsx;`WHITELIST` += jpg/png(xlsx 见 T1.5)。
+- [ ] `detect_format` 识别 jpg/png/xlsx;`WHITELIST` += jpg/png(**xlsx 端到端入库白名单留 P2 P-MISC**,T1.5 已收窄为 parser-only)。
 - [ ] factory 路由:docx/pdf-text→light/deepdoc;pdf-notext/jpg/png→paddleocr;失败→mineru。
 - [ ] jpg/png + 默认 light(无 OCR)→ E202/QUARANTINED,不崩。
 - [ ] `test_s0_register` 扩格式 + `test_parser_routing`(format→backend 表)。
@@ -216,7 +216,7 @@
 
 - [ ] 现 **374 passed** 不破;新增测试全绿;`ruff check` 净;`alembic check` 无漂移。
 - [ ] LLM 触点:fake 单测覆盖 + 真模型门控集成(有 key 真跑、无则 skip);默认 `*_enabled` 关。
-- [ ] RTM 翻动:**S1-4 / S2-6 / S1-7 / S1-8 / S0-8 / O-5 / S4-12 / S4-11 / DM-3 / S4-2 / E2-1 / S3-15 / DM-2 / DM-4** → ✅;**S1-1/2/3** → 🟡(门控就位,生产验收)。更新 `GAP.md` + `RTM.md` 并核对 ✅ 行确有通过测试。
+- [ ] RTM 翻动:**S2-6 / S1-8 / S4-12 / S4-11 / S4-2 / E2-1 / DM-2** → ✅;**S1-4(xlsx parser-only)/ S1-7 / S0-8 / O-5 / S3-15(R1–R3)/ DM-3 / DM-4 / S1-1/2/3**(部分/门控/端到端留 P2)→ 🟡。更新 `GAP.md` + `RTM.md` 并核对 ✅ 行确有通过测试。
 - [ ] 交 Codex 复审(`code-review-and-quality` + `security-and-hardening`),发现写 `.review/findings.json`,作者侧逐条修复或带 `spec_ref` 反驳。
 
 ## 建议执行顺序(承 PLAN 依赖图)

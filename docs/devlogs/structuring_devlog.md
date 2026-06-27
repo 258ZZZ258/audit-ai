@@ -18,3 +18,27 @@
 
 > chunk_id 公式本体是契约,在 `libs/common/common/`(见同目录 `contracts_devlog.md`)。
 > 时间轴:`docs/devlog.md` 并行流 L(L1/L2/L3)、阶段 C(C1)、检查点 D(发现 2)、阶段 W(目录区域化)。
+
+## P0 Phase 1:ref_resolver / ref_render / case_ref_align / xlsx(2026-06-26;PR #18)
+
+**背景**:P0 Phase 1(T1.1–T1.5)补齐切块层对内部引用、案例对齐、xlsx 格式支持的生产契约要求。
+
+**主要新增文件**:
+
+- **`chunking/ref_resolver.py`(153 行)**:从切块文本自动提取内部引用(`第X条`/`第X款`/`第X项`等正则),返回 `internal_refs` 列表;与 `clause_tree` 的 `internal_refs` 字段对接写入 PG(`chunks.internal_refs`)。
+- **`chunking/ref_render.py`(35 行)**:将 `internal_refs` 列表格式化为面向前端的可读字符串(`"见第X条"`)。
+- **`meta/case_ref_align.py`(91 行)**:S4 阶段将 `cases` 表里的案例与已入库的条款切块做交叉对齐;写 `case_clause_refs` 关联表。
+- **`alembic/versions/0010_clause_refs_cascade.py`(39 行)**:为 `clause_refs`/`case_clause_refs` 加 `ON DELETE CASCADE`,确保 `reprocess` 幂等清理时级联删旧引用关系。
+
+**测试(5 个新文件,200+ 行)**:
+- `test_ref_resolver.py`(205 行)—— 覆盖多种正则边界、跨法引用过滤
+- `test_ref_render.py`(23 行)—— 渲染格式回归
+- `test_case_ref_align.py`(85 行)—— 对齐逻辑 + 幂等
+- `test_chunker.py` 补充 —— 六规则验证
+- `test_xlsx_parse.py`(46 行)—— `detect_format()` 格式探测
+
+**XLSX 决策(T1.5 收窄)**:`detect_format()` 可识别 `.xlsx`,但**不加入白名单**;端到端入库(§22.3 费用数据路由)留 P2。故 S0 仍拒 xlsx、parser 仅做能力验证。文档/注释已对齐此决定。
+
+**Codex 审查闭环**:Phase 1 提交后 Codex 发现 4 条 warning → 逐条修复(类型注解缺失、注释/文档与代码不一致)→ xlsx 收窄后再做一轮文档一致性补全 → 复审通过。
+
+**状态**:PR #18(feat/p0-phase1)待合并;本地 `ruff` 全绿,16 passed(改动范围单元)。下一步:全仓模型门控全量门跑一次后合 main。

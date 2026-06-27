@@ -606,3 +606,29 @@ DeepDoc/E2·E3/L2 LLM/perm_tag 过滤/OCR/endpoint 桩/注释保留表/§21 T1·
 
 - **`/clear` 自动存档 hook**(`~/.claude/hooks/save-devlog-on-clear.sh`,写入 `.claude/settings.local.json`):
   `/clear` 触发时自动把会话摘要追加到 devlog(当前 session 即由此驱动)。属 Claude Code 配置层,不影响仓库代码。
+
+---
+
+## 阶段 P0 Phase 1:切块内部引用 / 案例对齐 / xlsx parser-only(2026-06-26;PR #18)
+
+**范围**:T1.1–T1.5。主改动在 `pipeline/pipeline/chunking/` + `pipeline/pipeline/meta/` + alembic。
+
+**关键交付**:
+
+| 文件 | 职责 |
+|---|---|
+| `chunking/ref_resolver.py` | 正则提取切块内 `internal_refs`(`第X条/款/项`) |
+| `chunking/ref_render.py` | refs → 可读渲染字符串(前端用) |
+| `meta/case_ref_align.py` | 案例 ↔ 条款切块交叉对齐,写 `case_clause_refs` |
+| `alembic/0010` | `clause_refs`/`case_clause_refs` ON DELETE CASCADE |
+
+**决策要点**:
+- XLSX **收窄至 parser-only**:`detect_format()` 可识别,但 S0 白名单不加 xlsx;端到端路由(§22.3 费用数据)延至 P2。
+- `internal_refs` 字段在切块写入时由 `ref_resolver` 填充,不再依赖 `clause_tree` 单独爬取。
+- Codex 审查闭环完成(4 条 warning 修复 + xlsx 收窄后文档一致性补全)。
+
+**测试**:5 个新测试文件(200+ 行),改动范围 16 passed;ruff 全绿。
+
+**PR 状态**:PR #18(feat/p0-phase1)待合入 main;全仓模型门控全量门跑完后合并。
+
+详见 `docs/devlogs/structuring_devlog.md` §「P0 Phase 1」。
