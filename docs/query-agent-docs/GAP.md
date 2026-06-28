@@ -8,8 +8,8 @@
 
 ## 一句话
 三条红线已在 **R1 闭环**(无编造引用 / 无裸结论 / 可解释拒答);**八路全实装(R5 收官)**;判定型经三段式硬约束
-+ 代码后检无裸结论(§9.2 真复核接口+toggle,默认关)。查询理解前端(HyDE/多轮/分解)与横切能力(真多模型复核/
-权限/观测/流式/导出)大部分未做。
++ 代码后检无裸结论(§9.2 真复核接口+toggle,默认关)。查询理解前端 **N0 多轮归并 + R7 闭环已实装**(LLM 为主默认开,
+真-LLM 门控就位待跑绿;规则版离线兜底),HyDE(N1)/ 问题分解(N3)与横切能力(真多模型复核/权限/观测/流式/导出)未做。
 
 ---
 
@@ -17,7 +17,7 @@
 
 | 节点 | 状态 | 说明 |
 |---|---|---|
-| N0 多轮上下文归并(指代消解/省略补全) | ❌ | `QueryState.history` 仅占位,单轮直通 |
+| N0 多轮上下文归并(指代消解/省略补全) | 🟡 | **实装**(SPEC/PLAN/TASKS-N0):`understand/merge.py` + graph `n0_merge` 节点(`START→n0_merge→understand`);**LLM 为主默认开**(`merge_context`:gateway 真 LLM / stub 规则版 / fail-safe 回落)+ **R7 澄清闭环**(原问+澄清答归并,跨请求重入)+ 代词/省略顺承;`ask(query, history=None)` + CLI `--history-json`。单轮 no-op byte 等价。真-LLM 闭环门控就位、本地无 key skip → **诚实 🟡**(待真 gateway 跑绿翻✅);深度指代靠真 LLM、规则版离线兜底;`dict` 未接 |
 | N1 HyDE 改写 | ❌ | 未做 |
 | N2 业务事项分类 | 🟡 | `classify.py` 规则版场景分类 + 词典子串抽取;非 LLM、词典需注入(未接 PG dict 加载)、`dict_scenario_terms` 桥接未做 |
 | N3 问题分解 | ❌ | 未做 |
@@ -33,7 +33,7 @@
 | R4 多文档列举(§6.4) | ✅ 实装 | 枚举模式高 k(`retrieve_enumerate` 50/50,不激进截断)+ **Milvus 标量预过滤**(`chunk_type=clause` 硬偏好 + `biz_domain`/`entity_type`,扩 `milvus_io.search` 加 `extra_expr` add-only,防注入白名单)+ **E1 义务 PG 后过滤**(`clause_tags.is_obligation`,consumed-when-present 空降级)+ 按 doc 聚合 TABLE + 四级 citations + 不保证穷举外规边界声明;`entity_type`(E2 默认关)/biz 词典未接 PG 加载 → consumed-when-present;sparse 提权/重排留后续 |
 | R5 判定型(§6.5) | ✅ 实装 | 三段式硬约束(① 依据四级锚点 ② 构成要件框定 clause直呈/LLM toggle ③ AI辅助/人工复核标识,**无 verdict 槽**)+ **不出裸结论代码后检**(`strip_bare_conclusion` verdict+试探性 always-on)+ 桥接入口(`resolve_cited_clauses` consumed-when-present)+ §9.2 复核接口+toggle(默认关)+ `review_required=true`;真多模型复核(Kimi)/LLM 构成要件抽取默认关、§15-④ demo workaround 待甲方确认 |
 | R6 统计型(§6.6) | ✅ 实装 | 规则维度抽取✅ + 参数化 SQL(白名单 + bound params **防注入**)✅ + 聚合/列表 TABLE✅;`violation_category` **consumed-when-present**(L2 空降级明示);LLM 维度抽取/占比/字典评审留后续 |
-| R7 需澄清(§6.7) | 🟡 | 触发✅ + 纯对话澄清块✅;缺澄清后回 N0 重新归并(N0 未做) |
+| R7 需澄清(§6.7) | ✅ 闭环 | 触发✅ + 纯对话澄清块✅ + **澄清后回 N0 重新归并✅**(N0 实装,跨请求重入 `n0_merge`:调用方带 history 重问 → 原问+澄清答归并 → 重路由;`test_r7_closure_changes_routing`)|
 | R8 兜底拒答(§6.8) | ✅ | `refuse_out_of_domain` |
 
 > **八路全实装,无占位**(R5 收官)。`_placeholder` 节点保留为防御兜底(未知 route_type 仍落它)。
@@ -123,7 +123,8 @@
 5. ~~§5.5 重排(bge-reranker)~~ ✅(SPEC/PLAN/TASKS-RERANK;接缝+本地 bge+none 默认等价)/ ~~§5.4 sparse 精确通道(提权+扩展)~~ ✅ 机制+单元+集成绿(SPEC/PLAN/TASKS-SPARSE)
 
 ### P2 — 查询理解前端
-6. N0 多轮归并 / N1 HyDE(默认 on/off 待 V0 A/B)/ N3 问题分解
+6. ~~N0 多轮归并 + R7 闭环~~ ✅ 实装(SPEC/PLAN/TASKS-N0;LLM 为主默认开 + 规则版离线兜底 + 真-LLM 门控就位⏳待跑绿)/
+   **N1 HyDE**(默认 on/off 待 V0 A/B,§15-①⑦)/ **N3 问题分解**(复合问句拆子查询;单跳直通)
 
 ### P3 — 横切 / 工程
 7. §7.2 流式输出 / §11 导出 / §9.3 敏感词 / Langfuse / SSO / AI 标识页脚
