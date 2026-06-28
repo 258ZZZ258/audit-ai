@@ -51,3 +51,5 @@ def test_seed_loads_violation_and_aliases(pg):
     assert counts["aliases"] >= 1
     assert any(v.dict_version == "v0-draft-2026-06" for v in pg.get_violation_types())
     assert len(pg.get_aliases()) >= 1
+    # R4 三级匹配「别名→文号」路径:v0-draft seed 含 ≥1 条带 canonical_doc_number
+    assert any(a.canonical_doc_number for a in pg.get_aliases())
