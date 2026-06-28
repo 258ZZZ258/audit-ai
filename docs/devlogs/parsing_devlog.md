@@ -10,6 +10,8 @@ docx **无原生页码**,页码**不从 docx 猜**:s1 用 soffice 渲染一份 c
 - **`light_parser` + `adapter`(B3)**:`ParserAdapter` 是可替换边界;docx(python-docx 按序段落+表格,page=None 待对齐)、pdf(pdfplumber 逐页 + 字符密度 <阈值判扫描件 → E202-DEMO 隔离)。
 - **rendition(SP1)**:soffice 未装 → `brew install --cask libreoffice`;`soffice_bin()` 经 env `PIPELINE_SOFFICE` > PATH > mac `.app` 定位。"二进制找得到 ≠ 能渲染"→ conftest session 级探测 fixture(真渲一次,broken 则 skip 非 flaky fail)。
 
+- **案例语料 pdfplumber 字体伪影(V16 调优)**:某些 CID 字体输出**康熙部首字形**(⽉⽇⾏⼈,U+2F00 区)致日期/正则失配 → light_parser 加**康熙部首→CJK 归一**;另当事人无前缀回退抬头行、文号跳过被引外规令号、新增「警示函/监管谈话」类型。
+
 ## 接缝(升格 Step 3b)
 `ParserAdapter` ABC + `factory.make_parser()` 读 `PIPELINE_PARSER_BACKEND`(默认 `light`)→ demo 默认;`DeepDocParser`/`MinerUParser`/`PaddleOCRParser` 为 stub(`NotImplementedError` + 再集成触发:DeepDoc=parser-swap 后 golden F1=1.0;MinerU=复杂版式兜底;PaddleOCR=扫描件 OCR+GPU)。s1 两处 `LightParser()` 改走 `make_parser()`。
 
