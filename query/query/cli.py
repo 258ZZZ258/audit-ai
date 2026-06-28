@@ -17,12 +17,29 @@ app = typer.Typer(
 @app.command()
 def ask(
     query: str = typer.Argument(..., help="查询问句"),
+    history_json: str = typer.Option(
+        None, "--history-json",
+        help='多轮对话历史 JSON 数组(N0 归并用),如 [{"role":"user","content":"…"}]',
+    ),
     indent: bool = typer.Option(False, "--indent", help="缩进打印 JSON"),
 ) -> None:
-    """R1 端到端:检索 → 引用约束生成 → 四级引用,输出 §10 契约 JSON(连真栈)。"""
+    """R1 端到端:检索 → 引用约束生成 → 四级引用,输出 §10 契约 JSON(连真栈)。
+
+    ``--history-json`` 给定时,N0 多轮归并把指代/省略问句补全为自足问句(§3.4);缺省单轮。
+    """
+    import json
+
     from query.graph import QueryAgent
 
-    res = QueryAgent.from_config().ask(query)
+    history = None
+    if history_json is not None:
+        try:
+            history = json.loads(history_json)
+        except json.JSONDecodeError as e:
+            raise typer.BadParameter(f"--history-json 非法 JSON:{e}") from e
+        if not isinstance(history, list):
+            raise typer.BadParameter("--history-json 须为 JSON 数组(list[dict])")
+    res = QueryAgent.from_config().ask(query, history=history)
     typer.echo(res.to_json(indent=2 if indent else None))
 
 
