@@ -12,11 +12,12 @@ from langgraph.graph import END, START, StateGraph
 from query.contract import AnswerBlock, BlockType, QueryResult, RouteType
 from query.generate.anchors import fetch_anchors
 from query.generate.r1_evidence import generate_evidence
-from query.llm import LLMClient
+from query.llm import LLMClient, make_llm_client
 from query.refuse.coverage_refusal import refuse_coverage, refuse_out_of_domain
 from query.retrieve.sufficiency import assess
 from query.state import QueryState
 from query.understand.classify import SceneType, classify
+from query.understand.merge import merge_context
 from query.understand.router import route
 
 # route_type → 终端节点名(R4/R5 收敛到 placeholder)
@@ -51,6 +52,13 @@ class QueryAgent:
         self._pg = pg
         self._llm = llm
         self._qcfg = qcfg
+        # N0 归并客户端:仅 merge_context 开 + gateway 时建(真 LLM 为主,镜像 §9.2 复核
+        # 「仅 toggle 开时建」);否则 None → merge_context 走规则版(stub/关 → 零网络)。
+        self._merge_llm = (
+            make_llm_client(qcfg, model=qcfg.merge_model or qcfg.llm_model)
+            if qcfg.merge_context and qcfg.llm_backend == "gateway"
+            else None
+        )
         self._app = self._build()
 
     @classmethod
@@ -67,6 +75,16 @@ class QueryAgent:
                    make_llm_client(qcfg), qcfg)
 
     # ── 节点(纯函数薄封装;只 evidence 触碰检索/PG/LLM)──────────────────────
+    def _n0_merge(self, state: QueryState) -> dict:
+        """N0 多轮上下文归并(§3.4):指代消解/省略补全为自足问句。空 history → no-op。
+
+        gateway 时真 LLM 为主(`_merge_llm`),stub/关 → 规则版;LLM 失败 fail-safe 回落(见
+        `merge_context`)。仅改写时写回 `query`(归并后下游 `understand`/检索读它,零改);未变 → `{}`
+        (单轮 byte 等价)。R7 澄清闭环 = 调用方带 history 重入本节点(跨请求,§6.7/§0.3)。
+        """
+        merged = merge_context(state.query, state.history, llm=self._merge_llm)
+        return {"query": merged} if merged != state.query else {}
+
     def _understand(self, state: QueryState) -> dict:
         scene = classify(state.query)
         decision = route(state.query, scene)
@@ -166,6 +184,7 @@ class QueryAgent:
 
     def _build(self):
         g = StateGraph(QueryState)
+        g.add_node("n0_merge", self._n0_merge)
         g.add_node("understand", self._understand)
         g.add_node("evidence", self._evidence)
         g.add_node("change", self._change)
@@ -176,7 +195,8 @@ class QueryAgent:
         g.add_node("clarify", self._clarify)
         g.add_node("refuse", self._refuse)
         g.add_node("placeholder", self._placeholder)
-        g.add_edge(START, "understand")
+        g.add_edge(START, "n0_merge")        # N0 多轮归并前置(§3 前端节点链)
+        g.add_edge("n0_merge", "understand")
         g.add_conditional_edges(
             "understand",
             self._route_edge,
@@ -189,8 +209,9 @@ class QueryAgent:
             g.add_edge(n, END)
         return g.compile()
 
-    def ask(self, query: str) -> QueryResult:
-        return self._app.invoke(QueryState(query=query))["result"]
+    def ask(self, query: str, history: list[dict] | None = None) -> QueryResult:
+        """端到端问答。``history``(多轮对话,N0 归并用)缺省单轮(空 → N0 no-op,byte 等价)。"""
+        return self._app.invoke(QueryState(query=query, history=history or []))["result"]
 
     def route_only(self, query: str) -> RouteType:
         """仅路由判定(调试 / `query route`),不触发检索。"""

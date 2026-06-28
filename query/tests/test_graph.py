@@ -177,6 +177,69 @@ def test_route_only_no_retrieval(agent):
     assert agent.route_only("费用报销三个月的规定在哪里") is RouteType.EVIDENCE
 
 
+# ── N0 多轮归并节点(§3.4)+ R7 闭环 + 单轮 no-op + merge 客户端门控(零栈)──────
+_R7_HIST = [
+    {"role": "user", "content": "合同管理办法什么时候改的"},
+    {"role": "assistant", "content": "您问现行版本还是某历史版本?", "route_type": "clarify"},
+]
+_ANSWER_HIST = [
+    {"role": "user", "content": "内幕交易的认定标准"},
+    {"role": "assistant", "content": "根据相关规定……"},
+]
+
+
+def test_n0_merge_r7_closure_node(agent):
+    from query.state import QueryState
+
+    out = agent._n0_merge(QueryState("现行版本", history=_R7_HIST))
+    assert "合同管理办法什么时候改的" in out["query"]  # 原问
+    assert "现行版本" in out["query"]                   # 澄清答
+
+
+def test_n0_merge_single_turn_noop(agent):
+    from query.state import QueryState
+
+    # 空 history → 不改写(返 {} → state.query 不变)→ 既有单轮 byte 等价
+    assert agent._n0_merge(QueryState("费用报销三个月的规定在哪", history=[])) == {}
+
+
+def test_n0_merge_self_contained_noop(agent):
+    from query.state import QueryState
+
+    # 有 history 但自足问句(无指代/不短)→ 规则版 None → 原句 → 返 {}
+    assert agent._n0_merge(QueryState("洗钱罪的构成要件是什么", history=_ANSWER_HIST)) == {}
+
+
+def test_r7_closure_changes_routing(agent):
+    # 单轮裸指代 → CLARIFY;N0 归并后不再歧义 → 离开 CLARIFY(R7 闭环效果,零栈)
+    from query.state import QueryState
+
+    assert agent.route_only("它呢") is RouteType.CLARIFY
+    merged = agent._n0_merge(QueryState("它的处罚呢", history=_ANSWER_HIST))["query"]
+    assert agent.route_only(merged) is not RouteType.CLARIFY
+
+
+def test_ask_accepts_history_backward_compatible(agent):
+    # ask(query, history=None) 向后兼容:单轮不传 history 照常(既有调用零变化)
+    assert agent.ask("它呢").route_type is RouteType.CLARIFY
+
+
+def test_merge_llm_built_only_when_gateway_and_on(monkeypatch):
+    import query.graph as gmod
+
+    sentinel = object()
+    monkeypatch.setattr(gmod, "make_llm_client", lambda cfg, *, model=None: sentinel)
+    base = load_query_config()
+    # stub(默认后端)→ 不建归并客户端(零网络、走规则版)
+    assert QueryAgent(None, None, StubLLMClient(), base)._merge_llm is None
+    # gateway + merge_context 开 → 建(真 LLM 为主)
+    gw_on = base.model_copy(update={"llm_backend": "gateway", "merge_context": True})
+    assert QueryAgent(None, None, StubLLMClient(), gw_on)._merge_llm is sentinel
+    # gateway + merge_context 关 → 不建
+    gw_off = base.model_copy(update={"llm_backend": "gateway", "merge_context": False})
+    assert QueryAgent(None, None, StubLLMClient(), gw_off)._merge_llm is None
+
+
 # ── 附挂门控(§6.3 适用边界):仅充分 evidence + 非概念判断型;拒答/关闭不挂(零栈)──────
 class _OneCaseRetr:
     def retrieve_cases(self, q, *, include_superseded=False):
