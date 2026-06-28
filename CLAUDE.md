@@ -7,7 +7,9 @@
 
 > **本文件只放"始终要遵守的核心"——契约、架构、约定。** 各模块的**开发记忆 / 决策 / 踩坑**已拆到
 > `docs/devlogs/*_devlog.md`(见底部「模块开发记忆索引」),**改某模块前按需读对应 devlog**(lazy,不全量进 context)。
-> 时间轴全叙事在 `docs/devlog.md`。改契约前先读 `docs/file-processing-workflow-docs/SPEC*.md`("裁机制不裁契约":cut mechanisms, never cut contracts)。
+> 时间轴阶段索引在 `docs/devlog.md`(已瘦身为索引,细节下沉模块 devlog)。改契约前先读 `docs/file-processing-workflow-docs/SPEC*.md`("裁机制不裁契约":cut mechanisms, never cut contracts)。
+>
+> **三层记忆分工**(写记录前先问"归哪层"):**git** = WHAT/WHEN/WHO + commit 粒度 why(机械完整,**能从 diff/log 看出来的只归这里**);**in-repo devlog**(`docs/devlog.md` 阶段索引 + `docs/devlogs/*` + `docs/query-agent-docs/query_devlog.md`)= **git 给不了的**——决策 + 为什么(尤其**否决方案**)、跨改动状态综合、非显然踩坑 / 环境怪癖 / 契约约束(随代码入库,给团队 + agent);**agent auto-memory**(`~/.claude/.../memory/`,私有)= 用户偏好、工作风格反馈、跨会话环境怪癖。**判据**:能从 diff/log 直接看出来 → 谁都别写(git 已有);会随代码演进、要给团队看 → devlog;只帮 agent 跨会话 → auto-memory。`/clear` 自动存档 hook 同此口径(空 commit 不写、只记 git 给不了的、宁缺勿凑)。
 
 ## 开发协作流程(分工 — 始终遵守)
 
