@@ -48,6 +48,23 @@ def test_review_model_openai_alias_and_precedence(tmp_path, monkeypatch):
     assert load_query_config(tmp_path).review_model == "kimi-query-specific"
 
 
+def test_merge_context_defaults(tmp_path):
+    # N0 多轮归并:默认开(已决①,LLM 为主);merge_model 默认 None → 复用主答 llm_model。
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    cfg = load_query_config(tmp_path)
+    assert cfg.merge_context is True   # §3.4 N0 默认开
+    assert cfg.merge_model is None     # None → 归并复用 llm_model
+
+
+def test_merge_context_env_override(tmp_path, monkeypatch):
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    monkeypatch.setenv("QUERY_MERGE_CONTEXT", "0")  # 关 → "0" → bool False
+    monkeypatch.setenv("QUERY_MERGE_MODEL", "qwen-turbo")
+    cfg = load_query_config(tmp_path)
+    assert cfg.merge_context is False
+    assert cfg.merge_model == "qwen-turbo"
+
+
 def test_sparse_boost_defaults(tmp_path):
     (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
     cfg = load_query_config(tmp_path)

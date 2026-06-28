@@ -40,6 +40,11 @@ class QueryConfig(BaseModel):
     # ⚠ §9.2 忠实性复核模型(Kimi),与主答 llm_model 分离(§9.1);默认 kimi-2.5 为意图占位,
     # 真名待甲方网关注册表;env QUERY_REVIEW_MODEL(query 专属)/ OPENAI_REVIEW_MODEL 覆盖。
     review_model: str = "kimi-2.5"
+    # §3.4 N0 多轮上下文归并:默认开(已决①,LLM 为主);env QUERY_MERGE_CONTEXT 覆盖。默认
+    # llm_backend=stub → 走规则版确定性归并(零网络);仅 gateway 时建归并客户端走真 LLM。
+    merge_context: bool = True
+    # ⚠ §9.1 N0 归并模型(CP-007 轻量调用);None → 复用主答 llm_model;env QUERY_MERGE_MODEL 覆盖。
+    merge_model: str | None = None
     # §5.4 sparse 精确通道(默认关 → byte 等价;系数 ⚠ V0 标定)
     docnum_boost: bool = False  # ⚠ §5.4 发文字号/全名 sparse 提权;QUERY_DOCNUM_BOOST 覆盖
     docnum_boost_factor: float = 2.0  # ⚠ V0 发文字号 token 提权系数
@@ -64,6 +69,10 @@ def _apply_env(raw: dict) -> None:
         raw["review_model"] = env["OPENAI_REVIEW_MODEL"]
     if "QUERY_REVIEW_MODEL" in env:
         raw["review_model"] = env["QUERY_REVIEW_MODEL"]
+    if "QUERY_MERGE_CONTEXT" in env:
+        raw["merge_context"] = env["QUERY_MERGE_CONTEXT"]  # "0"/"1" → pydantic bool 强转
+    if "QUERY_MERGE_MODEL" in env:
+        raw["merge_model"] = env["QUERY_MERGE_MODEL"]
     if "QUERY_DOCNUM_BOOST" in env:
         raw["docnum_boost"] = env["QUERY_DOCNUM_BOOST"]
     if "QUERY_SCENARIO_EXPAND" in env:

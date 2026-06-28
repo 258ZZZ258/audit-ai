@@ -15,14 +15,14 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **51** | 44% | 红线(含 **RL-1/§9.2 真复核闭环**,⏳待跑绿)/ R1 / R2 / R3 / **R4** / **R5** / **R6** / R7 / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 / **§5.5 重排** / **§5.4 sparse 提权+扩展** |
-| 🟡 部分 | **31** | 27% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取、§14 验收部分项 |
-| ❌ 未实装 | **33** | 28% | 查询理解前端(N0/N1/N3)、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
+| ✅ 实装+测试 | **52** | 45% | 红线(含 **RL-1/§9.2 真复核闭环**,⏳待跑绿)/ R1 / R2 / R3 / **R4** / **R5** / **R6** / **R7 闭环(回 N0 重新归并)** / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 / **§5.5 重排** / **§5.4 sparse 提权+扩展** |
+| 🟡 部分 | **31** | 27% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取、**N0 多轮归并(实装+单测✅,真-LLM 为主路径⏳待跑绿)**、§14 验收部分项 |
+| ❌ 未实装 | **32** | 28% | 查询理解前端(**N1 HyDE**/**N3 分解**)、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
 | ➖ 非查询逻辑 | **1** | — | §2.3 容量(摄取/部署) |
 | **合计** | **116** | | |
 
 - **红线(RL-1/2/3 + §0.1-2)**:核心引用真实性/四级回溯/可解释拒答 **✅**;"无裸结论"在 R1/R5 路径 ✅(形态无 verdict 槽 + 代码后检 verdict+试探性);真 LLM 下的 §9.2 复核闭环**已实装**(独立 `review_model` 与主答分离 + 默认关零网络 + fail-closed + 喂条文原文,单测✅;门控集成测就位)→ **RL-1 记 ✅**,**⏳ 待真 gateway+key 跑绿留痕**(真模型门控测尚未执行)。
-- **八路路由(全实装)**:R1🟡(主体✅,sparse提权✅【§5.4】,entity过滤/流式 ❌)· R2✅ · R3✅ · **R4✅** · **R5✅**(三段式硬约束 + 不出裸结论 + 桥接入口 + §9.2 真复核闭环)· **R6✅** · R7🟡(回 N0 缺)· R8✅。**无占位**。
+- **八路路由(全实装)**:R1🟡(主体✅,sparse提权✅【§5.4】,entity过滤/流式 ❌)· R2✅ · R3✅ · **R4✅** · **R5✅**(三段式硬约束 + 不出裸结论 + 桥接入口 + §9.2 真复核闭环)· **R6✅** · **R7✅闭环**(回 N0 重新归并,N0 实装)· R8✅。**无占位**。
 - **~47 行带 §15 待确认 caveat**,其中 R5 产品形态(④)、网关/Langfuse/Casbin/SSO 横切、V0 评估是 demo 阶段真正未触的大块。
 
 ---
@@ -38,7 +38,7 @@
 | §0.1-2 | 依据四级回溯 | ✅ | SPEC §8 SC1;`test_anchors_integration` | — |
 | §0.1-5 | 单向只读不回写 | 🟡 | 架构(无回写路径),待补回归测;各 SPEC §7 Never | — |
 | §0.3 | 范围外不做(专业判断/比对/舆情) | 🟡 | R8 兜底 + 各 SPEC §0 边界;无专测 | — |
-| TO-1 | 查询理解前端替代裸检索 | 🟡 | N2 规则版✅(`test_classify`);HyDE ❌ | ①⑦ |
+| TO-1 | 查询理解前端替代裸检索 | 🟡 | N2 规则版✅(`test_classify`)+ **N0 多轮归并✅**(`test_merge`/`test_graph`,LLM 为主默认开);N1 HyDE ❌ | ①⑦ |
 | TO-2 | 八路路由形态隔离裸结论 | ✅ | SPEC §8 SC4;`test_router`/`test_graph`(**八路全实装**,R5 判定型三段式形态隔离) | — |
 | TO-3 | 引用 ID 注入(只选不生成) | ✅ | `test_citation_inject`/`test_citation_faithfulness` | — |
 | TO-4 | 覆盖感知拒答替代分数阈值 | 🟡 | 务实版命中数(`test_sufficiency`);事项分区穷尽完整判据 ❌ | ⑥ |
@@ -67,7 +67,7 @@
 ### §3 查询理解前端 / §4 路由
 | Req | 需求 | 状态 | 证据 | §15 |
 |---|---|---|---|---|
-| N0 | 多轮上下文归并 | ❌ | QueryState.history 占位 | — |
+| N0 | 多轮上下文归并(指代消解+省略补全)| 🟡 | **实装**:`merge.py`+graph `n0_merge`(`test_merge`/`test_graph`)——规则版指代顺承/省略补全✅(`test_merge_followup_*`)+ LLM 为主默认开(gateway)+ fail-safe;深度消解靠真 LLM、闭环门控 `test_merge_integration`⏳待跑绿 | ①⑦ |
 | N0-nocheck | 澄清纯对话不出复选框 | ✅ | `test_graph`(clarify=CLARIFY_QUESTION) | — |
 | N1 | HyDE 改写 | ❌ | 未做 | ①⑦ |
 | N1-fail | HyDE 失败回落原句 | ❌ | N1 未做 | — |
@@ -78,7 +78,7 @@
 | N2-bridge | scenario_terms 口语→法言 | ❌ | 词典未建 | ⑥ |
 | N3 | 问题分解 | ❌ | 未做 | — |
 | N3-noloop | 不进 agentic 循环 | 🟡 | 架构(单跳直通);无专测 | — |
-| §3-degrade | 前端三节点可降级 | 🟡 | classify/router 降级✅;N0/N1/N3 缺 | — |
+| §3-degrade | 前端三节点可降级 | 🟡 | classify/router 降级✅ + **N0 fail-safe 回落规则版/原句✅**(`test_merge_llm_*`);N1/N3 缺 | — |
 | N4 | 八路意图路由+置信度 | ✅ | `test_router`(规则版,合成置信度) | — |
 | §4.3-conf | 低置信→R7 澄清 | 🟡 | clarify 触发✅;置信度阈值门 部分 | — |
 | §4.3-prio | 多标签优先级裁决 | ✅ | `test_classify`/`test_router`(_RULES 序) | — |
@@ -127,7 +127,7 @@
 | R6-sql | 参数化 SQL 防注入 | ✅ | SPEC-R6 §8 SC4;`test_sql_builder`(编译断言 parametrized) | — |
 | R6-table | 表格化输出(聚合/列表) | ✅ | SPEC-R6 §8 SC1-3;`test_r6_stats`/`test_r6_stats_integration`;下钻链接留后续 | — |
 | R6-precond | cases 完整率≥90%+字典评审 | ❌ | 摄取侧数据质量前提;R6 **consumed-when-present** 不依赖(violation_category 空则明示) | ⑥ |
-| R7 | 单问题纯对话澄清+回 N0 | 🟡 | 触发✅(`test_graph`);回 N0 ❌(N0 缺) | — |
+| R7 | 单问题纯对话澄清+回 N0 | ✅ | 触发✅ + **回 N0 重新归并✅**(N0 实装;跨请求重入 `n0_merge` 把原问+澄清答归并→重路由,`test_r7_closure_changes_routing`/`test_merge_r7_closure`)| — |
 | R8 | 兜底拒答 | ✅ | `test_graph`(refuse_out_of_domain) | — |
 
 ### §7 生成 / §8 拒答

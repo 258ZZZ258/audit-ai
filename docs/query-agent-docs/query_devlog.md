@@ -343,3 +343,47 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
     改为**基于条文证据**(同题名/条号、条文不支持某表述 → 降级)。`review.py` fail-closed 语义不变。
 - **未做(SPEC-REVIEW §0)**:触发重生成 / 全量双跑 / 其他路由复核 / 主答模型切换 / 改 `_supported` fail-closed 语义;
   真 Kimi gateway endpoint 可用性(甲方,§9.1/§15-①)。**待 Codex 复审② + 真 gateway 跑绿。**
+
+## N0 多轮上下文归并 + R7 澄清闭环(2026-06-28,SPEC/PLAN/TASKS-N0)
+
+> worktree `feat/query-n0-multiturn`(独立工作树,与他侧隔离)。把 `QueryState.history`(占位)推进到真消费:
+> 查询理解前端入口 N0 实装 + 闭合 R7 已知缺口(§6.7「澄清后回 N0 重新归并」)。**全绿**:`test_merge` 13 +
+> `test_graph` +6(n0 节点/R7 闭环/单轮 no-op/merge 客户端门控)+ `test_query_config` +2 + `test_query_cli` +4;
+> `test_merge_integration` 2 skipped(gate=gateway+key,本地无 key)。**全仓非栈门 672 passed / 50 skipped、ruff 净。**
+
+- **已决(AskUserQuestion,2026-06-28)**:① **N0 LLM 为主、`merge_context` 默认开**——§3.4 指代消解/省略补全本质是
+  LLM 友好任务,用户**明确接受其代价**(偏离本仓「默认零 LLM」约定、每轮多一次网关调用、无 key 时降级、默认非 byte 等价);
+  ② **入口 = `ask(query, history=None)` 无状态 API + CLI `--history-json`**(调用方维护会话,**不做** `chat` REPL)。
+- **关键设计 / 取舍**:
+  - **「LLM 为主默认开」与离线确定性的调和**(核心):默认 `llm_backend=stub`(零网络)。故 merge 客户端 `_merge_llm`
+    **仅 `merge_context` 开 + gateway 时建**(镜像 §9.2 复核「仅 toggle 开时建」),否则 `None` → `merge_context` 走
+    **规则版确定性归并**(= 用户接受的「无 key 降级」)。**LLM 为主**体现在:有真 LLM(gateway)即真改写为主路径,规则版退居
+    离线兜底 + fail-safe。`merge_context` try/except:真 LLM 抛/返空 `merged_query` → **回落规则版/原句,绝不阻断查询**。
+  - **单轮零回归**:空 history → `merge_context` 短路返原句、`_n0_merge` 返 `{}` → `state.query` 不变 → 既有单轮全链路
+    **byte 等价**(440+/672 既有测试不受影响)。「默认非 byte 等价」仅指**多轮带 history**(本就是新行为)。
+  - **R7 闭环 = 跨请求无状态**(非图内环):clarify 返回 → 调用方带 history(原问 + clarify 问)重问 → **下一请求入
+    `n0_merge` 节点**把原问 + 澄清答归并 → 重路由到真实答路径。「回到 N0」= 下一请求的入口节点,**不建 LangGraph cycle**——
+    守 §0.3「不进 plan→retrieve→reason 的 agentic 循环」。`test_r7_closure_changes_routing` 用 `_n0_merge`+`route_only` 模拟
+    (单轮「它呢」→CLARIFY;多轮归并后离开 CLARIFY),零栈。
+  - **状态契约零改**:N0 输出**写回 `state.query`**(归并后自足问句),下游 `understand`/检索/生成读它、**零改**;原句多轮时
+    可从 `history` 复得。**不新增状态字段**(守 `state.py`「加节点永不改状态契约」),只消费既有 `history` + 改写 `query`。
+- **实现**:`understand/merge.py`(`_rule_merge` R7 闭环+代词/省略顺承 + `MERGE_SYSTEM`/`build_merge_user`/`parse_merged`
+  + `merge_context` 纯函数,鸭子类型 `llm`,零栈可测);`graph.py` `n0_merge` 节点(`START→n0_merge→understand`)+ `__init__`
+  建 `_merge_llm` + `ask(query, history=None)`;`config` +`merge_context`(默认 True)/`merge_model`(None→复用 `llm_model`)+ 2 env;
+  `cli.py` `--history-json`(畸形 JSON/非数组 → `typer.BadParameter`);`PROMPTS.md` §3.4 条目。
+- **踩坑 / 核实**:
+  - **`_COREF` 子串 vs `router._PRONOUN_ONLY` 整句相等**:router 的 `_PRONOUN_ONLY` 是**整句相等**的歧义判据(触发 R7
+    澄清);N0 顺承问「是否**含**需补全的指代」用**子串**,且词表更全(它/该/这条/那条/上面那条…)——**相关但不同的概念**。
+    故 merge.py **仅复用 `_MIN_LEN`**(过短阈值,真共享),`_COREF` 另立并注释关系(非「另起黑名单」,语义本就不同)。
+  - **规则版顺承粒度 = 最近 user 整句拼接**(`f"{最近user问} {当前}"`):确定性、提升召回(主题 + 当前问句一并送检索);
+    更细的名词短语抽取/指代**替换**靠 gateway 真 LLM。务实版,同 §5.7/§8.1 范式。子串「呢」过宽故 `_COREF` **不含裸「呢」**
+    (避免自足问句「…在哪呢」误触顺承污染上轮主题)。
+  - **RTM 116 基线不可加行**:差点为 N0 加 `N0-coref`/`N0-ellipsis` 两行 → 破坏「116 条原子需求」计数不变式。**撤回**,
+    细节并入既有 `N0` 行证据;N0 ❌→🟡、R7🟡→✅,摘要 ✅51→52 / ❌33→32 / 🟡31 不变。
+  - **worktree editable-install 解析陷阱**(同 REVIEW 轮):主 `.venv` 的 `_EditableFinder` 会把 `query` 解析到主 checkout;
+    `PYTHONPATH=<wt>/{query,pipeline,libs/common,eval}` 使 `PathFinder` 先解析到 worktree(实测 `query.__file__` 指 worktree)。
+  - **真-LLM 门控本地无 key 未执行**(只验干净 skip:gateway+`OPENAI_API_KEY` 缺 → 2 skipped、零网络)→ 故 N0/N0-coref/
+    N0-ellipsis **诚实记 🟡**(实装+单测+门控就位),**待真 gateway+key 跑绿翻 ✅**(不在未执行门控测上 overclaim)。
+- **未做(SPEC-N0 §0)**:N1 HyDE / N3 问题分解(同前端、另切片,§15-①⑦);图内 LangGraph 环 / agentic 多跳;`chat` REPL;
+  会话持久化/服务端 session(无状态,调用方维护 history);Web 工作台接线;`dict_intent_routes`/N4 重构;`merge_model` 真名
+  (§9.1/§15-①);规则版深度指代消解(靠真 LLM)。**待 Codex 复审 + 真 gateway 跑绿。**
