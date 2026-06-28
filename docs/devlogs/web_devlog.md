@@ -9,6 +9,8 @@
 - **B 模式驱动正确性(B1 blocker)**:dispose/ingest 重入在 B 模式用 worker 上下文过 s5+finalize,`_advance_one` 过渡态守卫兜底(详见 `../orchestration_devlog.md`)。
 - **踩坑**:`unique_docx` 首段「第一章 总则」≠ manifest 标题 → 天然 title 冲突(`ir.title`=docx 首段),在 A 模式被「全件入闸」掩盖、B 模式才现形 → 端到端须自造「首段=标题」的真无冲突件。
 
+- **Milvus 瞬时 gRPC 卡死诊断法(全套测试偶发,环境非代码回归)**:症状 = 2h 仅 16s CPU、进程态 S、PG 0 锁等待、挂 1 条 Milvus 连接睡死;杀掉后秒回。**诊断三件套**:`ps -o etime,cputime`(CPU≪墙钟即卡)+ `pg_stat_activity` + `lsof` 网络连接 → 确认环境偶发后 `demo down -v && demo up`。
+
 ## 升格
 web 随 pipeline 包内迁(`pipeline/pipeline/web/`);`service.REPO_ROOT = parents[3]`、`app.STATIC_DIR = __file__.with_name("static")` 深度巧合不变;**暂留 pipeline、不抽 `services/`**(决策⑥,禁建 services/*;待独立部署再抽)。
 
