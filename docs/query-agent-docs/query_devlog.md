@@ -504,6 +504,10 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
   - **候选数不在 state**:`ask()` 的 `invoke` 返终态 state 有 query/scene/route_type,但 `state.candidates` 节点未回写(检索在
     `_evidence` 内、结果不进 state)→ **trace metadata 去掉「候选数」**(诚实,只记 state 真有的归并句/scene/route_type);候选数若要进
     trace 需 Retriever 再发 event(留后续)。
+  - **Codex 复审修复(1 warning,QUERY-OBSERVE-TRACE-RESULT)**:初版 trace `output` 只写 `route_type`,缺 SPEC §6/SC3 要求的
+    **result 摘要** → 开 Langfuse 也回放不出本次实际输出、削弱 §13 A/B。修:`_result_summary(result)` 模块级助手返**安全摘要**
+    (route_type + answer_blocks/citations 计数 + confidence/review_required/ai_label/exhausted_scope **标志**,**不含答复正文**避
+    PII/体积),`ask` 用作 trace `output`;`test_ask_records_trace` 断言摘要字段。候选数仍未进(state 无),余同。
   - **fake tracer 双用**:`_CaptureTracer.trace` 用 `@contextmanager` yield self(span=self,`update` 记 `self.updates`)+ `event`
     记 `self.events` → 同一桩既测 ask trace(T5)又测 Retriever event(T4)。`make_tracer` 选 Langfuse 用 `monkeypatch.setitem(sys.modules,
     "langfuse", fake_mod)` 注入 fake `Langfuse`(免装真 langfuse)。

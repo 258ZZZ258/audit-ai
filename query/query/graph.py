@@ -45,6 +45,19 @@ def resolve_scope(matters) -> list[str]:
     return list(dict.fromkeys(matters)) or list(_FALLBACK_SCOPE)
 
 
+def _result_summary(result: QueryResult) -> dict:
+    """§9.3 trace 用**安全 result 摘要**:计数 + 标志,**不含答复正文**(避 PII/体积),可回放输出。"""
+    return {
+        "route_type": result.route_type.value,
+        "answer_blocks": len(result.answer_blocks),
+        "citations": len(result.citations),
+        "confidence": result.confidence,
+        "review_required": result.review_required,
+        "ai_label": result.ai_label,
+        "exhausted_scope": list(result.exhausted_scope),
+    }
+
+
 class QueryAgent:
     """编排门面:持检索 / PG / LLM 依赖,编译一次 LangGraph,``ask`` 跑一次问答。"""
 
@@ -216,13 +229,14 @@ class QueryAgent:
         """端到端问答。``history``(多轮对话,N0 归并用)缺省单轮(空 → N0 no-op,byte 等价)。
 
         §9.3:包一条 trace —— ask 开 trace(set contextvar),Retriever 的 HyDE/子查询 event 挂同一条;
-        终态 metadata(归并句/scene/route_type)入 trace。tracer 只读旁路,observe 关 → Noop 零开销。
+        output = result 摘要(计数+标志,可回放本次输出)、metadata = 归并句/scene/route_type。
+        tracer 只读旁路,observe 关 → Noop 零开销。
         """
         with self._tracer.trace("query", input=query) as span:
             final = self._app.invoke(QueryState(query=query, history=history or []))
             result = final["result"]
             span.update(
-                output=result.route_type.value,
+                output=_result_summary(result),
                 metadata={
                     "merged_query": final.get("query"),
                     "scene": final.get("scene"),

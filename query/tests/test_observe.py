@@ -184,10 +184,18 @@ def test_ask_records_trace():
     res = agent.ask("它呢")  # CLARIFY(歧义裸指代,无需 retriever/pg)
     assert res.route_type is RouteType.CLARIFY
     assert cap.traces and cap.traces[0][0] == "query"          # 开了一条 trace
-    assert cap.updates                                          # update 终态 metadata
-    md = cap.updates[0]["metadata"]
+    assert cap.updates                                          # update 终态
+    up = cap.updates[0]
+    md = up["metadata"]
     assert md["route_type"] == RouteType.CLARIFY.value          # 终态 route_type 入 trace
     assert "merged_query" in md and "scene" in md
+    # result 摘要进 trace output(QUERY-OBSERVE-TRACE-RESULT):计数+标志,可回放本次输出
+    out = up["output"]
+    assert out["route_type"] == RouteType.CLARIFY.value
+    assert out["answer_blocks"] == len(res.answer_blocks)       # 答复块数
+    assert out["citations"] == len(res.citations)               # 引用数
+    assert out["review_required"] == res.review_required
+    assert "ai_label" in out and "confidence" in out
 
 
 def test_ask_byte_equivalent_under_noop():
