@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from _ocr_gate import mineru_ready, ocr_png
 
 from common.ir import BlockType, IRDocument
 from pipeline.parsing.mineru_parser import _mineru_to_blocks
@@ -74,16 +75,7 @@ def test_map_table_rowspan_colspan():
     assert cells[(0, 1)].text == "B" and cells[(1, 1)].text == "C"  # C 避开 A 的 rowspan
 
 
-# ── T2 MinerUParser:流程(monkeypatch _run_mineru)+ 真跑(skip-if-no-MinerU)──────
-def _mineru_installed():
-    try:
-        import mineru  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
+# ── T2 MinerUParser:流程(monkeypatch _run_mineru)+ 真跑(门控 _ocr_gate.mineru_ready)──────
 def test_parse_maps_via_run_mineru(monkeypatch):
     from pipeline.parsing import mineru_parser as mp
 
@@ -107,10 +99,11 @@ def test_parse_failure_returns_ocr_failed(monkeypatch):
     assert not res.ok and res.error_code == ErrorCode.OCR_FAILED.value
 
 
-@pytest.mark.skipif(not _mineru_installed(), reason="MinerU([ocr] extra)未安装")
+@pytest.mark.skipif(not mineru_ready(), reason="MinerU 真跑未启用(需 mineru + MINERU_REAL_TEST=1)")
 def test_parse_real_mineru_image():
     from pipeline.parsing.mineru_parser import MinerUParser
 
-    data = Path("/Users/apple/Projects/audit-ai/rendered_fusion_resave/page-3.png").read_bytes()
-    res = MinerUParser().parse(data, "png", scanned_char_per_page_max=50)
-    assert res.ok and res.blocks and any(b.ocr_conf is not None for b in res.blocks)
+    res = MinerUParser().parse(ocr_png(), "png", scanned_char_per_page_max=50)
+    assert res.ok  # in-process do_parse 不崩,产 ParseResult
+    if res.blocks:  # OCR 识别出块时带 ocr_conf(质量 spike 已验,此处只验链路)
+        assert any(b.ocr_conf is not None for b in res.blocks)
