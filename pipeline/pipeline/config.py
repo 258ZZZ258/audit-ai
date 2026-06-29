@@ -60,7 +60,10 @@ class TogglesConfig(BaseModel):
 class LlmConfig(BaseModel):
     """E2/L2 LLM 辅助(默认关)。key/base_url 走 env(OPENAI_API_KEY/OPENAI_BASE_URL),不入库。"""
 
-    model: str = "gpt-5.4-nano"  # ⚠ env OPENAI_MODEL 可覆盖
+    model: str = "gpt-5.4-nano"  # ⚠ env OPENAI_MODEL 可覆盖;E2/L2/案例分类共用(高频→低成本档)
+    # ⚠ 案例 L2(T2.1 引用外规抽取+对齐=全管线最高价值字段)单独模型档;None → 回落 model
+    # (add-only:不设即沿用旧行为)。案例量小,整段 case_l2 上强推理档成本可忽略。
+    case_l2_model: str | None = None
 
 
 class AlignConfig(BaseModel):

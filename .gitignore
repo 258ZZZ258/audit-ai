@@ -19,6 +19,11 @@ _web_uploads/
 # Claude Code 个人本地设置(不共享;团队共享配置走 .claude/settings.json)
 .claude/settings.local.json
 
+# 本地密钥 / 网关 env(OPENAI_API_KEY 等绝不入库;见 CLAUDE.md「key 走 env」)
+.env
+.env.local
+.env.*.local
+
 # 升格过渡期临时渲染/重存目录(工作树杂物,不入库)
 /rendered_fusion*/
 /lo_resave/
