@@ -82,6 +82,24 @@ def test_hyde_env_override(tmp_path, monkeypatch):
     assert cfg.hyde_model == "qwen-turbo"
 
 
+def test_decompose_defaults(tmp_path):
+    # N3 问题分解:默认开(已决②);decompose_model 默认 None;max_sub 默认 4(⚠ V0 封顶)。
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    cfg = load_query_config(tmp_path)
+    assert cfg.decompose is True        # §3.3 默认开(仅复合触发;stub→单查询 no-op)
+    assert cfg.decompose_model is None  # None → 复用 llm_model
+    assert cfg.decompose_max_sub == 4   # ⚠ V0 fan-out 上限
+
+
+def test_decompose_env_override(tmp_path, monkeypatch):
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    monkeypatch.setenv("QUERY_DECOMPOSE", "0")  # 关 → "0" → bool False
+    monkeypatch.setenv("QUERY_DECOMPOSE_MODEL", "qwen-turbo")
+    cfg = load_query_config(tmp_path)
+    assert cfg.decompose is False
+    assert cfg.decompose_model == "qwen-turbo"
+
+
 def test_sparse_boost_defaults(tmp_path):
     (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
     cfg = load_query_config(tmp_path)

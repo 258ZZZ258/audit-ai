@@ -51,6 +51,13 @@ class QueryConfig(BaseModel):
     hyde: bool = True
     # ⚠ §9.1 N1 HyDE 模型(CP-007 轻量调用);None → 复用主答 llm_model;env QUERY_HYDE_MODEL 覆盖。
     hyde_model: str | None = None
+    # §3.3 N3 问题分解(复合问句拆子查询→并行检索再综合):默认开(已决②,对齐设计 §3 节点链)。
+    # 默认 stub → decompose_llm 不建 → _subqueries_for 返 [query](单查询 no-op、byte 等价);仅
+    # gateway 时真拆分,仅复合问句(LLM 拆 >1)才 fan-out。env QUERY_DECOMPOSE 覆盖。
+    decompose: bool = True
+    # ⚠ §9.1 N3 分解模型(CP-007 轻量调用);None → 复用主答 llm_model;env QUERY_DECOMPOSE_MODEL 覆盖。
+    decompose_model: str | None = None
+    decompose_max_sub: int = 4  # ⚠ V0 fan-out 子查询上限(封顶复合检索成本;§3.3)
     # §5.4 sparse 精确通道(默认关 → byte 等价;系数 ⚠ V0 标定)
     docnum_boost: bool = False  # ⚠ §5.4 发文字号/全名 sparse 提权;QUERY_DOCNUM_BOOST 覆盖
     docnum_boost_factor: float = 2.0  # ⚠ V0 发文字号 token 提权系数
@@ -83,6 +90,10 @@ def _apply_env(raw: dict) -> None:
         raw["hyde"] = env["QUERY_HYDE"]  # "0"/"1" → pydantic bool 强转
     if "QUERY_HYDE_MODEL" in env:
         raw["hyde_model"] = env["QUERY_HYDE_MODEL"]
+    if "QUERY_DECOMPOSE" in env:
+        raw["decompose"] = env["QUERY_DECOMPOSE"]  # "0"/"1" → pydantic bool 强转
+    if "QUERY_DECOMPOSE_MODEL" in env:
+        raw["decompose_model"] = env["QUERY_DECOMPOSE_MODEL"]
     if "QUERY_DOCNUM_BOOST" in env:
         raw["docnum_boost"] = env["QUERY_DOCNUM_BOOST"]
     if "QUERY_SCENARIO_EXPAND" in env:
