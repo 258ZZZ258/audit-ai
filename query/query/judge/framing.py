@@ -42,11 +42,17 @@ def _llm_constituent(clauses, query, llm) -> str:
     system = (
         "你是制度依据梳理助手。只梳理所引条款的『适用前提/适用对象/行为类型』,"
         "绝不判断是否违规或合规,绝不给出结论。"
+        # ⚠ JSON 模式硬要求(DeepSeek):prompt 须含 "json" 字样 + 示例,否则 400
+        '只输出 JSON 对象 {"framing": "<各条款适用前提/对象/行为类型的梳理>"},'
+        "不输出 JSON 之外的任何文字。"
     )
     refs = "\n".join(
         f"- 《{c.get('doc_title')}》{c.get('clause_path')}:{c.get('text', '')}" for c in clauses
     )
-    user = f"问句:{query}\n条款:\n{refs}\n请只输出各条款的适用前提/对象/行为类型框定,不作认定。"
+    user = (
+        f"问句:{query}\n条款:\n{refs}\n"
+        '请按规则只输出 JSON:{"framing": "..."},梳理各条款适用前提/对象/行为类型,不作认定。'
+    )
     out = llm.chat_json(system, user)
     return str(out.get("framing") or out.get("answer") or "")
 
@@ -54,7 +60,10 @@ def _llm_constituent(clauses, query, llm) -> str:
 def build_framing(clauses, query, llm, qcfg) -> list[AnswerBlock]:
     """三段式 ②③:构成要件框定 + AI辅助/人工复核标识。无 verdict 槽;框定 **always-on 经 strip**。"""
     if getattr(qcfg, "judge_constituent_llm", False):
-        framing = _llm_constituent(clauses, query, llm)
+        try:
+            framing = _llm_constituent(clauses, query, llm)
+        except Exception:  # noqa: BLE001 LLM 失败/空响应(DeepSeek JSON 模式偶发空)→ fail-safe 回落 clause直呈
+            framing = _clause_passthrough(clauses)
     else:
         framing = _clause_passthrough(clauses)
     framing = strip_bare_conclusion(framing)  # 红线 always-on:两路框定都过后检(含元数据泄漏兜底)
