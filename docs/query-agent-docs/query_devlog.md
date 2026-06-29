@@ -387,3 +387,47 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
 - **未做(SPEC-N0 §0)**:N1 HyDE / N3 问题分解(同前端、另切片,§15-①⑦);图内 LangGraph 环 / agentic 多跳;`chat` REPL;
   会话持久化/服务端 session(无状态,调用方维护 history);Web 工作台接线;`dict_intent_routes`/N4 重构;`merge_model` 真名
   (§9.1/§15-①);规则版深度指代消解(靠真 LLM)。**待 Codex 复审 + 真 gateway 跑绿。**
+
+## N1 HyDE 查询改写(假设性法言 → dense 检索)(2026-06-29,SPEC/PLAN/TASKS-N1)
+
+> worktree `feat/query-n1-hyde`(独立工作树,与 ref-r4 他侧隔离;从含 N0 合并的 origin/main 切)。查询理解前端 N1 从 ❌
+> 推进到实装:口语问句 → LLM 生成假设性法言 → `embed(原问+法言)` 作 **dense 向量**(HyDE,Gao et al. 2022/2023)。**全绿**:
+> `test_hyde` 17(纯函数 5 + `_dense_for`/接线 7 + 门控建客户端等)+ `test_query_config` +2;`test_hyde_integration` 1 skipped
+> (gate=gateway+key,本地无 key);**全 query 套件 245 passed / 31 skipped 无回归。**
+
+- **已决(AskUserQuestion,2026-06-28)**:① **HyDE 默认开**(`hyde` 默认 `True`,对齐设计 §3 节点链「默认 on」+ N0 默认开范式);
+  ② **注入点 = Retriever 内 dense 接缝**(镜像 §5.4 `_sparse_for` / §5.5 rerank,**不**走图 N1 节点 / 不改 `state.query`)。
+- **关键设计 / 取舍**:
+  - **为何 Retriever 内接缝、不走图 N1 节点**(关键):HyDE 只改 **dense 向量**,**绝不能污染 classify/route**(路由基于真实
+    口语问句,而非编造法言)。若像 N0 那样改写 `state.query`,classify/route 会拿到假设性法言 → 误路由。故 HyDE 必须在
+    dense 嵌入处(`retrieve()` 内)落地、不碰 `state.query`——与 §5.4 sparse_boost / §5.5 rerank 同为「Retriever 内检索增强
+    接缝」范式,而非前端节点。`state.rewrites` 字段保留占位(HyDE 文本是检索内部态,不进 graph state)。
+  - **HyDE 专管 dense、sparse 留原问**:dense 文本 = `f"{query}\n{passage}"`(§3.1「假设性法言与原始问句一同送入 dense」);
+    sparse 仍走 `_sparse_for`(原问 + §5.4 dict)。**理由**:§7.1 污染兜底 + 法言 sparse 扩展归 §5.4 dict 桥接(口语→法言),
+    分工干净——避免编造法言污染**精确 sparse 匹配**。`retrieve()` 多一次 embed(原问供 sparse + 原问+法言供 dense),HyDE 固有。
+  - **「默认开」与离线确定性的调和**(同 N0 范式):默认 `llm_backend=stub`(零网络),HyDE **无规则版兜底**(必须 LLM 生成
+    法言,不像 N0 有确定性规则归并)。故 `hyde_llm` **仅 hyde 开 + gateway 时建**(`_build_hyde_llm`);**stub/无 key →
+    `hyde_llm=None` → `_dense_for` 返 `emb.dense`(原问 dense)→ 默认 byte 等价、零网络**。「默认开」仅在配 gateway 时活。
+    LLM 抛/返空 → `hyde_dense_text` None → `_dense_for` 回落 `emb.dense`(§3.1 N1-fail,绝不阻断检索)。
+  - **仅主 retrieve(R1/R5)**:`retrieve()` 用 `_dense_for`;`retrieve_enumerate`(R4)/`retrieve_cases`(R3)**不动**(同 §5.4
+    sparse 提权范式)。`test_enumerate_does_not_hyde`/`test_cases_does_not_hyde` 断言 `llm.calls==0` + 仅 embed 原问。
+  - **污染兜底(§7.1)**:HyDE **不产出 `clause_id`**;即便编错法言,最终答案仍只引检索上下文带 `clause_id` 者(引用注入)
+    → 错误法言不污染答案。这是「默认开 HyDE」可接受的前提(错召回靠覆盖自检/拒答兜,错答靠引用注入杜绝)。
+- **实现**:`retrieve/hyde.py`(`HYDE_SYSTEM`/`build_hyde_user`/`parse_passage`/`hyde_dense_text` 纯函数,鸭子类型 `llm`,零栈
+  可测);`retrieve/hybrid.py` `_build_hyde_llm`(模块级,可单测)+ `Retriever.__init__(... , hyde_llm=)` + `from_config` 建 +
+  `_dense_for(query, emb)` + `retrieve()` 用 `dense=self._dense_for(...)`;`config` +`hyde`(默认 True)/`hyde_model`(None→复用)
+  + 2 env;`PROMPTS.md` §3.1 条目。
+- **踩坑 / 核实**:
+  - **`_build_hyde_llm` 提为模块级函数**(非 inline 在 `from_config`):`from_config` 连真栈(EmbeddingClient/Milvus),单测跑不动;
+    把「仅 hyde 开+gateway 建客户端」逻辑提为模块级 `_build_hyde_llm(qcfg)` → `test_build_hyde_llm_only_gateway_and_on`
+    monkeypatch `query.llm.make_llm_client` 直测(stub→None、gateway+on→建、gateway+off→None),零栈。
+  - **`_dense_for` 失败不额外 embed**:`hyde_dense_text` 返 None(LLM 抛/空)→ `_dense_for` 直接返 `emb.dense`,**不再 embed**
+    (`test_dense_for_fallback` 断言 `fe.texts==[]`)→ 回落零额外开销。
+  - **默认开却记 🟡(诚实姿态)**:`hyde=True` 但真生成门控本地无 key 未执行(只验干净 skip)+ §13 V0 第5组 A/B 未跑(召回
+    收益 hit@10 未验证)→ N1 记 🟡、N1-decision ❌(默认值/配额待实测);**N1-fail ✅**(fail-safe 回落确定性可测、不依赖 LLM)。
+    不在「默认开」上 overclaim 召回收益——默认 stub 实为 no-op,真收益待 gateway+V0。
+  - **worktree editable-install 解析陷阱**(同 N0/REVIEW):`PYTHONPATH=<wt>/{query,pipeline,libs/common,eval}` 使 `PathFinder`
+    先于主 venv `_EditableFinder` 解析到 worktree(实测 `query.__file__` 指 worktree)。
+- **未做(SPEC-N1 §0)**:N3 问题分解(另切片);改 sparse 通道(法言 sparse 归 §5.4 dict);HyDE 进 R3/R4;图 N1 节点/改
+  `state.query`;**§13 V0 第5组 A/B 实验 / 术语断层率统计 / 配额折算 / 默认值终定 / 桶触发降级**(V0 未跑);Langfuse trace HyDE
+  文本;`hyde_model` 真名(§9.1/§15-①)。**待 Codex 复审 + 真 gateway 跑绿 + V0 标定。**

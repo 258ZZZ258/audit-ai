@@ -15,9 +15,9 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **52** | 45% | 红线(含 **RL-1/§9.2 真复核闭环**,⏳待跑绿)/ R1 / R2 / R3 / **R4** / **R5** / **R6** / **R7 闭环(回 N0 重新归并)** / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 / **§5.5 重排** / **§5.4 sparse 提权+扩展** |
-| 🟡 部分 | **31** | 27% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取、**N0 多轮归并(实装+单测✅,真-LLM 为主路径⏳待跑绿)**、§14 验收部分项 |
-| ❌ 未实装 | **32** | 28% | 查询理解前端(**N1 HyDE**/**N3 分解**)、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
+| ✅ 实装+测试 | **53** | 46% | 红线(含 **RL-1/§9.2 真复核闭环**,⏳待跑绿)/ R1 / R2 / R3 / **R4** / **R5** / **R6** / **R7 闭环(回 N0 重新归并)** / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 / **§5.5 重排** / **§5.4 sparse 提权+扩展** / **N1-fail HyDE 失败回落** |
+| 🟡 部分 | **32** | 28% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取、**N0 多轮归并 + N1 HyDE(实装+单测✅,真-LLM 为主路径⏳待跑绿)**、§14 验收部分项 |
+| ❌ 未实装 | **30** | 26% | 查询理解前端(**N1-decision V0 A/B 标定**/**N3 分解**)、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
 | ➖ 非查询逻辑 | **1** | — | §2.3 容量(摄取/部署) |
 | **合计** | **116** | | |
 
@@ -38,7 +38,7 @@
 | §0.1-2 | 依据四级回溯 | ✅ | SPEC §8 SC1;`test_anchors_integration` | — |
 | §0.1-5 | 单向只读不回写 | 🟡 | 架构(无回写路径),待补回归测;各 SPEC §7 Never | — |
 | §0.3 | 范围外不做(专业判断/比对/舆情) | 🟡 | R8 兜底 + 各 SPEC §0 边界;无专测 | — |
-| TO-1 | 查询理解前端替代裸检索 | 🟡 | N2 规则版✅(`test_classify`)+ **N0 多轮归并✅**(`test_merge`/`test_graph`,LLM 为主默认开);N1 HyDE ❌ | ①⑦ |
+| TO-1 | 查询理解前端替代裸检索 | 🟡 | N2 规则版✅(`test_classify`)+ **N0 多轮归并✅**(`test_merge`)+ **N1 HyDE✅**(`test_hyde`,dense 接缝,LLM 为主默认开;真生成⏳门控);N3 分解 ❌ | ①⑦ |
 | TO-2 | 八路路由形态隔离裸结论 | ✅ | SPEC §8 SC4;`test_router`/`test_graph`(**八路全实装**,R5 判定型三段式形态隔离) | — |
 | TO-3 | 引用 ID 注入(只选不生成) | ✅ | `test_citation_inject`/`test_citation_faithfulness` | — |
 | TO-4 | 覆盖感知拒答替代分数阈值 | 🟡 | 务实版命中数(`test_sufficiency`);事项分区穷尽完整判据 ❌ | ⑥ |
@@ -69,16 +69,16 @@
 |---|---|---|---|---|
 | N0 | 多轮上下文归并(指代消解+省略补全)| 🟡 | **实装**:`merge.py`+graph `n0_merge`(`test_merge`/`test_graph`)——规则版指代顺承/省略补全✅(`test_merge_followup_*`)+ LLM 为主默认开(gateway)+ fail-safe;深度消解靠真 LLM、闭环门控 `test_merge_integration`⏳待跑绿 | ①⑦ |
 | N0-nocheck | 澄清纯对话不出复选框 | ✅ | `test_graph`(clarify=CLARIFY_QUESTION) | — |
-| N1 | HyDE 改写 | ❌ | 未做 | ①⑦ |
-| N1-fail | HyDE 失败回落原句 | ❌ | N1 未做 | — |
-| N1-decision | HyDE on/off V0 A/B 标定 | ❌ | V0 未做 | ①⑦ |
+| N1 | HyDE 改写(口语→假设性法言→dense)| 🟡 | **实装**:`retrieve/hyde.py` + `Retriever._dense_for` dense 接缝(`test_hyde`:生成/拼接/仅主 retrieve)。LLM 为主默认开(gateway)+ stub no-op;`embed(原问+法言)` 作 dense,sparse 留原问(§5.4)。真生成门控 `test_hyde_integration`⏳待跑绿;召回收益待 V0 | ①⑦ |
+| N1-fail | HyDE 失败回落原句 | ✅ | `hyde_dense_text` 抛/返空→None → `_dense_for` 回落 `emb.dense`(`test_hyde_dense_text_*`/`test_dense_for_fallback`,确定性,绝不阻断)| — |
+| N1-decision | HyDE on/off V0 A/B 标定 | ❌ | §13 V0 第5组未跑;本切片默认开(对齐设计)、记 🟡,默认值/配额折算待实测(§15-⑦)| ①⑦ |
 | N2-scene | 场景类型标签 | ✅ | `test_classify` | — |
 | N2-event | 涉及事项标签(E2 字典) | 🟡 | extract_terms✅;未接 PG dict 加载 | ⑥ |
 | N2-entity | entity_type 抽取 | 🟡 | extract_terms✅;未用于过滤 | ⑥ |
 | N2-bridge | scenario_terms 口语→法言 | ❌ | 词典未建 | ⑥ |
 | N3 | 问题分解 | ❌ | 未做 | — |
 | N3-noloop | 不进 agentic 循环 | 🟡 | 架构(单跳直通);无专测 | — |
-| §3-degrade | 前端三节点可降级 | 🟡 | classify/router 降级✅ + **N0 fail-safe 回落规则版/原句✅**(`test_merge_llm_*`);N1/N3 缺 | — |
+| §3-degrade | 前端三节点可降级 | 🟡 | classify/router 降级✅ + **N0 fail-safe 回落✅**(`test_merge_llm_*`)+ **N1 HyDE fail-safe 回落原问 dense✅**(`test_dense_for_fallback`);N3 缺 | — |
 | N4 | 八路意图路由+置信度 | ✅ | `test_router`(规则版,合成置信度) | — |
 | §4.3-conf | 低置信→R7 澄清 | 🟡 | clarify 触发✅;置信度阈值门 部分 | — |
 | §4.3-prio | 多标签优先级裁决 | ✅ | `test_classify`/`test_router`(_RULES 序) | — |
@@ -86,7 +86,7 @@
 ### §5 检索与重排
 | Req | 需求 | 状态 | 证据 | §15 |
 |---|---|---|---|---|
-| §5.1 | dense+sparse+RRF 混合 | ✅ | `test_hybrid_integration` | ② |
+| §5.1 | dense+sparse+RRF 混合 | ✅ | `test_hybrid_integration`;**dense 接 N1 HyDE**(`_dense_for`,`test_hyde`)| ② |
 | §5.2 | 分区并行配额 top25 | ✅ | `test_hybrid_integration` | — |
 | §5.3 | 强制过滤位 | 🟡 | status✅ perm_tag🟡;entity/biz/chunk_type **机制已落**(R4 `extra_expr`,consumed-when-present) | ⑥ |
 | §5.3-hist | 问历史放开 status | 🟡 | include_superseded 参数(R2 用) | — |
