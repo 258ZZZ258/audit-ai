@@ -42,3 +42,18 @@
 **Codex 审查闭环**:Phase 1 提交后 Codex 发现 4 条 warning → 逐条修复(类型注解缺失、注释/文档与代码不一致)→ xlsx 收窄后再做一轮文档一致性补全 → 复审通过。
 
 **状态**:PR #18(feat/p0-phase1)待合并;本地 `ruff` 全绿,16 passed(改动范围单元)。下一步:全仓模型门控全量门跑一次后合 main。
+
+## P0 续:ref_resolver R4 跨文档指代(2026-06-28;feat/ref-resolver-r4,T2.4)
+
+**背景**:R1–R3(文档内)P0 Phase 1 已实装;本轮补 R4 跨文档「《X办法》(文号)?第N条」三级匹配填充(§6.7 收尾)。**零迁移**(`clause_references.resolution_status` 早已 `String(16)` 含 ambiguous/pending_target、`dict_aliases` 表 0009 已建)。SDD 四件 `SPEC/PLAN/TASKS_REF_R4` + 本段。
+
+**主要决策(why)**:
+- **新建专用 `XRefLookup`,不扩展案例侧 `PgRegLookup`**:后者限 P-EXT + `.first()` 不报多命中,语义不合;扩展会牵动案例 L2 链路。R4 lookup **不限 corpus**(内规可引内规/外规,与案例只引外规有意不同)、排除 self_dvid(自引归 R1)、某级 ≥2 命中报 multiple。
+- **不复用 `case_ref_align.align_cited`**:它只 resolved/未解析二态、无 span,无法表达 R4 四态 standoff。R4 自写 `align_xref`,仅复用底层 `normalize_clause_no` / 条号归一 / 超界校验。
+- **四态精度是 R4 核心**:`pending_target`(三级全未命中 = 引用未入库外规,夜间重试 / 缺口清单的来源)与 R1–R3 的 `unresolved`(目标在库但定位失败)**有意区分**;`ambiguous`(多命中)不臆测 target。夜间重试 / 缺口清单导出本轮不做(另起一轮),四态正确落库即其前置。
+
+**非显然踩坑**:
+- **R3/R4 span 重叠双写**:`《X》第十五条` 里的「第十五条」会被既有 R3 正则也抓(→ R3 unresolved + R4 resolved 双写同一处)。**修**:`run_resolver` 里 R3 候选 span 若落在某 R4 候选 span 内 → 丢弃(跨文档优先)。R1/R2 不与 R4 重叠,无此问题;既有 R1–R3 用例无《》→ xspans 空,行为零回归。
+- **测试唯一后缀**:R4 lookup 不限 corpus 全库查,集成 fixture 的 title/doc_number/alias 须带 ULID 唯一后缀,否则撞库中真实 effective doc → 误判 multiple。
+
+**测试**:`test_ref_resolver.py` +23 用例(extract×8 / align 四态×6 / PgXRefLookup×6 / run_resolver R4×3);全 36 passed;案例侧零回归;`alembic check` 无漂移。

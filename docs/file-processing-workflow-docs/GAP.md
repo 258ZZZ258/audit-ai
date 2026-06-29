@@ -8,7 +8,7 @@
 
 ## 一句话
 
-**入库主干(S0 登记 → S1 解析 → S2 质检 → S3 切块 → S4 元数据 → S5 索引)的契约与确定性骨架生产保真且测试钉死**;硬契约(chunk_id / manifest 11 列 / IR / Milvus schema / PG 核心表)字节级对齐。**两类大缺口**:(1) **生产解析栈全 stub**(DeepDoc/MinerU/PaddleOCR + OCR 扫描件 + xlsx/图片),demo 用 light parser(docx/pdf-text);(2) **LLM 接入 P0 4 触点全落生产链路**(E2 打标 / 案例引用外规 / 违规事由 / L2 业务域,接真模型 + 门控集成测),**剩 P1/P2 触点**(L2 摘要·适用对象、表格/案例摘要、修订说明对齐、T1 出题)未接。其余:§18 逃逸闭环、ref_resolver R4 跨文档、§22 P-MISC 路由、评测前置 T1/T3/T5/T6、§14 LLM 治理(敏感词/AI 标识)未做。
+**入库主干(S0 登记 → S1 解析 → S2 质检 → S3 切块 → S4 元数据 → S5 索引)的契约与确定性骨架生产保真且测试钉死**;硬契约(chunk_id / manifest 11 列 / IR / Milvus schema / PG 核心表)字节级对齐。**两类大缺口**:(1) **生产解析栈全 stub**(DeepDoc/MinerU/PaddleOCR + OCR 扫描件 + xlsx/图片),demo 用 light parser(docx/pdf-text);(2) **LLM 接入 P0 4 触点全落生产链路**(E2 打标 / 案例引用外规 / 违规事由 / L2 业务域,接真模型 + 门控集成测),**剩 P1/P2 触点**(L2 摘要·适用对象、表格/案例摘要、修订说明对齐、T1 出题)未接。其余:§18 逃逸闭环、§22 P-MISC 路由、评测前置 T1/T3/T5/T6、§14 LLM 治理(敏感词/AI 标识)未做(**ref_resolver R4 跨文档本轮 ✅**)。
 
 ---
 
@@ -80,7 +80,7 @@
 | **§6.4 案例全文摘要块 case_summary(LLM ≤150 字)** | 🟡 | **规则截断版在用**;LLM 摘要未做(注"默认关、升级点")→ 见 §Z |
 | §6.5 chunk_id 公式字节精确 | ✅ | `chunk_id.py`,`test_chunk_id.py` 钉死 |
 | §6.6 图谱抽取窗口解耦(节级窗口/指代预解析注入/三元组锚定校验/样板跳过清单) | ❌ | **0%**——S6 图谱未启,该设计为前置准备 |
-| **§6.7 ref_resolver 四类指代(R1–R4)纯规则填充** | ❌ | clause_references 表已建(迁移 0008)+ 样本种子;**填充逻辑 ref_resolver 明确 TODO 未做**;窗口渲染依赖它,未做 |
+| **§6.7 ref_resolver 四类指代(R1–R4)纯规则填充** | ✅ | R1–R3 文档内(Phase 1)+ **R4 跨文档三级查(文号→标题→dict_aliases 别名)+ 四态(resolved/ambiguous/pending_target/unresolved)+ R3/R4 span 去重**(`test_ref_resolver`,T2.4);窗口渲染原语 / pending_target 夜间重试另起 |
 
 ## 5. S4 元数据与版本链(§7)+ 案例(§9)
 
@@ -156,10 +156,10 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | 核心表 import_batches/documents/doc_versions/chunks/pipeline_events/review_queue/remediation_records/revision_notes/clause_tags/cases | ✅ | `pg_models.py` + 迁移 0001–0008;V1.6 add-only 列齐(chunks +chunk_type/parent_chunk_id/internal_refs/embed_status/entity_type;clause_tags +deontic_type/norm_duration_days/entity_type) |
-| clause_references 表 | 🟡 | 表建(0008)**+ 填充逻辑 TODO**(见 §6.7) |
+| clause_references 表 | ✅ | 表建(0008)+ R1–R4 填充(`ref_resolver`,`test_ref_resolver`) |
 | dict_issuers / dict_biz_domains / dict_entity_types / dict_departments | ✅ | 表 + seeds |
 | **dict_violation_types** | ❌ | 表/模型未建(cases.violation_category 为字符串非 FK)→ 阻塞案例违规事由 L2 |
-| **dict_aliases**(制度简称别名,§6.7 R4) | ❌ | 未建 → 阻塞 R4 跨文档指代 |
+| **dict_aliases**(制度简称别名,§6.7 R4) | ✅ | 表建(0009)+ seed v0-draft;R4 `PgXRefLookup` 第三级消费(`test_ref_resolver`/`test_seeds_p0`) |
 | **dict_scenario_terms**(情景术语桥接) | 🟡 | §23 声明纳入数据模型,**仅声明未建表/未 seed**(查询侧消费) |
 | quality_tickets / doc_graph_stats / obligation_keywords | 🟡 | 未建(前二 deferred,后者 config 替代) |
 | 评测集仓库表(§21 T1) | ❌ | 未建(T1 未实现) |
@@ -216,7 +216,7 @@
 ### P0 — 生产保真硬缺口 / 最高价值
 1. **生产解析栈接入**:DeepDoc(office/pdf)+ PaddleOCR(扫描件)+ MinerU(兜底)真实现替换 stub;白名单补 xlsx/jpg/png;IR 补 ocr_conf/block_id/table_id/cells_md(markdown)。**入库主干的最大缺口**。
 2. **LLM P0 4 触点全落**(L-1 引用外规 / L-2 违规事由+dict_violation_types / L-3 L2 业务域 / L-4 E2 接真模型,见 §Z)——P0 LLM 全清,剩 P1/P2。
-3. **ref_resolver R4 跨文档**(§6.7):R1–R3 + dict_aliases/clause_references 表已落 Phase 0/1;R4 消费 dict_aliases + pending_target 留 T2.4。
+3. **ref_resolver R4 跨文档**(§6.7):✅ 本轮 R1–R4 全实装(R4 三级查 + 四态 standoff + R3/R4 span 去重,`feat/ref-resolver-r4`,**零迁移**);剩 pending_target 夜间重试 + 语料缺口清单导出另起一轮。
 
 ### P1 — 质检纵深 / 评测 / 版本链
 4. **§18 逃逸闭环**:quality_tickets 表 + 边缘带自动升级抽检 + 指标 8/9(页眉泄漏/句完整性)+ 高危 token 复核 + 双解析器仲裁。
