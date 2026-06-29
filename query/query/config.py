@@ -58,6 +58,9 @@ class QueryConfig(BaseModel):
     # ⚠ §9.1 N3 分解模型(CP-007 轻量调用);None → 复用主答 llm_model;env QUERY_DECOMPOSE_MODEL 覆盖。
     decompose_model: str | None = None
     decompose_max_sub: int = 4  # ⚠ V0 fan-out 子查询上限(封顶复合检索成本;§3.3)
+    # §9.3 Langfuse 全链路观测:**默认关**(观测外发外部服务、守零网络;区别于 N0/N1/N3 默认开)。
+    # 开 + LANGFUSE_* creds(env)→ LangfuseTracer;否则 NoopTracer(零网络)。env QUERY_OBSERVE 覆盖。
+    observe: bool = False
     # §5.4 sparse 精确通道(默认关 → byte 等价;系数 ⚠ V0 标定)
     docnum_boost: bool = False  # ⚠ §5.4 发文字号/全名 sparse 提权;QUERY_DOCNUM_BOOST 覆盖
     docnum_boost_factor: float = 2.0  # ⚠ V0 发文字号 token 提权系数
@@ -94,6 +97,8 @@ def _apply_env(raw: dict) -> None:
         raw["decompose"] = env["QUERY_DECOMPOSE"]  # "0"/"1" → pydantic bool 强转
     if "QUERY_DECOMPOSE_MODEL" in env:
         raw["decompose_model"] = env["QUERY_DECOMPOSE_MODEL"]
+    if "QUERY_OBSERVE" in env:
+        raw["observe"] = env["QUERY_OBSERVE"]  # "0"/"1" → pydantic bool 强转
     if "QUERY_DOCNUM_BOOST" in env:
         raw["docnum_boost"] = env["QUERY_DOCNUM_BOOST"]
     if "QUERY_SCENARIO_EXPAND" in env:

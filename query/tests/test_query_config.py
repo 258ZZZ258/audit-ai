@@ -100,6 +100,14 @@ def test_decompose_env_override(tmp_path, monkeypatch):
     assert cfg.decompose_model == "qwen-turbo"
 
 
+def test_observe_default_and_env(tmp_path, monkeypatch):
+    # §9.3 Langfuse 观测:默认关(观测外发外部服务、守零网络;区别于 N0/N1/N3 默认开)。
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    assert load_query_config(tmp_path).observe is False  # 默认关 → Noop 零网络
+    monkeypatch.setenv("QUERY_OBSERVE", "1")
+    assert load_query_config(tmp_path).observe is True
+
+
 def test_sparse_boost_defaults(tmp_path):
     (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
     cfg = load_query_config(tmp_path)

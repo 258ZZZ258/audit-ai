@@ -18,6 +18,10 @@ dependencies = [
     "typer>=0.9",       # CLI(query ask / query route)
 ]
 
+# §9.3 Langfuse 观测(可选):默认 NoopTracer 零网络、不需 langfuse;observe 开 + creds 时按需装。
+[project.optional-dependencies]
+observe = ["langfuse>=2,<3"]   # LangfuseTracer 懒导入;trace/event/flush API(v2)
+
 [project.scripts]
 query = "query.cli:app"
 
