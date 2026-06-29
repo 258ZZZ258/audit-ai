@@ -23,7 +23,7 @@
 | §3.2 原件 → ObjectStore `raw/{corpus}/{batch}/{version}.{ext}` 写一次 | ✅ | `s0_register.py` put_raw |
 | §3.2 documents+doc_versions 写,status=REGISTERED | ✅ | 原子事务 |
 | §3.2 magic number 格式探测(非扩展名) | ✅ | `s0_register.py:detect_format` |
-| §3.2 白名单 doc/docx/pdf-text/pdf-scan/**xlsx/jpg/png** | 🟡 | `WHITELIST_FORMATS={docx,pdf}` 仅 2 种;**xlsx/jpg/png 缺**(demo 子集) |
+| §3.2 白名单 doc/docx/pdf-text/pdf-scan/**xlsx/jpg/png** | 🟡 | `WHITELIST_FORMATS={docx,pdf,jpg,png}`(**jpg/png ✅** OCR 入库,`test_ocr_routing`);**xlsx 仍 parser-only**(端到端留 P2) |
 | §3.2 白名单外 → QUARANTINED | ✅ | |
 | §3.3 批次质量报告 | ✅ | `RegisterReport` + ImportBatch.report |
 
@@ -31,9 +31,9 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| §4.2 IR schema(blocks/tables/bbox/page 保真) | 🟡 | `ir.py` 有 index/type/level/text/page/bbox;**缺 block_id / ocr_conf / table_id / anchor_block / cells_md(markdown)** |
+| §4.2 IR schema(blocks/tables/bbox/page 保真) | 🟡 | `ir.py` 有 index/type/level/text/page/bbox/**ocr_conf**(已就位)+ `Table.to_markdown`(cells_md);**缺 block_id(用 index)/ table_id / anchor_block** |
 | §4.1 docx→DeepDoc office / pdf-text→DeepDoc pdf | 🟡 | `parsing/factory.py` DeepDoc **stub**;demo 用 light(python-docx/pdfplumber) |
-| §4.1 pdf-notext/图片 → PaddleOCR(GPU)→版面重建 | ❌ | PaddleOCR **stub**;扫描件直接 E202-DEMO 隔离,无 OCR |
+| §4.1 pdf-notext/图片 → OCR → 版面重建 | ✅ | **MinerU pipeline 后端**(`MinerUParser` in-process do_parse → IR + ocr_conf + 表格;`PIPELINE_OCR_BACKEND` 默认关,扫描件仍 E202 向后兼容)。PaddleOCR-GPU 在 Mac 不可行(仅 CPU)→ 改 MinerU;端到端 INDEXED 真跑交付前(spike 已验 OCR→IR) |
 | §4.1 复杂版式失败 → MinerU 重试一次 | ❌ | MinerU **stub**,无兜底重试 |
 | §4.1 xlsx → openpyxl 直读 → 表格 IR | 🟡 | light_parser xlsx **解析能力**(T1.5,`test_xlsx_parse`);端到端入库(白名单/s1 路由)留 P2 P-MISC |
 | §4.1 文本层判定 <50 字/页 → OCR | ✅ | `light_parser.py` density 判定(走隔离而非 OCR) |
@@ -48,7 +48,7 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | §5.1 指标 1 条款覆盖率≥95% / 2 序号连续 gap=0 / 3 层级合法=0 / 4 页码锚点=100% / 5 空表≤5% / 7 抽取充分≥0.7 | ✅ | `qc/indicators.py` 六指标齐;`qc_thresholds.yaml` |
-| §5.1 指标 6 文本质量(乱码≤1% / **ocr_conf≥0.85**) | 🟡 | 乱码✅;**ocr_conf 无**(IR 无该字段、demo 无 OCR) |
+| §5.1 指标 6 文本质量(乱码≤1% / **ocr_conf≥0.85**) | ✅ | 乱码✅;**ocr_conf ✅**(IR 字段 + MinerU 产出 + `indicators.text_quality` 块均值<0.85 判负,`test_qc.py`) |
 | §5.1 任一失败 → QC_FAILED + 失败指标 + 定位证据 | ✅ | `qc/gate.py:to_evidence` |
 | §5.2 人工补录队列 3 处置(修正重跑/降级 degraded/退回甲方)+ remediation_records | ✅ | `queue.py` + CLI;`remediation_records` 表 |
 | §5.3 人工抽检分层 + 不合格率>5% 批次回退 | 🟡/❌ | profile sampling_rate 配置存但未消费;**自动批次回退无** |

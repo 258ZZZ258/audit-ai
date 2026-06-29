@@ -18,7 +18,7 @@ from pathlib import Path
 from common.ir import IRDocument, SourceFormat
 from common.pg_models import DocVersion
 from pipeline.parsing.adapter import ParseResult
-from pipeline.parsing.factory import make_parser
+from pipeline.parsing.factory import make_ocr_parser, make_parser
 from pipeline.parsing.page_align import align_blocks
 from pipeline.parsing.rendition import page_texts, render_pdf
 from pipeline.stage_base import QueueItem, QueueType, StageContext, StageResult
@@ -43,6 +43,8 @@ def run(ctx: StageContext, doc_version_id: str) -> StageResult:
         return _parse_docx(ctx, doc_version_id, data)
     if dv.source_format == "pdf":
         return _parse_pdf(ctx, doc_version_id, data)
+    if dv.source_format in ("jpg", "png"):
+        return _parse_image(ctx, doc_version_id, data, dv.source_format)
     return _quarantine(doc_version_id, ErrorCode.FORMAT_NOT_WHITELISTED.value,
                        f"白名单外格式 {dv.source_format}")
 
@@ -84,14 +86,37 @@ def _parse_docx(ctx: StageContext, dvid: str, data: bytes) -> StageResult:
 
 
 def _parse_pdf(ctx: StageContext, dvid: str, data: bytes) -> StageResult:
-    cfg, store = ctx.config, ctx.object_store
-    res = make_parser().parse(
-        data, "pdf", scanned_char_per_page_max=cfg.parse.scanned_char_per_page_max
-    )
-    if not res.ok:
-        return _route_failure(dvid, res)
+    smax = ctx.config.parse.scanned_char_per_page_max
+    res = make_parser().parse(data, "pdf", scanned_char_per_page_max=smax)
+    if res.ok:
+        return _ir_to_qc(ctx, dvid, res, "pdf")
+    # 扫描件(无文本层)+ OCR 启用 → 旁路 OCR 后端;否则维持 E202 隔离(向后兼容)
+    if res.error_code == ErrorCode.SCANNED_OCR_DISABLED.value:
+        ocr = make_ocr_parser()
+        if ocr is not None:
+            ores = ocr.parse(data, "pdf", scanned_char_per_page_max=smax)
+            return _ir_to_qc(ctx, dvid, ores, "pdf") if ores.ok else _route_failure(dvid, ores)
+    return _route_failure(dvid, res)
+
+
+def _parse_image(ctx: StageContext, dvid: str, data: bytes, source_format: str) -> StageResult:
+    """图片(jpg/png)→ OCR 后端;OCR 关 → E202 隔离(与扫描 pdf 同口径)。"""
+    smax = ctx.config.parse.scanned_char_per_page_max
+    ocr = make_ocr_parser()
+    if ocr is None:
+        return _quarantine(
+            dvid, ErrorCode.SCANNED_OCR_DISABLED.value,
+            f"{source_format} 图片需 OCR,PIPELINE_OCR_BACKEND 未启用",
+        )
+    res = ocr.parse(data, source_format, scanned_char_per_page_max=smax)
+    return _ir_to_qc(ctx, dvid, res, source_format) if res.ok else _route_failure(dvid, res)
+
+
+def _ir_to_qc(ctx: StageContext, dvid: str, res: ParseResult, source_format: str) -> StageResult:
+    """解析成功 → 构造 IR(无 docx 页码对齐)落库 → QC_PENDING(pdf / 图片共用)。"""
+    store = ctx.object_store
     ir = IRDocument(
-        doc_version_id=dvid, source_format=SourceFormat.PDF,
+        doc_version_id=dvid, source_format=SourceFormat(source_format),
         blocks=res.blocks, page_count=res.page_count, title=res.title,
     )
     store.put_ir(ir)

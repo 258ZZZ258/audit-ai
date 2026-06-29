@@ -30,6 +30,9 @@ dependencies = [
 [project.optional-dependencies]
 # 本地嵌入(torch,重)——仅 local 模式需要,endpoint 模式不需。
 embed = ["FlagEmbedding>=1.2"]
+# 扫描件/图片 OCR(MinerU pipeline 后端,重:torch/onnx + 模型)——仅 PIPELINE_OCR_BACKEND=mineru 需。
+# 模型源走 env MINERU_MODEL_SOURCE=modelscope(中国网络;首跑下载,之后缓存)。
+ocr = ["mineru[core]>=3.4"]
 
 [project.scripts]
 demo = "pipeline.cli:app"

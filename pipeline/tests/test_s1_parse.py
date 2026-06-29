@@ -3,6 +3,7 @@
 import io
 
 import pytest
+from _ocr_gate import mineru_ready, ocr_png
 from docx import Document as Docx
 from PIL import Image, ImageDraw
 from sqlalchemy import delete, select, text
@@ -135,3 +136,26 @@ def test_rendition_write_once_on_reprocess(env, soffice):
     first = ctx.object_store.get_rendition(dvid)
     s1.run(ctx, dvid)  # reprocess:复用渲染件,不重渲
     assert ctx.object_store.get_rendition(dvid) == first  # 写一次,字节不变
+
+
+# ── T7 端到端 OCR:图片 → s1 OCR 路由 → IR(门控 _ocr_gate.mineru_ready;OCR 关分支不需 MinerU)──
+@pytest.mark.skipif(not mineru_ready(), reason="MinerU 真跑未启用(需 mineru + MINERU_REAL_TEST=1)")
+def test_image_ocr_to_ir_with_conf(env, monkeypatch):
+    monkeypatch.setenv("PIPELINE_OCR_BACKEND", "mineru")
+    ctx, batches = env
+    bid, dvid = _make_doc(ctx, "png", ocr_png())
+    batches.append(bid)
+    res = s1.run(ctx, dvid)
+    assert res.next_state is PS.QC_PENDING
+    ir = ctx.object_store.load_ir(dvid)
+    assert ir.blocks and any(b.ocr_conf is not None for b in ir.blocks)  # OCR 块带置信度
+
+
+def test_image_quarantined_when_ocr_off(env, monkeypatch):
+    # OCR 关(默认)→ 图片走 E202 隔离(向后兼容,不需 MinerU,连栈真跑)
+    monkeypatch.delenv("PIPELINE_OCR_BACKEND", raising=False)
+    ctx, batches = env
+    bid, dvid = _make_doc(ctx, "png", ocr_png())
+    batches.append(bid)
+    res = s1.run(ctx, dvid)
+    assert res.next_state is PS.QUARANTINED and res.error_code == "E202-DEMO"

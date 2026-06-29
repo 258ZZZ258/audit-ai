@@ -16,9 +16,9 @@
 
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
-| ✅ 实装+测试 | **81** | 59% | 入库主干契约 · S0 登记 · S3 条款树/切块/QA · S2 七指标(含指标6 ocr_conf)· S4 L1/版本链 · S5 索引/冷备 · E1 富集 · **Phase 0/1:IR markdown/E2 真模型/ref_resolver R1–R4(R4 跨文档 + dict_aliases)** · **Phase 2:案例 L2 引用外规对齐(S4-12)/违规事由分类(S4-11)** · T2/T4 · 编排/一致性/重建 |
-| 🟡 部分 | **34** | 25% | 生产解析栈 stub · **xlsx parser-only(端到端 P2)** · IR 缺 block_id/table_id · 面包屑缺文号 · 案例对象类型/金额 L1-only · **L2 业务域 ✅·主题摘要/适用对象 P1** · T3/T6 框架 · perm_tag 写不过滤 · 错误码子集 · §18 边缘带/REPARSE |
-| ❌ 未实装 | **18** | 13% | OCR/MinerU · L2 主题摘要/适用对象(P1)· 修订说明对齐 · §18 指标8/9/仲裁/高危token/quality_tickets · §6.6 图谱窗口 · T1/T5 · P-MISC 路由 · §14 敏感词 |
+| ✅ 实装+测试 | **83** | 60% | 入库主干契约 · S0 登记 · S3 条款树/切块/QA · S2 七指标(含指标6 ocr_conf)· S4 L1/版本链 · S5 索引/冷备 · E1 富集 · **ref_resolver R1–R4** · **案例 L2(S4-12/S4-11)** · **OCR:扫描件/图片 MinerU(S1-2)+ 白名单 jpg/png(S0-8)** · T2/T4 · 编排/一致性/重建 |
+| 🟡 部分 | **33** | 24% | 生产解析栈(DeepDoc/PaddleOCR stub;**扫描件 OCR MinerU ✅**)· **xlsx parser-only(P2)** · IR 缺 block_id/table_id(ocr_conf ✅)· 面包屑缺文号 · 案例对象类型/金额 L1-only · **L2 业务域 ✅·摘要/适用对象 P1** · T3/T6 框架 · perm_tag 写不过滤 · 错误码子集 · §18 边缘带/REPARSE |
+| ❌ 未实装 | **17** | 12% | L2 主题摘要/适用对象(P1)· 修订说明对齐 · §18 指标8/9/仲裁/高危token/quality_tickets · §6.6 图谱窗口 · T1/T5 · P-MISC 路由 · §14 敏感词 |
 | ➖ 边界外 | **5** | 4% | E4 路由(二期)· T7(CP-007)· §22.3/.4/.5 费用/项目/模板交接 |
 | **合计** | **138** | | |
 
@@ -37,7 +37,7 @@
 | O-2 | chunk 四级可回溯(条款→文档→页码→版本) | ✅ | §0-2/§6;`test_anchor_replay`/`test_s5` | | |
 | O-3 | 数据流单向只读,无源系统回写 | 🟡 | §0-3;架构(无回写路径),无专测 | | |
 | O-4 | 权限/密级/操作日志全程留痕 | 🟡 | §0-4/§14;`pipeline_events`/`remediation_records`✅,独立审计表/敏感词❌ | | ② |
-| O-5 | 支持 Word/PDF/Excel/图片/扫描件 | 🟡 | §0-5/§4;仅 docx/pdf-text(`test_s1_parse`),xlsx/图片/扫描件❌ | | |
+| O-5 | 支持 Word/PDF/Excel/图片/扫描件 | 🟡 | §0-5/§4;docx/pdf-text(light)+ **图片/扫描件 OCR(MinerU,门控)**(`test_s1_parse`);xlsx parser-only | | |
 | O-6 | 长任务异步 + 状态可见 | ✅ | §0-6/§11;`test_orchestrator`/`test_states` | | |
 | O-7 | PG 权威 / Milvus 可随时全量重建 | ✅ | §0-7/§12;`test_rebuild`/`test_reconcile` | | |
 | O-8 | Schema add-only,复用工厂/抽象 | ✅ | §0-8/§10;`alembic`/`test_v16_fidelity` | | |
@@ -52,7 +52,7 @@
 | S0-5 | 原件 → ObjectStore raw/… 写一次 | ✅ | §3.2;`test_object_store`/`test_s0_register` | | |
 | S0-6 | documents+doc_versions 写,status=REGISTERED | ✅ | §3.2;`test_s0_register` | | |
 | S0-7 | magic number 格式探测(非扩展名) | ✅ | §3.2;`test_s0_register` | | |
-| S0-8 | 白名单 doc/docx/pdf-text/pdf-scan/xlsx/jpg/png | 🟡 | §3.2;`WHITELIST={docx,pdf}` 仅 2 种(`test_s0_register`) | | |
+| S0-8 | 白名单 doc/docx/pdf-text/pdf-scan/xlsx/jpg/png | ✅ | §3.2;`WHITELIST={docx,pdf,jpg,png}` + detect_format png/jpg(`test_ocr_routing`);xlsx parser-only(P2) | | |
 | S0-9 | 白名单外 → QUARANTINED | ✅ | §3.2;`test_s0_register` | | |
 | S0-10 | 批次质量报告 | ✅ | §3.3;`test_s0_register`/`test_report` | | |
 
@@ -60,12 +60,12 @@
 | Req | 需求 | 状态 | 证据 | 🤖 | §16 |
 |---|---|---|---|---|---|
 | S1-1 | docx/pdf-text → DeepDoc 通道 | 🟡 | §4.1;DeepDoc **stub**,demo light(`test_light_parser`) | | |
-| S1-2 | pdf-notext/图片 → PaddleOCR(GPU)→版面重建 | ❌ | §4.1;PaddleOCR stub,扫描件隔离 | | ① |
+| S1-2 | pdf-notext/图片 → OCR → 版面重建 | ✅ | §4.1;**MinerU pipeline**(`MinerUParser` in-process,`test_mineru_parser`/`test_ocr_routing`;`PIPELINE_OCR_BACKEND` 默认关);PaddleOCR-GPU Mac 不可行→MinerU;端到端真跑交付前 | | ① |
 | S1-3 | 复杂版式失败 → MinerU 重试一次 | ❌ | §4.1;MinerU stub | | |
 | S1-4 | xlsx → openpyxl 直读 → 表格 IR | 🟡 | §4.1;light_parser xlsx 解析能力(`test_xlsx_parse`);白名单/端到端入库(纯表格 S3 不适用)留 P2 P-MISC | | |
 | S1-5 | 文本层判定 <50 字/页 → OCR | ✅ | §4.1;`test_light_parser` | | |
 | S1-6 | 解析失败 → PARSE_FAILED(E203) | ✅ | §4.1/§11.2;`test_s1_parse` | | |
-| S1-7 | IR schema(blocks/tables/bbox/page) | 🟡 | §4.2;缺 ocr_conf/block_id/table_id/cells_md(`test_ir`) | | |
+| S1-7 | IR schema(blocks/tables/bbox/page) | 🟡 | §4.2;**ocr_conf ✅** + bbox/table(MinerU 产)+ cells_md(`to_markdown`);缺 block_id(用 index)/table_id/anchor_block(`test_ir`) | | |
 | S1-8 | 表格 markdown 矩阵 + 合并单元格展开 | ✅ | §4.2;`Table.to_markdown`/`expanded_rows`(`test_table_markdown`)+ chunker 接入 | | |
 | S1-9 | CPU/GPU 独立 task queue | ❌ | §4.3;单进程轮询 | | |
 | S1-10 | 超时 5min/扫描件 15min → PARSE_FAILED | 🟡 | §4.3;常规 300s✅,扫描件 15min 分支无 | | |
