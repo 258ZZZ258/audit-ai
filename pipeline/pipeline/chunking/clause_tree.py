@@ -90,7 +90,15 @@ def classify_heading(text: str) -> Heading | None:
             return Heading(nt, normalize_clause_no(m.group(1)), m.group(0))
     # 条(插入条:中文之N / 西文 bis / 小数式 21.1b)
     m = re.match(rf"^第({_ART_NUM})条(?:之({_NUM}))?", s)
-    if m and s[m.end() : m.end() + 1] not in _REF_PUNCT:  # 紧跟、，; → 跨法引用列举,非条标题
+    rest = s[m.end() :] if m else ""
+    # 非条标题(内联引用/列举碎片):紧跟 、，; (列举) / 「第X款/项/条」(如「第一百八十四条第二款」)
+    # / 「的」(如「第一百八十四条的规定」断行块首——真条标题内容绝不以「的」起)。
+    if (
+        m
+        and rest[:1] not in _REF_PUNCT
+        and rest[:1] != "的"
+        and not re.match(rf"第({_NUM})[款项条]", rest)
+    ):
         raw = m.group(1) + ("之" + m.group(2) if m.group(2) else "")
         try:
             return Heading(NodeType.ARTICLE, normalize_clause_no(raw), m.group(0))
@@ -165,6 +173,33 @@ class ClauseNode:
         return sorted(idxs)
 
 
+def _toc_no_article(blocks: list[Block]) -> set[int]:
+    """结构信号:章/节标题在其跨度内(至下一同级或更高级标题)**无『条』**→ 判目录项。
+
+    正文里每个章/节迟早含条(含经节嵌套);国家法律「干净目录」(章/节标题行,无点引导/页码/
+    『目录』锚)整段无条 → 据此剥离,避免目录章节与正文重复成节点、致正文章号倒挂(发现:行政许可法)。
+    """
+    heads: list[tuple[int, Heading]] = []
+    for i, b in enumerate(blocks):
+        h = classify_heading(b.text)
+        if h is not None:
+            heads.append((i, h))
+    out: set[int] = set()
+    for k, (pos, h) in enumerate(heads):
+        if h.type not in (NodeType.CHAPTER, NodeType.SECTION):
+            continue
+        has_article = False
+        for _, h2 in heads[k + 1 :]:
+            if _LEVEL[h2.type] <= _LEVEL[h.type]:  # 下一同级/更高级标题 → 跨度止
+                break
+            if h2.type is NodeType.ARTICLE:
+                has_article = True
+                break
+        if not has_article:
+            out.add(blocks[pos].index)
+    return out
+
+
 def _toc_block_indices(blocks: list[Block]) -> set[int]:
     """**区域级**目录识别:返回属于目录区的 block 序号(scheme A:``build_tree`` 留作 body、不当标题)。
 
@@ -203,7 +238,7 @@ def _toc_block_indices(blocks: list[Block]) -> set[int]:
             i = j
             continue
         i += 1
-    return toc
+    return toc | _toc_no_article(blocks)  # 并入结构信号(章/节跨度内无条 = 目录)
 
 
 def build_tree(blocks: list[Block]) -> ClauseNode:
