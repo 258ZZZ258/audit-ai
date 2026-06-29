@@ -32,3 +32,6 @@ _web_uploads/
 # 第一期文档测试生成的报告(不入库)
 tools/doc_test/out/
 tools/doc_test/config.yaml
+
+# Codex 代码审查产物(.review/findings.json 随审查流程,不入库)
+.review/
