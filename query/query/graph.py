@@ -12,7 +12,7 @@ from langgraph.graph import END, START, StateGraph
 from query.contract import AnswerBlock, BlockType, QueryResult, RouteType
 from query.generate.anchors import fetch_anchors
 from query.generate.r1_evidence import generate_evidence
-from query.llm import LLMClient, make_llm_client
+from query.llm import LLMClient, maybe_make_llm_client
 from query.refuse.coverage_refusal import refuse_coverage, refuse_out_of_domain
 from query.retrieve.sufficiency import assess
 from query.state import QueryState
@@ -52,12 +52,10 @@ class QueryAgent:
         self._pg = pg
         self._llm = llm
         self._qcfg = qcfg
-        # N0 归并客户端:仅 merge_context 开 + gateway 时建(真 LLM 为主,镜像 §9.2 复核
-        # 「仅 toggle 开时建」);否则 None → merge_context 走规则版(stub/关 → 零网络)。
-        self._merge_llm = (
-            make_llm_client(qcfg, model=qcfg.merge_model or qcfg.llm_model)
-            if qcfg.merge_context and qcfg.llm_backend == "gateway"
-            else None
+        # N0 归并客户端:仅 merge_context 开 + gateway + 有 key 时建(真 LLM 为主);否则 None →
+        # merge_context 走规则版(stub/关/无 key → 零网络、不崩溃,QUERY-N0-OFFLINE-GATE)。
+        self._merge_llm = maybe_make_llm_client(
+            qcfg.merge_context, qcfg, model=qcfg.merge_model or qcfg.llm_model
         )
         self._app = self._build()
 

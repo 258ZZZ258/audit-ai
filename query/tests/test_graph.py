@@ -224,20 +224,26 @@ def test_ask_accepts_history_backward_compatible(agent):
     assert agent.ask("它呢").route_type is RouteType.CLARIFY
 
 
-def test_merge_llm_built_only_when_gateway_and_on(monkeypatch):
-    import query.graph as gmod
+def test_merge_llm_built_only_when_gateway_on_with_key(monkeypatch):
+    # 经 maybe_make_llm_client:monkeypatch 内层 client.make_llm_client + 控 key 环境。
+    import query.llm.client as client
 
-    sentinel = object()
-    monkeypatch.setattr(gmod, "make_llm_client", lambda cfg, *, model=None: sentinel)
+    monkeypatch.setattr(client, "make_llm_client", lambda cfg, *, model=None: ("sentinel", model))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")  # 有 key
     base = load_query_config()
     # stub(默认后端)→ 不建归并客户端(零网络、走规则版)
     assert QueryAgent(None, None, StubLLMClient(), base)._merge_llm is None
-    # gateway + merge_context 开 → 建(真 LLM 为主)
+    # gateway + merge_context 开 + 有 key → 建(真 LLM 为主)
     gw_on = base.model_copy(update={"llm_backend": "gateway", "merge_context": True})
-    assert QueryAgent(None, None, StubLLMClient(), gw_on)._merge_llm is sentinel
+    assert QueryAgent(None, None, StubLLMClient(), gw_on)._merge_llm == (
+        "sentinel", gw_on.merge_model or gw_on.llm_model
+    )
     # gateway + merge_context 关 → 不建
     gw_off = base.model_copy(update={"llm_backend": "gateway", "merge_context": False})
     assert QueryAgent(None, None, StubLLMClient(), gw_off)._merge_llm is None
+    # gateway 但无 OPENAI_API_KEY → 不建、不崩溃(降级规则版,QUERY-N0-OFFLINE-GATE)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert QueryAgent(None, None, StubLLMClient(), gw_on)._merge_llm is None
 
 
 # ── 附挂门控(§6.3 适用边界):仅充分 evidence + 非概念判断型;拒答/关闭不挂(零栈)──────

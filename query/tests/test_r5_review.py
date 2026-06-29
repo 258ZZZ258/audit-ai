@@ -76,10 +76,13 @@ def _run_answer_judgment(monkeypatch, *, review_on, main_llm, review_client):
     """
     captured = {"make_calls": 0}
 
-    def fake_make(qcfg, *, model=None):
-        captured["make_calls"] += 1
+    def fake_maybe(enabled, qcfg, *, model=None):
+        # 复核客户端经 maybe_make_llm_client(enabled, ...);honors enabled(关/无 key → None → 主答)。
         captured["model"] = model
-        return review_client
+        if enabled:
+            captured["make_calls"] += 1
+            return review_client
+        return None
 
     def fake_review(blocks, clauses, llm, qcfg):
         captured["review_llm"] = llm
@@ -89,7 +92,7 @@ def _run_answer_judgment(monkeypatch, *, review_on, main_llm, review_client):
         captured["framing_llm"] = llm
         return [AnswerBlock(BlockType.TEXT, "x", stream=False)]
 
-    monkeypatch.setattr(r5_judgment, "make_llm_client", fake_make)
+    monkeypatch.setattr(r5_judgment, "maybe_make_llm_client", fake_maybe)
     monkeypatch.setattr(r5_judgment, "review_tentative", fake_review)
     monkeypatch.setattr(r5_judgment, "build_framing", fake_framing)
     monkeypatch.setattr(r5_judgment, "resolve_cited_clauses", lambda pg, dvids: [])
