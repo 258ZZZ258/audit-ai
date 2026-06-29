@@ -475,3 +475,38 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
 - **未做(SPEC-N3 §0)**:子查询重路由 / agentic 迭代 / re-retrieve(§0.3);decompose 进 R3/R4;子查询级独立答复拼接;
   **§13 V0 复合占比/拆分质量评估 / 配额折算 / 默认值终定**(V0 未跑);Langfuse trace 子查询;`decompose_model` 真名(§9.1/§15-①);
   子查询并集的跨查询分数归一(精排 V0)。**待 Codex 复审 + 真 gateway 跑绿 + V0 标定。**
+
+## §9.3 Langfuse 全链路观测(trace 接缝)(2026-06-29,SPEC/PLAN/TASKS-OBSERVE)
+
+> worktree `feat/query-observe-langfuse`(独立工作树)。P3 横切首块:查询全链路 trace(查询理解→检索→生成),HyDE/子查询/
+> route_type 进 trace 供 §13 V0 分析。**全绿**:`test_observe` 13(Noop/make_tracer/Langfuse/contextvar/fail-safe + Retriever event
+> + ask trace)+ `test_query_config` +1;`test_observe_integration` 1 skipped(gate);**全 query 275 passed / 34 skipped 无回归**。
+
+- **已决(AskUserQuestion,2026-06-29)**:① **MVP 范围 = 图层 trace + Retriever 内 HyDE/子查询**(设计 §9.3 全量进 trace)。
+- **关键设计 / 取舍**:
+  - **observe 默认关**(区别于 N0/N1/N3 默认开):观测**外发外部服务**(Langfuse),无 design「默认开」依据、守本仓「默认零网络」;
+    `NoopTracer` 默认 → 全 no-op、byte 等价。这是「默认开/关」的判据分水岭:**增益型查询能力默认开**(有离线兜底),**外发基建默认关**。
+  - **单一 tracer + module-level contextvar 串联**(关键):HyDE 文本/N3 子查询是 **Retriever 内部态**、不在 QueryState,要进 ask()
+    开的同一条 trace,靠 ①`QueryAgent.from_config` 建**一个** tracer 传 `Retriever.from_config(tracer=)` + 自身;② module-level
+    `_current` contextvar:`ask()` 的 `trace()` 进入 set、退出 reset,`Retriever.event()` 读 `_current` 挂事件。**无当前 trace
+    (Noop / 未开)→ event no-op**。这样图层与 Retriever 事件落同一条 trace,而 Retriever 零「graph state」耦合。
+  - **只读旁路 + fail-safe**:tracer **绝不**改 state/检索/答复/控制流(SC8:开/关 observe → result 必一致);LangfuseTracer 所有
+    langfuse 调用 try/except **吞**(建 trace 失败 → 退化 noop span;event/flush 失败 → 吞)→ **观测绝不阻断查询**(observe 是增益非依赖)。
+  - **langfuse 可选 extra + 懒导入**:`pyproject [observe]=langfuse>=2,<3`;`LangfuseTracer` 内 `from langfuse import Langfuse` 懒导入 →
+    默认 noop 路径**不装 langfuse**(`import query.observe` 不拉 langfuse,实测)。`make_tracer`:observe+creds 且 langfuse 装 → Langfuse,
+    缺 langfuse → 退化 Noop。
+  - **离线安全 make_tracer**(同 offline-gate 范式):observe 开 + `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY`(env)齐 → Langfuse,否则 Noop;
+    creds 仅 env 绝不入库(同 `OPENAI_API_KEY`)。
+- **实现**:`observe.py`(`Tracer` Protocol / `NoopTracer` / `LangfuseTracer`(contextvar + flush + fail-safe)/ `make_tracer`);`config`
+  +`observe`(默认 False)+ env;`graph.py` `QueryAgent +tracer` + `from_config` 建并传 + `ask` 包 `trace`;`hybrid.py` `Retriever +tracer`
+  + `_dense_for`/`_subqueries_for` 发 event;`pyproject [observe]` extra。
+- **踩坑 / 核实**:
+  - **候选数不在 state**:`ask()` 的 `invoke` 返终态 state 有 query/scene/route_type,但 `state.candidates` 节点未回写(检索在
+    `_evidence` 内、结果不进 state)→ **trace metadata 去掉「候选数」**(诚实,只记 state 真有的归并句/scene/route_type);候选数若要进
+    trace 需 Retriever 再发 event(留后续)。
+  - **fake tracer 双用**:`_CaptureTracer.trace` 用 `@contextmanager` yield self(span=self,`update` 记 `self.updates`)+ `event`
+    记 `self.events` → 同一桩既测 ask trace(T5)又测 Retriever event(T4)。`make_tracer` 选 Langfuse 用 `monkeypatch.setitem(sys.modules,
+    "langfuse", fake_mod)` 注入 fake `Langfuse`(免装真 langfuse)。
+  - **worktree 解析陷阱**(同前):`PYTHONPATH=<wt>/{query,...}` 使 PathFinder 先于主 venv `_EditableFinder` 解析到 worktree。
+- **未做(SPEC-OBSERVE §0)**:深层 per-stage span 树(检索/重排/生成/复核各 span + 耗时);敏感词/SSO/操作日志/AI 页脚(§9.3 余项);
+  §13 V0 分析逻辑;采样率/PII 脱敏/保留(运维);候选数/更多字段进 trace。**待 Codex 复审 + 真 Langfuse 跑绿。**

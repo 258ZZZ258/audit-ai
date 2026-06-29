@@ -16,8 +16,8 @@
 | | 数 | 占比 | 说明 |
 |---|---|---|---|
 | ✅ 实装+测试 | **54** | 47% | 红线(含 **RL-1/§9.2 真复核闭环**,⏳待跑绿)/ R1 / R2 / R3 / **R4** / **R5** / **R6** / **R7 闭环** / R8 / 契约 / 四级锚点 / 混合检索 / 三段式 / **§5.5 重排** / **§5.4 sparse** / **N1-fail HyDE 回落** / **§3-degrade 前端节点可降级** |
-| 🟡 部分 | **32** | 28% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取、**N0 多轮归并 + N1 HyDE + N3 问题分解(实装+单测✅,真-LLM 为主路径⏳待跑绿)**、§14 验收部分项 |
-| ❌ 未实装 | **29** | 25% | 查询理解前端(**N1-decision V0 A/B 标定**)、横切(§9 网关/真复核/权限/观测/SSO)、§11–13 |
+| 🟡 部分 | **33** | 28% | 务实版充分性/拒答判据、perm_tag 写不过滤、entity/biz/chunk_type 过滤(R4 机制)、E1 义务过滤、R5 构成要件 LLM 抽取、**N0 多轮归并 + N1 HyDE + N3 问题分解 + §9.3 Langfuse 观测(实装+单测✅,真-LLM/Langfuse 门控⏳待跑绿)**、§14 验收部分项 |
+| ❌ 未实装 | **28** | 24% | 查询理解前端(**N1-decision V0 A/B 标定**)、横切(§9 网关/真复核/**权限**/SSO/敏感词)、§11–13 |
 | ➖ 非查询逻辑 | **1** | — | §2.3 容量(摄取/部署) |
 | **合计** | **116** | | |
 
@@ -153,7 +153,7 @@
 | §9.3-sensitive | 敏感词双向过滤 | ❌ | 未做 | — |
 | §9.3-ailabel | AI 内容标识+导出页脚 | 🟡 | contract.ai_label✅;导出页脚 ❌ | — |
 | §9.3-perm | Casbin+操作日志 | ❌ | 未做 | — |
-| §9.3-obs | Langfuse 全链路 trace | ❌ | 未做 | — |
+| §9.3-obs | Langfuse 全链路 trace | 🟡 | **实装**:`observe.py` Tracer 接缝(Noop 默认零网络 / Langfuse 懒导入 + contextvar 串联 + fail-safe)+ `make_tracer`;ask 包 trace、Retriever 发 HyDE/子查询 event(`test_observe`)。默认关 byte 等价、只读旁路;真 Langfuse 门控 `test_observe_integration`⏳待跑绿;per-stage span 树待后续 | — |
 | §9.3-sso | SSO 统一认证 | ❌ | 未做 | — |
 
 ### §10 契约 / §11 导出 / §12 容量 / §13 V0 / §14 验收
