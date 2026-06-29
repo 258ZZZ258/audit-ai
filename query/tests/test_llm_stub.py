@@ -71,3 +71,30 @@ def test_stub_ignores_model():
     # stub 分支忽略 model(零网络,确定性);model 不影响返回 stub 实例。
     c = make_llm_client(QueryConfig(llm_backend="stub"), model="kimi-review")
     assert isinstance(c, StubLLMClient)
+
+
+# ── offline-gate:maybe_make_llm_client(增强 toggle 客户端门控,QUERY-N0/N1/N3-OFFLINE-GATE)──
+def test_maybe_make_llm_client_gateway_on_with_key(monkeypatch):
+    import query.llm.client as client
+
+    monkeypatch.setattr(client, "make_llm_client", lambda cfg, *, model=None: ("built", model))
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    cfg = QueryConfig(llm_backend="gateway", llm_model="qwen")
+    assert client.maybe_make_llm_client(True, cfg, model="kimi") == ("built", "kimi")  # 建
+
+
+def test_maybe_make_llm_client_no_key_returns_none(monkeypatch):
+    # gateway 但缺 OPENAI_API_KEY → None(降级 no-op,不抛;增强 toggle 默认开的离线安全)。
+    import query.llm.client as client
+
+    monkeypatch.setattr(client, "make_llm_client", lambda cfg, *, model=None: ("built", model))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert client.maybe_make_llm_client(True, QueryConfig(llm_backend="gateway")) is None
+
+
+def test_maybe_make_llm_client_disabled_or_stub_returns_none(monkeypatch):
+    import query.llm.client as client
+
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    assert client.maybe_make_llm_client(False, QueryConfig(llm_backend="gateway")) is None  # 关
+    assert client.maybe_make_llm_client(True, QueryConfig(llm_backend="stub")) is None  # stub

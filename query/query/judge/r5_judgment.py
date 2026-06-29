@@ -16,7 +16,7 @@ from query.contract import QueryResult, RouteType
 from query.generate.anchors import fetch_anchors, fetch_texts
 from query.judge.framing import build_framing
 from query.judge.review import review_tentative
-from query.llm import make_llm_client
+from query.llm import maybe_make_llm_client
 from query.refuse.coverage_refusal import refuse_coverage
 
 #: 覆盖拒答 exhausted_scope 兜底(判定型;必非空,可解释)。
@@ -102,15 +102,13 @@ def answer_judgment(query, retriever, pg, llm, qcfg) -> QueryResult:
         for i in ids if i in anchors
     ]
     blocks = build_framing(clauses, query, llm, qcfg)          # ② 框定 + ③ 标识(无 verdict 槽)
-    # §9.2 复核:开 → 用独立 review_model(Kimi)建复核客户端,与主答(Qwen)分离(§9.1);
-    # 关 → 不建客户端(零网络),review_tentative 直通主答 llm。
-    # 喂 clauses(含条文原文)而非 citations(仅锚点):忠实性须对条文原文校验
+    # §9.2 复核:开+gateway+有 key → 用独立 review_model(Kimi)建复核客户端,与主答(Qwen)分离(§9.1);
+    # 关/stub/无 key → maybe_make_llm_client 返 None → `or llm` 直通主答(零网络、不崩溃,同款
+    # OFFLINE-GATE)。喂 clauses(含条文原文)而非 citations(仅锚点):忠实性须对条文原文校验
     # (R5-REVIEW-NEEDS-CLAUSE-EVIDENCE)。
-    review_llm = (
-        make_llm_client(qcfg, model=qcfg.review_model)
-        if qcfg.judge_multimodel_review
-        else llm
-    )
+    review_llm = maybe_make_llm_client(
+        qcfg.judge_multimodel_review, qcfg, model=qcfg.review_model
+    ) or llm
     blocks = review_tentative(blocks, clauses, review_llm, qcfg)
     return QueryResult(
         route_type=RouteType.JUDGMENTAL,
