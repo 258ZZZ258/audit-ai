@@ -11,13 +11,13 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 from pipeline.config import load_config
 from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
 from query.config import QueryConfig, load_query_config
+from query.llm import maybe_make_llm_client
 from query.retrieve.decompose import decompose_subqueries
 from query.retrieve.hyde import hyde_dense_text
 from query.retrieve.sparse_boost import augment_sparse, load_scenario_terms
@@ -26,28 +26,16 @@ from query.retrieve.sparse_boost import augment_sparse, load_scenario_terms
 _PARTITIONS = ("P-INT", "P-EXT")
 
 
-def _gateway_llm(enabled: bool, qcfg: QueryConfig, model: str | None):
-    """前端 LLM 增强(HyDE/分解)客户端:**仅 enabled + gateway + 有 OPENAI_API_KEY 时建**;否则 None。
-
-    SPEC 契约「stub/**无 key** → None → no-op」:`make_llm_client` 无 key 即抛(pipeline.llm_client),
-    故 gateway 但缺 key 时**不建** → `from_config` 降级回原问 dense / 单查询,而非启动崩溃
-    (QUERY-N1/N3-OFFLINE-GATE)。缺 key 是 `make_llm_client` 唯一构造失败,查 key = 查能否构造。
-    """
-    if enabled and qcfg.llm_backend == "gateway" and os.environ.get("OPENAI_API_KEY"):
-        from query.llm import make_llm_client  # 懒导入,避 import 期拉 pipeline.llm_client
-
-        return make_llm_client(qcfg, model=model)
-    return None
-
-
 def _build_hyde_llm(qcfg: QueryConfig):
     """§3.1 N1 HyDE dense 改写客户端(仅 hyde 开+gateway+有 key);否则 None → 原问 dense no-op。"""
-    return _gateway_llm(qcfg.hyde, qcfg, qcfg.hyde_model or qcfg.llm_model)
+    return maybe_make_llm_client(qcfg.hyde, qcfg, model=qcfg.hyde_model or qcfg.llm_model)
 
 
 def _build_decompose_llm(qcfg: QueryConfig):
     """§3.3 N3 分解客户端(仅 decompose 开+gateway+有 key);否则 None → 单查询 [query] 直通。"""
-    return _gateway_llm(qcfg.decompose, qcfg, qcfg.decompose_model or qcfg.llm_model)
+    return maybe_make_llm_client(
+        qcfg.decompose, qcfg, model=qcfg.decompose_model or qcfg.llm_model
+    )
 
 
 @dataclass(frozen=True)
