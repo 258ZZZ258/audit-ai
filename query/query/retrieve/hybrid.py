@@ -17,10 +17,23 @@ from pipeline.config import load_config
 from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
 from query.config import QueryConfig, load_query_config
+from query.retrieve.hyde import hyde_dense_text
 from query.retrieve.sparse_boost import augment_sparse, load_scenario_terms
 
 #: 检索分区(§5.2):内规 / 外规各打各的配额
 _PARTITIONS = ("P-INT", "P-EXT")
+
+
+def _build_hyde_llm(qcfg: QueryConfig):
+    """§3.1 N1:HyDE 归并客户端**仅 hyde 开 + gateway 时建**(镜像 §9.2/N0);否则 None → 原问 dense。
+
+    默认 stub → None → HyDE no-op(零网络、byte 等价)。「默认开」仅在配 gateway 时活。
+    """
+    if qcfg.hyde and qcfg.llm_backend == "gateway":
+        from query.llm import make_llm_client  # 懒导入,避 import 期拉 pipeline.llm_client
+
+        return make_llm_client(qcfg, model=qcfg.hyde_model or qcfg.llm_model)
+    return None
 
 
 @dataclass(frozen=True)
@@ -61,7 +74,8 @@ class Retriever:
     """混合检索器:持有查询嵌入 + Milvus 客户端(连真栈)。"""
 
     def __init__(
-        self, embed: EmbeddingClient, milvus: MilvusIO, qcfg: QueryConfig, reranker=None
+        self, embed: EmbeddingClient, milvus: MilvusIO, qcfg: QueryConfig, reranker=None,
+        hyde_llm=None,
     ) -> None:
         from query.rerank.reranker import make_reranker  # 局部导入,避 import 期环
 
@@ -74,24 +88,30 @@ class Retriever:
         self._scenario_terms = (
             load_scenario_terms(qcfg.scenario_terms_path) if qcfg.scenario_expand else {}
         )
+        # §3.1 N1 HyDE dense 改写客户端(仅 hyde 开+gateway;否则 None → 原问 dense,byte 等价)
+        self._hyde_llm = hyde_llm
 
     @classmethod
     def from_config(cls, qcfg: QueryConfig | None = None) -> Retriever:
         """连真栈:复用 pipeline 的 embedding/milvus(检索走本地真栈)。"""
+        qcfg = qcfg or load_query_config()
         settings = load_config()
         milvus = MilvusIO(settings)
         milvus.connect()
-        return cls(EmbeddingClient.from_config(settings), milvus, qcfg or load_query_config())
+        return cls(
+            EmbeddingClient.from_config(settings), milvus, qcfg, hyde_llm=_build_hyde_llm(qcfg)
+        )
 
     def retrieve(self, query: str, *, include_superseded: bool = False) -> list[Candidate]:
         """分区配额检索 → 合并去重 → RRF 序 → §5.5 重排(none=passthrough)→ 取 topk。"""
         with_text = self._qcfg.rerank_backend != "none"  # 仅重排时取 Milvus text(零开销默认)
         emb = self._embed.embed([query])[0]
+        dense = self._dense_for(query, emb)    # §3.1 HyDE(关/stub → emb.dense,byte 等价)
         sparse = self._sparse_for(query, emb)  # §5.4 提权/扩展(双关关 → emb.sparse,byte 等价)
         merged: dict[str, Candidate] = {}
         for corpus in _PARTITIONS:
             res = self._milvus.search(
-                emb.dense,
+                dense,
                 sparse,
                 topk=self._qcfg.partition_topk,
                 include_superseded=include_superseded,
@@ -106,6 +126,17 @@ class Retriever:
         ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)  # RRF 序(none 终态)
         ranked = self._reranker.rerank(query, ranked)  # bge 重排;none passthrough(等价)
         return ranked[: self._qcfg.topk]
+
+    def _dense_for(self, query: str, emb):
+        """§3.1 N1 HyDE:hyde 开+gateway → embed(原问+假设性法言)作 dense;否则/失败 → ``emb.dense``。
+
+        ``hyde_llm`` None(关/stub)→ 原问 dense(byte 等价、零网络)。生成失败/返空 → 回落原问
+        dense(N1-fail,绝不阻断)。**只改 dense**,sparse 仍走 ``_sparse_for``(§5.4)。
+        """
+        if self._hyde_llm is None:
+            return emb.dense
+        text = hyde_dense_text(query, self._hyde_llm)
+        return self._embed.embed([text])[0].dense if text else emb.dense
 
     def _sparse_for(self, query: str, emb) -> dict:
         """§5.4 提权/扩展。双关关 → ``emb.sparse`` 原样(byte 等价 + 只动 sparse)。"""
