@@ -138,7 +138,9 @@ def main() -> None:
             "filename": rec["filename"], "title": m["title"], "doc_number": m["doc_number"],
             "issuer": m["issuer"], "perm_tag": args.perm_tag, "corpus_type": rec["corpus_type_code"],
             "sub_type": rec.get("sub_type") or "", "biz_domain": m["biz_domain"],
-            "issue_date": m["issue_date"], "effective_date": m["effective_date"], "supersedes": "",
+            # ⚠ issue_date/effective_date 留空:交管线 L1 抽正文权威日期,避免与文件名日期系统性冲突
+            #   (实测文件名日期 ≠ 正文发文日 → 大量 META_REVIEW)。L1 缺则降级仅告警,不阻断。
+            "issue_date": "", "effective_date": "", "supersedes": "",
         }
         ws.append([row[c] for c in COLUMNS])
         for c in COLUMNS:
