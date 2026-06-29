@@ -19,6 +19,8 @@ class SourceFormat(StrEnum):
     DOCX = "docx"
     PDF = "pdf"
     XLSX = "xlsx"  # 表格直读(openpyxl → Table 块);add-only
+    JPG = "jpg"  # 图片扫描件 OCR(MinerU);add-only
+    PNG = "png"
 
 
 class BlockType(StrEnum):

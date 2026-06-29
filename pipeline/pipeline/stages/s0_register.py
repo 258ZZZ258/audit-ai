@@ -35,7 +35,8 @@ from pipeline.stage_base import StageContext
 from pipeline.states import ErrorCode, PipelineState
 
 # xlsx 端到端入库(条款树 S3 不适用纯表格)留 P2 P-MISC(§22.3);light_parser 已具 xlsx 解析能力
-WHITELIST_FORMATS = {"docx", "pdf"}
+# jpg/png:图片扫描件 OCR 入库(s1 路由 make_ocr_parser;OCR 关时仍 E202 隔离)
+WHITELIST_FORMATS = {"docx", "pdf", "jpg", "png"}
 
 
 @dataclass
@@ -61,9 +62,13 @@ class RegisterReport:
 
 
 def detect_format(data: bytes) -> str:
-    """magic number 格式探测(不信扩展名):pdf / docx / xlsx / office-other / unknown。"""
+    """magic number 格式探测(不信扩展名):pdf / png / jpg / docx / xlsx / office-other / unknown。"""
     if data[:5] == b"%PDF-":
         return "pdf"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
     if data[:4] == b"PK\x03\x04":
         try:
             names = zipfile.ZipFile(io.BytesIO(data)).namelist()

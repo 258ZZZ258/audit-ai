@@ -94,6 +94,7 @@ class ErrorCode(StrEnum):
     SCANNED_OCR_DISABLED = "E202-DEMO"  # 扫描件,OCR 未启用 → 隔离
     PARSE_TIMEOUT = "E203"  # 单文档解析超时
     RENDITION_FAILED = "E204-DEMO"  # 规范渲染件(soffice)生成失败
+    OCR_FAILED = "E205-DEMO"  # OCR 解析失败(MinerU 未装 / 解析异常)
     # E3xx 质检
     QC_GATE_FAILED = "E301"  # 质检硬关卡未通过
     # E7xx 对账(M2 触达)

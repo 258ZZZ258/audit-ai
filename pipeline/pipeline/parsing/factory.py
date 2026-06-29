@@ -12,6 +12,7 @@ import os
 
 from pipeline.parsing.adapter import ParserAdapter, ParseResult
 from pipeline.parsing.light_parser import LightParser
+from pipeline.parsing.mineru_parser import MinerUParser  # 真实现(mineru import 延迟到 parse 内)
 
 
 class _StubParser(ParserAdapter):
@@ -38,16 +39,6 @@ class DeepDocParser(_StubParser):
 
     _NAME = "DeepDoc"
     _TRIGGER = "需全要素解析 + parser-swap 后 mini golden set F1=1.0(M2 准入门)"
-
-
-class MinerUParser(_StubParser):
-    """复杂版式解析失败兜底(§4.1:DeepDoc 失败 → MinerU 重试一次 → 仍失败 PARSE_FAILED)。
-
-    再集成触发:DeepDoc 上线后出现复杂版式解析失败、需第二路兜底解析器时。
-    """
-
-    _NAME = "MinerU"
-    _TRIGGER = "DeepDoc 上线 + 复杂版式解析失败需二次兜底"
 
 
 class PaddleOCRParser(_StubParser):
@@ -77,3 +68,22 @@ def make_parser() -> ParserAdapter:
             f"未知 PIPELINE_PARSER_BACKEND: {backend!r}({' | '.join(_BACKENDS)})"
         )
     return _BACKENDS[backend]()
+
+
+# OCR 旁路后端(与 make_parser 分离:文本路径 light 不变,OCR 显式开启)
+_OCR_BACKENDS: dict[str, type[ParserAdapter]] = {"mineru": MinerUParser}
+
+
+def make_ocr_parser() -> ParserAdapter | None:
+    """按 ``PIPELINE_OCR_BACKEND``(默认 ``none``)返回 OCR 解析器。
+
+    ``none`` → None(OCR 关,扫描件仍 E202,向后兼容);``mineru`` → MinerUParser。
+    """
+    backend = os.environ.get("PIPELINE_OCR_BACKEND", "none")
+    if backend == "none":
+        return None
+    if backend not in _OCR_BACKENDS:
+        raise ValueError(
+            f"未知 PIPELINE_OCR_BACKEND: {backend!r}(none | {' | '.join(_OCR_BACKENDS)})"
+        )
+    return _OCR_BACKENDS[backend]()

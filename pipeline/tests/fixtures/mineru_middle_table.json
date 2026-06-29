@@ -1,0 +1,217 @@
+{
+    "pdf_info": [
+        {
+            "preproc_blocks": [
+                {
+                    "score": 0.7018,
+                    "bbox": [
+                        54,
+                        58,
+                        179,
+                        73
+                    ],
+                    "index": 1,
+                    "type": "title",
+                    "lines": [
+                        {
+                            "bbox": [
+                                56,
+                                58,
+                                177,
+                                73
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        56,
+                                        58,
+                                        177,
+                                        73
+                                    ],
+                                    "type": "text",
+                                    "content": "6.4 业务判断分层标准",
+                                    "score": 0.973
+                                }
+                            ]
+                        }
+                    ],
+                    "level": 2
+                },
+                {
+                    "type": "table",
+                    "bbox": [
+                        55,
+                        81,
+                        506,
+                        660
+                    ],
+                    "blocks": [
+                        {
+                            "score": 0.9902,
+                            "bbox": [
+                                55,
+                                81,
+                                506,
+                                660
+                            ],
+                            "index": 2,
+                            "type": "table_body",
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        55,
+                                        81,
+                                        506,
+                                        660
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                55,
+                                                81,
+                                                506,
+                                                660
+                                            ],
+                                            "type": "table",
+                                            "html": "<table><tr><td rowspan=1 colspan=1>场景</td><td rowspan=1 colspan=1>明确禁止</td><td rowspan=1 colspan=1>高风险</td><td rowspan=1 colspan=1>需流程控制</td><td rowspan=1 colspan=1>可操作但需满足条件</td><td rowspan=1 colspan=1>依据不足需补充事实</td><td rowspan=1 colspan=1>不能直接定性的情况</td></tr><tr><td rowspan=1 colspan=1>投顾展业</td><td rowspan=1 colspan=1>代客理财、私下接受客户委托、承诺收益、绕开公司系统。</td><td rowspan=1 colspan=1>个股买卖时点、确定性涨跌判断、私下荐股。</td><td rowspan=1 colspan=1>研报摘要、市场评论、具体证券观点发布。</td><td rowspan=1 colspan=1>签约范围内、适当性匹配、留痕完整。</td><td rowspan=1 colspan=1>对象身份、话术全文、服务关系。</td><td rowspan=1 colspan=1>只有一句话，无对象和场景。</td></tr><tr><td rowspan=1 colspan=1>非客户触达</td><td rowspan=1 colspan=1>向非客户提供需签约服务或销售具体产品。</td><td rowspan=1 colspan=1>向非客户推荐个股、推介产品、引导交易。</td><td rowspan=1 colspan=1>一般业务介绍、开户流程说明。</td><td rowspan=1 colspan=1>不涉及具体建议和产品销售，风险提示完整。</td><td rowspan=1 colspan=1>对方身份、内容原文、服务关系。</td><td rowspan=1 colspan=1>无法确认是否为客户。</td></tr><tr><td rowspan=1 colspan=1>客户群管理</td><td rowspan=1 colspan=1>向含非客户群发布具体投资建议或销售内容。</td><td rowspan=1 colspan=1>群成员混杂且发布具体证券观点。</td><td rowspan=1 colspan=1>公开资讯、公告、研报摘要发布。</td><td rowspan=1 colspan=1>群成员身份明确，内容审批，留痕完整。</td><td rowspan=1 colspan=1>群成员清单、发布内容、记录。</td><td rowspan=1 colspan=1>只说分享资讯，缺少原文。</td></tr><tr><td rowspan=1 colspan=1>开户二维码转介绍</td><td rowspan=1 colspan=1>外部人员实质营销、收取报酬、公开推广员工二维码。</td><td rowspan=1 colspan=1>员工让朋友扩散二维码但缺少控制。</td><td rowspan=1 colspan=1>普通线索介绍后由员工承接。</td><td rowspan=1 colspan=1>无外部营销、无奖励、流程合规。</td><td rowspan=1 colspan=1>朋友身份、传播范围、奖励安排。</td><td rowspan=1 colspan=1>只说发给朋友。</td></tr><tr><td rowspan=1 colspan=1>产品推介和适当性</td><td rowspan=1 colspan=1>未完成适当性向不适格对象推介具体产品。</td><td rowspan=1 colspan=1>向非客户强调收益或诱导购买。</td><td rowspan=1 colspan=1>产品介绍、风险揭示、适当性流程。</td><td rowspan=1 colspan=1>客户身份明确，风险等级匹配，留痕完整。</td><td rowspan=1 colspan=1>产品类型、对象身份、推介内容。</td><td rowspan=1 colspan=1>只说介绍产品。</td></tr><tr><td rowspan=1 colspan=1>期货IB资格</td><td rowspan=1 colspan=1>无资格人员实际开展期货IB展业。</td><td rowspan=1 colspan=1>奖金与展业结果挂钩但资格不明。</td><td rowspan=1 colspan=1>后台支持、统计、运营协同。</td><td rowspan=1 colspan=1>具备资格且在授权范围内展业。</td><td rowspan=1 colspan=1>岗位、行为、奖金口径。</td><td rowspan=1 colspan=1>只问奖金对象。</td></tr><tr><td rowspan=1 colspan=1>资管投顾隔离</td><td rowspan=1 colspan=1>人员、信息、决策、系统明显混同。</td><td rowspan=1 colspan=1>权限交叉、职责重叠、利益冲突未处理。</td><td rowspan=1 colspan=1>协同事项经过审批和留痕。</td><td rowspan=1 colspan=1>隔离制度、权限控制、留痕完整。</td><td rowspan=1 colspan=1>组织架构、岗位职责、系统权限。</td><td rowspan=1 colspan=1>只问原则，不给业务结构。</td></tr><tr><td rowspan=1 colspan=1>私募投顾兼任</td><td rowspan=1 colspan=1>合同或制度明确禁止兼任且事实命中。</td><td rowspan=1 colspan=1>多产品管理存在利益冲突或公平对待风险。</td><td rowspan=1 colspan=1>授权、披露、冲突识别和留痕。</td><td rowspan=1 colspan=1>合同授权清晰，策略边界明确。</td><td rowspan=1 colspan=1>产品合同、职责、交易权限。</td><td rowspan=1 colspan=1>只描述产品类型。</td></tr><tr><td rowspan=1 colspan=1>合规检查</td><td rowspan=1 colspan=1>外规明确要求检查但内部长期未开展。</td><td rowspan=1 colspan=1>检查板块、频率、责任部门不清。</td><td rowspan=1 colspan=1>检查计划、底稿、整改跟踪。</td><td rowspan=1 colspan=1>范围、频率、责任、留痕明确。</td><td rowspan=1 colspan=1>适用外规、内部安排。</td><td rowspan=1 colspan=1>只问哪些要检查。</td></tr><tr><td rowspan=1 colspan=1>国企高管报销</td><td rowspan=1 colspan=1>费用类型、标准、审批、票据明显不合规。</td><td rowspan=1 colspan=1>履职费用与个人消费边界不清。</td><td rowspan=1 colspan=1>审批、预算、票据、事由说明。</td><td rowspan=1 colspan=1>标准匹配，审批完整，票据合规。</td><td rowspan=1 colspan=1>身份、费用类型、金额、审批。</td><td rowspan=1 colspan=1>只问相关规定。</td></tr></table>",
+                                            "image_path": "f5003ee7dfd835e6184449cd936c41c22236665ced977a0acbaf17b06b75a128.jpg"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 2,
+                    "score": 0.9902
+                }
+            ],
+            "page_idx": 0,
+            "page_size": [
+                556,
+                720
+            ],
+            "discarded_blocks": [
+                {
+                    "score": 0.9332,
+                    "bbox": [
+                        261,
+                        675,
+                        300,
+                        687
+                    ],
+                    "index": 3,
+                    "type": "page_number",
+                    "lines": [
+                        {
+                            "bbox": [
+                                261,
+                                674,
+                                300,
+                                689
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        261,
+                                        674,
+                                        300,
+                                        689
+                                    ],
+                                    "type": "text",
+                                    "content": "第15页",
+                                    "score": 1.0
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "para_blocks": [
+                {
+                    "score": 0.7018,
+                    "bbox": [
+                        54,
+                        58,
+                        179,
+                        73
+                    ],
+                    "index": 1,
+                    "type": "title",
+                    "lines": [
+                        {
+                            "bbox": [
+                                56,
+                                58,
+                                177,
+                                73
+                            ],
+                            "spans": [
+                                {
+                                    "bbox": [
+                                        56,
+                                        58,
+                                        177,
+                                        73
+                                    ],
+                                    "type": "text",
+                                    "content": "6.4 业务判断分层标准",
+                                    "score": 0.973
+                                }
+                            ]
+                        }
+                    ],
+                    "level": 2
+                },
+                {
+                    "type": "table",
+                    "bbox": [
+                        55,
+                        81,
+                        506,
+                        660
+                    ],
+                    "blocks": [
+                        {
+                            "score": 0.9902,
+                            "bbox": [
+                                55,
+                                81,
+                                506,
+                                660
+                            ],
+                            "index": 2,
+                            "type": "table_body",
+                            "lines": [
+                                {
+                                    "bbox": [
+                                        55,
+                                        81,
+                                        506,
+                                        660
+                                    ],
+                                    "spans": [
+                                        {
+                                            "bbox": [
+                                                55,
+                                                81,
+                                                506,
+                                                660
+                                            ],
+                                            "type": "table",
+                                            "html": "<table><tr><td rowspan=1 colspan=1>场景</td><td rowspan=1 colspan=1>明确禁止</td><td rowspan=1 colspan=1>高风险</td><td rowspan=1 colspan=1>需流程控制</td><td rowspan=1 colspan=1>可操作但需满足条件</td><td rowspan=1 colspan=1>依据不足需补充事实</td><td rowspan=1 colspan=1>不能直接定性的情况</td></tr><tr><td rowspan=1 colspan=1>投顾展业</td><td rowspan=1 colspan=1>代客理财、私下接受客户委托、承诺收益、绕开公司系统。</td><td rowspan=1 colspan=1>个股买卖时点、确定性涨跌判断、私下荐股。</td><td rowspan=1 colspan=1>研报摘要、市场评论、具体证券观点发布。</td><td rowspan=1 colspan=1>签约范围内、适当性匹配、留痕完整。</td><td rowspan=1 colspan=1>对象身份、话术全文、服务关系。</td><td rowspan=1 colspan=1>只有一句话，无对象和场景。</td></tr><tr><td rowspan=1 colspan=1>非客户触达</td><td rowspan=1 colspan=1>向非客户提供需签约服务或销售具体产品。</td><td rowspan=1 colspan=1>向非客户推荐个股、推介产品、引导交易。</td><td rowspan=1 colspan=1>一般业务介绍、开户流程说明。</td><td rowspan=1 colspan=1>不涉及具体建议和产品销售，风险提示完整。</td><td rowspan=1 colspan=1>对方身份、内容原文、服务关系。</td><td rowspan=1 colspan=1>无法确认是否为客户。</td></tr><tr><td rowspan=1 colspan=1>客户群管理</td><td rowspan=1 colspan=1>向含非客户群发布具体投资建议或销售内容。</td><td rowspan=1 colspan=1>群成员混杂且发布具体证券观点。</td><td rowspan=1 colspan=1>公开资讯、公告、研报摘要发布。</td><td rowspan=1 colspan=1>群成员身份明确，内容审批，留痕完整。</td><td rowspan=1 colspan=1>群成员清单、发布内容、记录。</td><td rowspan=1 colspan=1>只说分享资讯，缺少原文。</td></tr><tr><td rowspan=1 colspan=1>开户二维码转介绍</td><td rowspan=1 colspan=1>外部人员实质营销、收取报酬、公开推广员工二维码。</td><td rowspan=1 colspan=1>员工让朋友扩散二维码但缺少控制。</td><td rowspan=1 colspan=1>普通线索介绍后由员工承接。</td><td rowspan=1 colspan=1>无外部营销、无奖励、流程合规。</td><td rowspan=1 colspan=1>朋友身份、传播范围、奖励安排。</td><td rowspan=1 colspan=1>只说发给朋友。</td></tr><tr><td rowspan=1 colspan=1>产品推介和适当性</td><td rowspan=1 colspan=1>未完成适当性向不适格对象推介具体产品。</td><td rowspan=1 colspan=1>向非客户强调收益或诱导购买。</td><td rowspan=1 colspan=1>产品介绍、风险揭示、适当性流程。</td><td rowspan=1 colspan=1>客户身份明确，风险等级匹配，留痕完整。</td><td rowspan=1 colspan=1>产品类型、对象身份、推介内容。</td><td rowspan=1 colspan=1>只说介绍产品。</td></tr><tr><td rowspan=1 colspan=1>期货IB资格</td><td rowspan=1 colspan=1>无资格人员实际开展期货IB展业。</td><td rowspan=1 colspan=1>奖金与展业结果挂钩但资格不明。</td><td rowspan=1 colspan=1>后台支持、统计、运营协同。</td><td rowspan=1 colspan=1>具备资格且在授权范围内展业。</td><td rowspan=1 colspan=1>岗位、行为、奖金口径。</td><td rowspan=1 colspan=1>只问奖金对象。</td></tr><tr><td rowspan=1 colspan=1>资管投顾隔离</td><td rowspan=1 colspan=1>人员、信息、决策、系统明显混同。</td><td rowspan=1 colspan=1>权限交叉、职责重叠、利益冲突未处理。</td><td rowspan=1 colspan=1>协同事项经过审批和留痕。</td><td rowspan=1 colspan=1>隔离制度、权限控制、留痕完整。</td><td rowspan=1 colspan=1>组织架构、岗位职责、系统权限。</td><td rowspan=1 colspan=1>只问原则，不给业务结构。</td></tr><tr><td rowspan=1 colspan=1>私募投顾兼任</td><td rowspan=1 colspan=1>合同或制度明确禁止兼任且事实命中。</td><td rowspan=1 colspan=1>多产品管理存在利益冲突或公平对待风险。</td><td rowspan=1 colspan=1>授权、披露、冲突识别和留痕。</td><td rowspan=1 colspan=1>合同授权清晰，策略边界明确。</td><td rowspan=1 colspan=1>产品合同、职责、交易权限。</td><td rowspan=1 colspan=1>只描述产品类型。</td></tr><tr><td rowspan=1 colspan=1>合规检查</td><td rowspan=1 colspan=1>外规明确要求检查但内部长期未开展。</td><td rowspan=1 colspan=1>检查板块、频率、责任部门不清。</td><td rowspan=1 colspan=1>检查计划、底稿、整改跟踪。</td><td rowspan=1 colspan=1>范围、频率、责任、留痕明确。</td><td rowspan=1 colspan=1>适用外规、内部安排。</td><td rowspan=1 colspan=1>只问哪些要检查。</td></tr><tr><td rowspan=1 colspan=1>国企高管报销</td><td rowspan=1 colspan=1>费用类型、标准、审批、票据明显不合规。</td><td rowspan=1 colspan=1>履职费用与个人消费边界不清。</td><td rowspan=1 colspan=1>审批、预算、票据、事由说明。</td><td rowspan=1 colspan=1>标准匹配，审批完整，票据合规。</td><td rowspan=1 colspan=1>身份、费用类型、金额、审批。</td><td rowspan=1 colspan=1>只问相关规定。</td></tr></table>",
+                                            "image_path": "f5003ee7dfd835e6184449cd936c41c22236665ced977a0acbaf17b06b75a128.jpg"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ],
+                    "index": 2,
+                    "score": 0.9902
+                }
+            ]
+        }
+    ],
+    "_backend": "pipeline",
+    "_version_name": "3.4.0"
+}
