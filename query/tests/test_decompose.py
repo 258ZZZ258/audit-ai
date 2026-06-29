@@ -166,7 +166,10 @@ def test_build_decompose_llm_only_gateway_on_with_key(monkeypatch):
     import query.retrieve.hybrid as hyb
     from query.config import load_query_config
 
-    monkeypatch.setattr("query.llm.make_llm_client", lambda cfg, *, model=None: ("sentinel", model))
+    # maybe_make_llm_client 调 client 模块内的 make_llm_client → patch 内层
+    monkeypatch.setattr(
+        "query.llm.client.make_llm_client", lambda cfg, *, model=None: ("sentinel", model)
+    )
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")  # 有 key
     base = load_query_config()
     assert hyb._build_decompose_llm(base) is None  # stub(默认)→ 不建
