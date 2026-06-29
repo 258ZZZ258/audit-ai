@@ -158,14 +158,18 @@ def test_cases_does_not_hyde():
     assert llm.calls == 0            # R3 案例不触 HyDE
 
 
-def test_build_hyde_llm_only_gateway_and_on(monkeypatch):
+def test_build_hyde_llm_only_gateway_on_with_key(monkeypatch):
     import query.retrieve.hybrid as hyb
     from query.config import load_query_config
 
     monkeypatch.setattr("query.llm.make_llm_client", lambda cfg, *, model=None: ("sentinel", model))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")  # 有 key
     base = load_query_config()
     assert hyb._build_hyde_llm(base) is None  # stub(默认)→ 不建
     gw_on = base.model_copy(update={"llm_backend": "gateway", "hyde": True})
     assert hyb._build_hyde_llm(gw_on) == ("sentinel", gw_on.hyde_model or gw_on.llm_model)
     gw_off = base.model_copy(update={"llm_backend": "gateway", "hyde": False})
     assert hyb._build_hyde_llm(gw_off) is None  # 关 → 不建
+    # gateway 但无 OPENAI_API_KEY → 不建(no-op 降级,SPEC「无 key→None」;QUERY-N1-OFFLINE-GATE)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert hyb._build_hyde_llm(gw_on) is None

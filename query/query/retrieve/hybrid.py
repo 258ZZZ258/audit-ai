@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from pipeline.config import load_config
@@ -25,28 +26,28 @@ from query.retrieve.sparse_boost import augment_sparse, load_scenario_terms
 _PARTITIONS = ("P-INT", "P-EXT")
 
 
-def _build_hyde_llm(qcfg: QueryConfig):
-    """§3.1 N1:HyDE 归并客户端**仅 hyde 开 + gateway 时建**(镜像 §9.2/N0);否则 None → 原问 dense。
+def _gateway_llm(enabled: bool, qcfg: QueryConfig, model: str | None):
+    """前端 LLM 增强(HyDE/分解)客户端:**仅 enabled + gateway + 有 OPENAI_API_KEY 时建**;否则 None。
 
-    默认 stub → None → HyDE no-op(零网络、byte 等价)。「默认开」仅在配 gateway 时活。
+    SPEC 契约「stub/**无 key** → None → no-op」:`make_llm_client` 无 key 即抛(pipeline.llm_client),
+    故 gateway 但缺 key 时**不建** → `from_config` 降级回原问 dense / 单查询,而非启动崩溃
+    (QUERY-N1/N3-OFFLINE-GATE)。缺 key 是 `make_llm_client` 唯一构造失败,查 key = 查能否构造。
     """
-    if qcfg.hyde and qcfg.llm_backend == "gateway":
+    if enabled and qcfg.llm_backend == "gateway" and os.environ.get("OPENAI_API_KEY"):
         from query.llm import make_llm_client  # 懒导入,避 import 期拉 pipeline.llm_client
 
-        return make_llm_client(qcfg, model=qcfg.hyde_model or qcfg.llm_model)
+        return make_llm_client(qcfg, model=model)
     return None
+
+
+def _build_hyde_llm(qcfg: QueryConfig):
+    """§3.1 N1 HyDE dense 改写客户端(仅 hyde 开+gateway+有 key);否则 None → 原问 dense no-op。"""
+    return _gateway_llm(qcfg.hyde, qcfg, qcfg.hyde_model or qcfg.llm_model)
 
 
 def _build_decompose_llm(qcfg: QueryConfig):
-    """§3.3 N3:分解客户端**仅 decompose 开 + gateway 时建**(镜像 N1);否则 None → 单查询直通。
-
-    默认 stub → None → `_subqueries_for` 返 [query](零网络、byte 等价)。「默认开」仅 gateway 时活。
-    """
-    if qcfg.decompose and qcfg.llm_backend == "gateway":
-        from query.llm import make_llm_client  # 懒导入
-
-        return make_llm_client(qcfg, model=qcfg.decompose_model or qcfg.llm_model)
-    return None
+    """§3.3 N3 分解客户端(仅 decompose 开+gateway+有 key);否则 None → 单查询 [query] 直通。"""
+    return _gateway_llm(qcfg.decompose, qcfg, qcfg.decompose_model or qcfg.llm_model)
 
 
 @dataclass(frozen=True)
