@@ -113,7 +113,7 @@ def main() -> None:
     # 对照启发式,统计纠正 + 丢弃
     corp = Counter(r["llm_corpus"] for r in results)
     sub = Counter((r["llm_corpus"], r["llm_sub_type"]) for r in results)
-    flipped = [r for r in results if {"案例": "P-CASE", "外规": "P-EXT"}.get(r.get("type", "").split("·")[0].replace("外规", "外规")) and False]
+
     # 启发式 type 与 LLM corpus 不一致计数
     def heur(r):
         return "案例" if r["type"] == "案例" else ("外规" if r["type"].startswith("外规") else "未判定")
