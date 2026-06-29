@@ -65,6 +65,23 @@ def test_merge_context_env_override(tmp_path, monkeypatch):
     assert cfg.merge_model == "qwen-turbo"
 
 
+def test_hyde_defaults(tmp_path):
+    # N1 HyDE:默认开(已决①,对齐设计 §3 节点链);hyde_model 默认 None → 复用主答 llm_model。
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    cfg = load_query_config(tmp_path)
+    assert cfg.hyde is True        # §3.1 默认开(真 HyDE 仅 gateway 活;stub→no-op)
+    assert cfg.hyde_model is None  # None → HyDE 复用 llm_model
+
+
+def test_hyde_env_override(tmp_path, monkeypatch):
+    (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
+    monkeypatch.setenv("QUERY_HYDE", "0")  # 关 → "0" → bool False
+    monkeypatch.setenv("QUERY_HYDE_MODEL", "qwen-turbo")
+    cfg = load_query_config(tmp_path)
+    assert cfg.hyde is False
+    assert cfg.hyde_model == "qwen-turbo"
+
+
 def test_sparse_boost_defaults(tmp_path):
     (tmp_path / "settings.toml").write_text("[query]\n", encoding="utf-8")
     cfg = load_query_config(tmp_path)
