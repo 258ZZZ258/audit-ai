@@ -13,6 +13,7 @@ from query.contract import AnswerBlock, BlockType, QueryResult, RouteType
 from query.generate.anchors import fetch_anchors
 from query.generate.r1_evidence import generate_evidence
 from query.llm import LLMClient, maybe_make_llm_client
+from query.observe import make_tracer
 from query.refuse.coverage_refusal import refuse_coverage, refuse_out_of_domain
 from query.retrieve.sufficiency import assess
 from query.state import QueryState
@@ -47,11 +48,13 @@ def resolve_scope(matters) -> list[str]:
 class QueryAgent:
     """编排门面:持检索 / PG / LLM 依赖,编译一次 LangGraph,``ask`` 跑一次问答。"""
 
-    def __init__(self, retriever, pg, llm: LLMClient, qcfg) -> None:
+    def __init__(self, retriever, pg, llm: LLMClient, qcfg, tracer=None) -> None:
         self._retriever = retriever
         self._pg = pg
         self._llm = llm
         self._qcfg = qcfg
+        # §9.3 观测 tracer(只读旁路):默认 make_tracer(observe 关 → NoopTracer 零网络)
+        self._tracer = tracer or make_tracer(qcfg)
         # N0 归并客户端:仅 merge_context 开 + gateway + 有 key 时建(真 LLM 为主);否则 None →
         # merge_context 走规则版(stub/关/无 key → 零网络、不崩溃,QUERY-N0-OFFLINE-GATE)。
         self._merge_llm = maybe_make_llm_client(
@@ -69,8 +72,10 @@ class QueryAgent:
         from query.retrieve.hybrid import Retriever
 
         qcfg = qcfg or load_query_config()
-        return cls(Retriever.from_config(qcfg), PgIO.from_config(load_config()),
-                   make_llm_client(qcfg), qcfg)
+        # §9.3 单一 tracer:传 Retriever(发 HyDE/子查询 event)+ 自身(ask 开 trace)→ 同一条 trace
+        tracer = make_tracer(qcfg)
+        return cls(Retriever.from_config(qcfg, tracer=tracer), PgIO.from_config(load_config()),
+                   make_llm_client(qcfg), qcfg, tracer=tracer)
 
     # ── 节点(纯函数薄封装;只 evidence 触碰检索/PG/LLM)──────────────────────
     def _n0_merge(self, state: QueryState) -> dict:
@@ -208,8 +213,23 @@ class QueryAgent:
         return g.compile()
 
     def ask(self, query: str, history: list[dict] | None = None) -> QueryResult:
-        """端到端问答。``history``(多轮对话,N0 归并用)缺省单轮(空 → N0 no-op,byte 等价)。"""
-        return self._app.invoke(QueryState(query=query, history=history or []))["result"]
+        """端到端问答。``history``(多轮对话,N0 归并用)缺省单轮(空 → N0 no-op,byte 等价)。
+
+        §9.3:包一条 trace —— ask 开 trace(set contextvar),Retriever 的 HyDE/子查询 event 挂同一条;
+        终态 metadata(归并句/scene/route_type)入 trace。tracer 只读旁路,observe 关 → Noop 零开销。
+        """
+        with self._tracer.trace("query", input=query) as span:
+            final = self._app.invoke(QueryState(query=query, history=history or []))
+            result = final["result"]
+            span.update(
+                output=result.route_type.value,
+                metadata={
+                    "merged_query": final.get("query"),
+                    "scene": final.get("scene"),
+                    "route_type": final.get("route_type"),
+                },
+            )
+            return result
 
     def route_only(self, query: str) -> RouteType:
         """仅路由判定(调试 / `query route`),不触发检索。"""

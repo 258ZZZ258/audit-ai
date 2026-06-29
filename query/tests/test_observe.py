@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import types
+from contextlib import contextmanager
 
 from query.config import QueryConfig
 from query.observe import LangfuseTracer, NoopTracer, make_tracer
@@ -96,9 +97,16 @@ def test_langfuse_tracer_failsafe_on_trace_error():
 class _CaptureTracer:
     def __init__(self) -> None:
         self.events: list = []
+        self.traces: list = []
+        self.updates: list = []
 
-    def trace(self, name, **f):  # Retriever 不开 trace,留接口完整
-        return NoopTracer().trace(name, **f)
+    @contextmanager
+    def trace(self, name, **f):
+        self.traces.append((name, f))
+        yield self  # span = self;update 记录到 self.updates
+
+    def update(self, **f) -> None:
+        self.updates.append(f)
 
     def event(self, name, **f) -> None:
         self.events.append((name, f))
@@ -162,3 +170,32 @@ def test_retriever_noop_default_no_events():
     r._embed.texts.clear()
     assert r._dense_for("q", emb) == r._embed.embed(["q\nP"])[0].dense  # HyDE 照常
     assert r._subqueries_for("q") == ["a", "b"]  # 分解照常;无 tracer 不抛
+
+
+# ── T5:QueryAgent.ask 包 trace + 终态 metadata(fake tracer,零栈)────────────
+def test_ask_records_trace():
+    from query.config import load_query_config
+    from query.contract import RouteType
+    from query.graph import QueryAgent
+    from query.llm.stub import StubLLMClient
+
+    cap = _CaptureTracer()
+    agent = QueryAgent(None, None, StubLLMClient(), load_query_config(), tracer=cap)
+    res = agent.ask("它呢")  # CLARIFY(歧义裸指代,无需 retriever/pg)
+    assert res.route_type is RouteType.CLARIFY
+    assert cap.traces and cap.traces[0][0] == "query"          # 开了一条 trace
+    assert cap.updates                                          # update 终态 metadata
+    md = cap.updates[0]["metadata"]
+    assert md["route_type"] == RouteType.CLARIFY.value          # 终态 route_type 入 trace
+    assert "merged_query" in md and "scene" in md
+
+
+def test_ask_byte_equivalent_under_noop():
+    # 默认(observe 关 → make_tracer→NoopTracer)→ ask 行为不变(只读旁路)
+    from query.config import load_query_config
+    from query.contract import RouteType
+    from query.graph import QueryAgent
+    from query.llm.stub import StubLLMClient
+
+    agent = QueryAgent(None, None, StubLLMClient(), load_query_config())  # 无 tracer → Noop
+    assert agent.ask("今天天气怎么样").route_type is RouteType.REFUSE
