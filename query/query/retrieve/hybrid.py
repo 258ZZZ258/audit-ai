@@ -11,16 +11,43 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from pipeline.config import load_config
 from pipeline.index.embedding_client import EmbeddingClient
 from pipeline.index.milvus_io import MilvusIO
 from query.config import QueryConfig, load_query_config
+from query.retrieve.decompose import decompose_subqueries
+from query.retrieve.hyde import hyde_dense_text
 from query.retrieve.sparse_boost import augment_sparse, load_scenario_terms
 
 #: 检索分区(§5.2):内规 / 外规各打各的配额
 _PARTITIONS = ("P-INT", "P-EXT")
+
+
+def _gateway_llm(enabled: bool, qcfg: QueryConfig, model: str | None):
+    """前端 LLM 增强(HyDE/分解)客户端:**仅 enabled + gateway + 有 OPENAI_API_KEY 时建**;否则 None。
+
+    SPEC 契约「stub/**无 key** → None → no-op」:`make_llm_client` 无 key 即抛(pipeline.llm_client),
+    故 gateway 但缺 key 时**不建** → `from_config` 降级回原问 dense / 单查询,而非启动崩溃
+    (QUERY-N1/N3-OFFLINE-GATE)。缺 key 是 `make_llm_client` 唯一构造失败,查 key = 查能否构造。
+    """
+    if enabled and qcfg.llm_backend == "gateway" and os.environ.get("OPENAI_API_KEY"):
+        from query.llm import make_llm_client  # 懒导入,避 import 期拉 pipeline.llm_client
+
+        return make_llm_client(qcfg, model=model)
+    return None
+
+
+def _build_hyde_llm(qcfg: QueryConfig):
+    """§3.1 N1 HyDE dense 改写客户端(仅 hyde 开+gateway+有 key);否则 None → 原问 dense no-op。"""
+    return _gateway_llm(qcfg.hyde, qcfg, qcfg.hyde_model or qcfg.llm_model)
+
+
+def _build_decompose_llm(qcfg: QueryConfig):
+    """§3.3 N3 分解客户端(仅 decompose 开+gateway+有 key);否则 None → 单查询 [query] 直通。"""
+    return _gateway_llm(qcfg.decompose, qcfg, qcfg.decompose_model or qcfg.llm_model)
 
 
 @dataclass(frozen=True)
@@ -61,7 +88,8 @@ class Retriever:
     """混合检索器:持有查询嵌入 + Milvus 客户端(连真栈)。"""
 
     def __init__(
-        self, embed: EmbeddingClient, milvus: MilvusIO, qcfg: QueryConfig, reranker=None
+        self, embed: EmbeddingClient, milvus: MilvusIO, qcfg: QueryConfig, reranker=None,
+        hyde_llm=None, decompose_llm=None,
     ) -> None:
         from query.rerank.reranker import make_reranker  # 局部导入,避 import 期环
 
@@ -74,24 +102,61 @@ class Retriever:
         self._scenario_terms = (
             load_scenario_terms(qcfg.scenario_terms_path) if qcfg.scenario_expand else {}
         )
+        # §3.1 N1 HyDE dense 改写客户端(仅 hyde 开+gateway;否则 None → 原问 dense,byte 等价)
+        self._hyde_llm = hyde_llm
+        # §3.3 N3 问题分解客户端(仅 decompose 开+gateway;否则 None → 单查询 [query],byte 等价)
+        self._decompose_llm = decompose_llm
 
     @classmethod
     def from_config(cls, qcfg: QueryConfig | None = None) -> Retriever:
         """连真栈:复用 pipeline 的 embedding/milvus(检索走本地真栈)。"""
+        qcfg = qcfg or load_query_config()
         settings = load_config()
         milvus = MilvusIO(settings)
         milvus.connect()
-        return cls(EmbeddingClient.from_config(settings), milvus, qcfg or load_query_config())
+        return cls(
+            EmbeddingClient.from_config(settings), milvus, qcfg,
+            hyde_llm=_build_hyde_llm(qcfg), decompose_llm=_build_decompose_llm(qcfg),
+        )
 
     def retrieve(self, query: str, *, include_superseded: bool = False) -> list[Candidate]:
-        """分区配额检索 → 合并去重 → RRF 序 → §5.5 重排(none=passthrough)→ 取 topk。"""
+        """§3.3 N3 分解 fan-out:子查询各检索 → 候选并集 → §5.5 重排(原问)→ 取 topk。
+
+        ``_subqueries_for`` 默认 ``[query]``(关/stub)→ 单查询、与既有 byte 等价;仅复合问句
+        (decompose 拆 >1)才 fan-out。综合 = 候选并集(保最高分,覆盖各子约束),生成层零改。
+        """
+        merged: dict[str, Candidate] = {}
+        for subquery in self._subqueries_for(query):
+            for cid, cand in self._search_candidates(
+                subquery, include_superseded=include_superseded
+            ).items():
+                prev = merged.get(cid)
+                if prev is None or cand.score > prev.score:
+                    merged[cid] = cand
+        ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)  # RRF 序(none 终态)
+        ranked = self._reranker.rerank(query, ranked)  # bge 重排对**原问**;none passthrough(等价)
+        return ranked[: self._qcfg.topk]
+
+    def _subqueries_for(self, query: str) -> list[str]:
+        """§3.3 N3:decompose 开+gateway → 复合问句拆子查询;否则/单跳/失败 → ``[query]``(直通)。"""
+        if self._decompose_llm is None:
+            return [query]
+        return decompose_subqueries(
+            query, self._decompose_llm, max_sub=self._qcfg.decompose_max_sub
+        )
+
+    def _search_candidates(
+        self, query: str, *, include_superseded: bool = False
+    ) -> dict[str, Candidate]:
+        """单子查询分区配额检索 → 合并去重(含 §3.1 HyDE / §5.4 sparse)。返回 chunk_id→候选。"""
         with_text = self._qcfg.rerank_backend != "none"  # 仅重排时取 Milvus text(零开销默认)
         emb = self._embed.embed([query])[0]
+        dense = self._dense_for(query, emb)    # §3.1 HyDE(关/stub → emb.dense,byte 等价)
         sparse = self._sparse_for(query, emb)  # §5.4 提权/扩展(双关关 → emb.sparse,byte 等价)
-        merged: dict[str, Candidate] = {}
+        found: dict[str, Candidate] = {}
         for corpus in _PARTITIONS:
             res = self._milvus.search(
-                emb.dense,
+                dense,
                 sparse,
                 topk=self._qcfg.partition_topk,
                 include_superseded=include_superseded,
@@ -100,12 +165,21 @@ class Retriever:
             )
             for hit in res.hits:
                 cand = _to_candidate(hit, res.retrieval_mode)
-                prev = merged.get(cand.chunk_id)
+                prev = found.get(cand.chunk_id)
                 if prev is None or cand.score > prev.score:
-                    merged[cand.chunk_id] = cand
-        ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)  # RRF 序(none 终态)
-        ranked = self._reranker.rerank(query, ranked)  # bge 重排;none passthrough(等价)
-        return ranked[: self._qcfg.topk]
+                    found[cand.chunk_id] = cand
+        return found
+
+    def _dense_for(self, query: str, emb):
+        """§3.1 N1 HyDE:hyde 开+gateway → embed(原问+假设性法言)作 dense;否则/失败 → ``emb.dense``。
+
+        ``hyde_llm`` None(关/stub)→ 原问 dense(byte 等价、零网络)。生成失败/返空 → 回落原问
+        dense(N1-fail,绝不阻断)。**只改 dense**,sparse 仍走 ``_sparse_for``(§5.4)。
+        """
+        if self._hyde_llm is None:
+            return emb.dense
+        text = hyde_dense_text(query, self._hyde_llm)
+        return self._embed.embed([text])[0].dense if text else emb.dense
 
     def _sparse_for(self, query: str, emb) -> dict:
         """§5.4 提权/扩展。双关关 → ``emb.sparse`` 原样(byte 等价 + 只动 sparse)。"""
