@@ -90,3 +90,75 @@ def test_langfuse_tracer_failsafe_on_trace_error():
     with t.trace("query", input="q") as span:  # client.trace 抛 → 退化 noop span,不传播
         span.update(output="x")                 # 不抛
         t.event("hyde", passage="p")            # 不抛
+
+
+# ── T4:Retriever 持 tracer + 发 hyde/decompose event(只读旁路,fake tracer)──────
+class _CaptureTracer:
+    def __init__(self) -> None:
+        self.events: list = []
+
+    def trace(self, name, **f):  # Retriever 不开 trace,留接口完整
+        return NoopTracer().trace(name, **f)
+
+    def event(self, name, **f) -> None:
+        self.events.append((name, f))
+
+
+class _Emb:
+    def __init__(self, dense, sparse) -> None:
+        self.dense = dense
+        self.sparse = sparse
+
+
+class _FakeEmbed:
+    def __init__(self) -> None:
+        self.texts: list = []
+
+    def embed(self, texts):
+        self.texts.extend(texts)
+        return [_Emb([float(len(t))], {1: 1.0}) for t in texts]
+
+
+class _FakeLLM:
+    def __init__(self, resp) -> None:
+        self._resp = resp
+
+    def chat_json(self, system, user):
+        return self._resp
+
+
+def _retriever(*, tracer=None, hyde_llm=None, decompose_llm=None):
+    from query.config import load_query_config
+    from query.retrieve.hybrid import Retriever
+
+    return Retriever(
+        _FakeEmbed(), None, load_query_config(),
+        hyde_llm=hyde_llm, decompose_llm=decompose_llm, tracer=tracer,
+    )
+
+
+def test_dense_for_emits_hyde_event():
+    cap = _CaptureTracer()
+    r = _retriever(tracer=cap, hyde_llm=_FakeLLM({"passage": "经营机构不得违规招揽客户。"}))
+    emb = r._embed.embed(["二维码开户违规吗"])[0]
+    r._dense_for("二维码开户违规吗", emb)
+    assert cap.events == [("hyde", {"passage": "二维码开户违规吗\n经营机构不得违规招揽客户。"})]
+
+
+def test_subqueries_for_emits_decompose_event():
+    cap = _CaptureTracer()
+    r = _retriever(tracer=cap, decompose_llm=_FakeLLM({"subqueries": ["q1", "q2"]}))
+    assert r._subqueries_for("复合问句") == ["q1", "q2"]
+    assert cap.events == [("decompose", {"subqueries": ["q1", "q2"]})]
+
+
+def test_retriever_noop_default_no_events():
+    # 不传 tracer(默认 Noop)→ _dense_for/_subqueries_for 不发 event、返回值不变(byte 等价)
+    r = _retriever(
+        hyde_llm=_FakeLLM({"passage": "P"}),
+        decompose_llm=_FakeLLM({"subqueries": ["a", "b"]}),
+    )
+    emb = r._embed.embed(["q"])[0]
+    r._embed.texts.clear()
+    assert r._dense_for("q", emb) == r._embed.embed(["q\nP"])[0].dense  # HyDE 照常
+    assert r._subqueries_for("q") == ["a", "b"]  # 分解照常;无 tracer 不抛

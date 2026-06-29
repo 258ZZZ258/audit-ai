@@ -77,8 +77,9 @@ class Retriever:
 
     def __init__(
         self, embed: EmbeddingClient, milvus: MilvusIO, qcfg: QueryConfig, reranker=None,
-        hyde_llm=None, decompose_llm=None,
+        hyde_llm=None, decompose_llm=None, tracer=None,
     ) -> None:
+        from query.observe import NoopTracer  # 局部导入,避 import 期环
         from query.rerank.reranker import make_reranker  # 局部导入,避 import 期环
 
         self._embed = embed
@@ -94,10 +95,12 @@ class Retriever:
         self._hyde_llm = hyde_llm
         # §3.3 N3 问题分解客户端(仅 decompose 开+gateway;否则 None → 单查询 [query],byte 等价)
         self._decompose_llm = decompose_llm
+        # §9.3 观测 tracer(只读旁路):默认 NoopTracer 零开销;发 HyDE/子查询 event 到当前 trace
+        self._tracer = tracer or NoopTracer()
 
     @classmethod
-    def from_config(cls, qcfg: QueryConfig | None = None) -> Retriever:
-        """连真栈:复用 pipeline 的 embedding/milvus(检索走本地真栈)。"""
+    def from_config(cls, qcfg: QueryConfig | None = None, *, tracer=None) -> Retriever:
+        """连真栈:复用 pipeline embedding/milvus。``tracer`` 由 QueryAgent 注入(§9.3 观测)。"""
         qcfg = qcfg or load_query_config()
         settings = load_config()
         milvus = MilvusIO(settings)
@@ -105,6 +108,7 @@ class Retriever:
         return cls(
             EmbeddingClient.from_config(settings), milvus, qcfg,
             hyde_llm=_build_hyde_llm(qcfg), decompose_llm=_build_decompose_llm(qcfg),
+            tracer=tracer,
         )
 
     def retrieve(self, query: str, *, include_superseded: bool = False) -> list[Candidate]:
@@ -129,9 +133,12 @@ class Retriever:
         """§3.3 N3:decompose 开+gateway → 复合问句拆子查询;否则/单跳/失败 → ``[query]``(直通)。"""
         if self._decompose_llm is None:
             return [query]
-        return decompose_subqueries(
+        subs = decompose_subqueries(
             query, self._decompose_llm, max_sub=self._qcfg.decompose_max_sub
         )
+        if len(subs) > 1:  # §9.3 观测:复合拆分进 trace(只读旁路;单查询不发)
+            self._tracer.event("decompose", subqueries=subs)
+        return subs
 
     def _search_candidates(
         self, query: str, *, include_superseded: bool = False
@@ -167,7 +174,10 @@ class Retriever:
         if self._hyde_llm is None:
             return emb.dense
         text = hyde_dense_text(query, self._hyde_llm)
-        return self._embed.embed([text])[0].dense if text else emb.dense
+        if not text:
+            return emb.dense
+        self._tracer.event("hyde", passage=text)  # §9.3 观测:HyDE 文本进 trace(只读旁路)
+        return self._embed.embed([text])[0].dense
 
     def _sparse_for(self, query: str, emb) -> dict:
         """§5.4 提权/扩展。双关关 → ``emb.sparse`` 原样(byte 等价 + 只动 sparse)。"""
