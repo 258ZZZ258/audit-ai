@@ -8,9 +8,9 @@
 
 ## 一句话
 三条红线已在 **R1 闭环**(无编造引用 / 无裸结论 / 可解释拒答);**八路全实装(R5 收官)**;判定型经三段式硬约束
-+ 代码后检无裸结论(§9.2 真复核接口+toggle,默认关)。查询理解前端 **N0 多轮归并 + R7 闭环 + N1 HyDE 已实装**(LLM 为主
-默认开,真-LLM 门控就位待跑绿;N0 规则版离线兜底 / N1 stub→no-op + V0 待标定),**问题分解(N3)**与横切能力(真多模型
-复核/权限/观测/流式/导出)未做。
++ 代码后检无裸结论(§9.2 真复核接口+toggle,默认关)。**查询理解前端 N0/N1/N3 三节点收官**(N0 多轮归并+R7 闭环 / N1 HyDE /
+N3 问题分解,均 LLM 为主默认开、真-LLM 门控就位待跑绿;N0 规则版离线兜底 / N1·N3 stub→no-op + V0 待标定),横切能力(真多
+模型复核/权限/观测/流式/导出)未做。
 
 ---
 
@@ -21,7 +21,7 @@
 | N0 多轮上下文归并(指代消解/省略补全) | 🟡 | **实装**(SPEC/PLAN/TASKS-N0):`understand/merge.py` + graph `n0_merge` 节点(`START→n0_merge→understand`);**LLM 为主默认开**(`merge_context`:gateway 真 LLM / stub 规则版 / fail-safe 回落)+ **R7 澄清闭环**(原问+澄清答归并,跨请求重入)+ 代词/省略顺承;`ask(query, history=None)` + CLI `--history-json`。单轮 no-op byte 等价。真-LLM 闭环门控就位、本地无 key skip → **诚实 🟡**(待真 gateway 跑绿翻✅);深度指代靠真 LLM、规则版离线兜底;`dict` 未接 |
 | N1 HyDE 改写 | 🟡 | **实装**(SPEC/PLAN/TASKS-N1):`retrieve/hyde.py` + `Retriever._dense_for` dense 接缝(镜像 §5.4 `_sparse_for`)。**LLM 为主默认开**(`hyde`:gateway 真 LLM 生成假设性法言 → `embed(原问+法言)` 作 dense / stub→`hyde_llm` 不建→原问 dense no-op / fail-safe 回落)。**只改 dense**(sparse 法言归 §5.4 dict);仅主 retrieve(R1/R5),enumerate/cases 不接;§7.1 污染兜底(不产引用)。真-LLM 生成门控就位、本地无 key skip → **诚实 🟡**;**默认值/召回收益待 §13 V0 第5组 A/B 实测**(§15-⑦) |
 | N2 业务事项分类 | 🟡 | `classify.py` 规则版场景分类 + 词典子串抽取;非 LLM、词典需注入(未接 PG dict 加载)、`dict_scenario_terms` 桥接未做 |
-| N3 问题分解 | ❌ | 未做 |
+| N3 问题分解 | 🟡 | **实装**(SPEC/PLAN/TASKS-N3):`retrieve/decompose.py` + `Retriever.retrieve()` fan-out 接缝(抽 `_search_candidates`)。**LLM 为主默认开**(`decompose`:gateway 真 LLM 拆复合问句为子查询 → 每子查询并行检索 → 候选**并集**综合 / stub→`decompose_llm` 不建→单查询 no-op / fail-safe 回落 `[query]`)。**仅复合问句触发**(LLM 拆 >1);单跳直通;`decompose_max_sub` 封顶;**不进 agentic 循环**(§0.3 一次性);仅主 retrieve(R1/R5),enumerate/cases 不接;§7.1 污染兜底。真-LLM 拆分门控就位、本地无 key skip → **诚实 🟡**;**复合占比/拆分质量待 §13 V0 实测** |
 | N4 八路意图路由 | 🟡 | `router.py` 规则版分满 8 类 + 置信度;非 `dict_intent_routes` 训练分类器(合成置信度) |
 
 ## 2. 八路路由(§4 / §6)—— 核心差距
@@ -43,7 +43,7 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| §5.1 混合检索 dense+sparse+RRF | ✅ | 复用 `milvus_io`;**dense 通道接 N1 HyDE**(`_dense_for`,hyde 开+gateway → embed(原问+假设性法言),默认 stub no-op,见 §1 N1)|
+| §5.1 混合检索 dense+sparse+RRF | ✅ | 复用 `milvus_io`;**dense 通道接 N1 HyDE**(`_dense_for`)+ **retrieve() 接 N3 分解 fan-out**(`_subqueries_for`+`_search_candidates`,复合问句子查询候选并集;默认 stub 单查询 no-op,见 §1 N1/N3)|
 | §5.2 分区并行配额(内规∥外规 top25) | ✅ | `retrieve/hybrid` 双分区合并 |
 | §5.3 强制过滤位 | 🟡 | status✅前置、perm_tag🟡(写入不过滤=设计意图);entity_type/biz_domain **机制已落**(R4 `extra_expr` 经 `milvus_io.search`,consumed-when-present)、E2 默认关+词典未接 PG 加载故默认不命中 |
 | §5.4 sparse 精确通道(发文字号提权 + 词典扩展) | ✅ | **实装 + 单元 + 集成绿**(SPEC/PLAN/TASKS-SPARSE):查询层 `augment_sparse` —— 发文字号/全名 regex 检出 → 重 embed → token 加权并入 query sparse(保持 `RRFRanker`、零 pipeline 改动);`dict_scenario_terms`(v0-draft seed,consumed-when-present)口语→法言扩展;仅主 `retrieve`(R1/R5)、只动 sparse;`docnum_boost`/`scenario_expand` 默认关 byte 等价。**集成 `test_sparse_boost_integration` 3 passed**(干净栈+真 BGE-M3);系数 ⚠ §15 V0 标定;dict 内容 §15⑥ |
@@ -126,7 +126,9 @@
 ### P2 — 查询理解前端
 6. ~~N0 多轮归并 + R7 闭环~~ ✅ 实装(SPEC/PLAN/TASKS-N0;LLM 为主默认开 + 规则版离线兜底 + 真-LLM 门控就位⏳待跑绿)/
    ~~N1 HyDE~~ ✅ 实装(SPEC/PLAN/TASKS-N1;dense 接缝、HyDE 专管 dense、LLM 为主默认开 + stub no-op + fail-safe;门控⏳待跑绿、
-   默认值/召回收益待 §13 V0 第5组 A/B,§15-⑦)/ **N3 问题分解**(复合问句拆子查询;单跳直通)
+   默认值/召回收益待 §13 V0 第5组 A/B,§15-⑦)/ ~~N3 问题分解~~ ✅ 实装(SPEC/PLAN/TASKS-N3;retrieve fan-out 接缝、复合拆
+   子查询→候选并集、LLM 为主默认开 + stub no-op + fail-safe + §0.3 不迭代;门控⏳待跑绿、复合占比/质量待 V0)。**查询理解前端
+   N0/N1/N3 三节点收官**(N2/N4 规则版已在 MVP)
 
 ### P3 — 横切 / 工程
 7. §7.2 流式输出 / §11 导出 / §9.3 敏感词 / Langfuse / SSO / AI 标识页脚

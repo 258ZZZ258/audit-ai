@@ -431,3 +431,45 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
 - **未做(SPEC-N1 §0)**:N3 问题分解(另切片);改 sparse 通道(法言 sparse 归 §5.4 dict);HyDE 进 R3/R4;图 N1 节点/改
   `state.query`;**§13 V0 第5组 A/B 实验 / 术语断层率统计 / 配额折算 / 默认值终定 / 桶触发降级**(V0 未跑);Langfuse trace HyDE
   文本;`hyde_model` 真名(§9.1/§15-①)。**待 Codex 复审 + 真 gateway 跑绿 + V0 标定。**
+
+## N3 问题分解(复合问句拆子查询 → 并行检索再综合)(2026-06-29,SPEC/PLAN/TASKS-N3)
+
+> 同 worktree `feat/query-n1-hyde`(续在 N1 之上,N1+N3 后统一交审)。查询理解前端 N3 从 ❌ 推进到实装:复合问句 → LLM
+> 一次性拆为子查询 → `retrieve()` fan-out 检索 → 候选并集综合(plan-execute 拆分)。**查询理解前端 N0/N1/N3 三节点收官**。
+> **全绿**:`test_decompose` 19(纯函数 7 + fan-out/接线 12)+ `test_query_config` +2;`test_decompose_integration` 2 skipped
+> (gate,本地无 key);**全 query 套件 260 passed / 32 skipped 无回归**(含 retrieve 重构)。
+
+- **已决(AskUserQuestion,2026-06-29)**:① **注入点 = Retriever 内 decompose+fan-out 接缝**(镜像 N1;不走图 N3 节点);
+  ② **decompose 默认开**(仅复合问句触发,对齐设计 §3 节点链 + N0/N1 默认开范式)。
+- **关键设计 / 取舍**:
+  - **为何 Retriever 内 fan-out、不走图节点**(同 N1 理由):拆子查询影响的是**检索**(每子查询检索→候选并集),route_type
+    由 `understand()` 对**原问**判一次(复合「…是否违规」→ R5);decompose **不重路由、不改 `state.query`**。若走图节点改写
+    query 会污染路由。故落 `retrieve()` 内——与 §5.4/§5.5/N1 同为「Retriever 内检索增强接缝」。`state.rewrites` 仍占位。
+  - **retrieve() 重构抽 `_search_candidates`(零行为变更)**:把原 retrieve() 的「分区检索+合并(含 HyDE dense/sparse)」抽为
+    `_search_candidates(query) -> dict[chunk_id, Candidate]`;`retrieve()` 改 `for sq in _subqueries_for(query)` 并集→rerank(原问)/topk。
+    **单查询时 `_subqueries_for` 返 `[query]` → 并集=单份 → 与原 retrieve byte 等价**(既有 `test_hyde`/检索集成不回归,260 passed 验证)。
+  - **综合 = 候选并集(覆盖),非多答拼接**:各子查询候选按 `chunk_id` 并集(保最高分)→ 生成层**零改**(候选集覆盖各子约束
+    更全)。⚠ 子查询间分数尺度不同 → 并集求**覆盖完整性**为主,最终序由 max-score + rerank(原问)兜(务实版,精排 V0)。
+    decompose 价值是「每子约束都有候选」,非精确排序。
+  - **与 N1 HyDE 自然组合**:`_search_candidates` 内调 `_dense_for`(HyDE)/`_sparse_for`(§5.4)→ **每子查询各自走 HyDE**
+    (子查询口语→假设性法言→dense)。三层(decompose→HyDE→sparse)在 retrieve 内分层组合、互不耦合。
+  - **「默认开」与离线确定性**(同 N1):`decompose_llm` **仅 decompose 开+gateway 建**(`_build_decompose_llm`);stub/无 key →
+    `None` → `_subqueries_for` 返 `[query]` → byte 等价、零网络。**仅复合**(LLM 拆 >1)才 fan-out;单跳/失败/返空 → `[query]`。
+  - **§0.3 不进 agentic 循环(硬边界)**:`decompose_subqueries` **一次性**拆分(单次 LLM 调用、返扁平列表)、`retrieve` 一轮
+    fan-out、**无 re-retrieve / 无迭代推理**;`decompose_max_sub`(默认 4)封顶 fan-out 成本(复合 ×子查询数 ×分区 ×HyDE)。
+- **实现**:`retrieve/decompose.py`(`DECOMPOSE_SYSTEM`/`build_decompose_user`/`parse_subqueries`/`decompose_subqueries` 纯函数,
+  鸭子类型 `llm`,零栈可测);`retrieve/hybrid.py` `_build_decompose_llm` + `__init__(... , decompose_llm=)` + `from_config` 建 +
+  `_subqueries_for` + 抽 `_search_candidates` + `retrieve()` fan-out;`config` +`decompose`(默认 True)/`decompose_model`/`decompose_max_sub`(4)
+  + 2 env;`PROMPTS.md` §3.3 条目。
+- **踩坑 / 核实**:
+  - **重构零回归靠「单查询=单份并集」**:retrieve() 改 fan-out 后,单查询路径必须与原逐字等价 —— `_subqueries_for(None)`→`[query]`
+    → 循环跑一次 `_search_candidates` → 并集即原 merged dict → sort/rerank/topk 不变。**先跑既有 `test_hyde`(其 `test_retrieve_uses_hyde_dense`
+    走 retrieve)+ 全 query 260 passed 确认零回归**,再加 fan-out 用例。
+  - **fan-out 单测用 spy `_search_candidates`**:`test_retrieve_fans_out_union` monkeypatch `_search_candidates` 返 per-子查询 dict
+    (q1→A、q2→B)→ 验 retrieve 调 2 次 + 候选并集 {A,B},无需真 milvus 行为。`_build_decompose_llm` 同 N1 提模块级直测。
+  - **默认开却记 🟡**(同 N1 诚实姿态):decompose=True 但真拆分门控本地无 key 未执行 + §13 V0(复合占比/拆分质量)未跑 → N3
+    记 🟡;**N3-noloop 保 🟡**(一次性拆分实装+测,但「不循环」是架构保证、无专门反例测,不破例标 ✅)。**§3-degrade 翻 ✅**
+    (N0/N1/N3 fail-safe 回落全测,前端节点全可降级)。不在「默认开」上 overclaim 拆分收益。
+- **未做(SPEC-N3 §0)**:子查询重路由 / agentic 迭代 / re-retrieve(§0.3);decompose 进 R3/R4;子查询级独立答复拼接;
+  **§13 V0 复合占比/拆分质量评估 / 配额折算 / 默认值终定**(V0 未跑);Langfuse trace 子查询;`decompose_model` 真名(§9.1/§15-①);
+  子查询并集的跨查询分数归一(精排 V0)。**待 Codex 复审 + 真 gateway 跑绿 + V0 标定。**
