@@ -75,3 +75,101 @@ def test_decompose_system_prompt_no_fabrication():
     assert "不要回答" in DECOMPOSE_SYSTEM or "只拆" in DECOMPOSE_SYSTEM
     assert "编造" in DECOMPOSE_SYSTEM  # 禁编造制度名/条款号
     assert _Q in build_decompose_user(_Q)
+
+
+# ── T4:Retriever fan-out 接缝(fake embed/milvus/decompose_llm,零栈)───────────
+class _Emb:
+    def __init__(self, dense, sparse) -> None:
+        self.dense = dense
+        self.sparse = sparse
+
+
+class _FakeEmbed:
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+
+    def embed(self, texts):
+        self.texts.extend(texts)
+        return [_Emb(dense=[float(len(t))], sparse={1: 1.0}) for t in texts]
+
+
+class _Res:
+    retrieval_mode = "hybrid"
+
+    def __init__(self, hits) -> None:
+        self.hits = hits
+
+
+class _FakeMilvus:
+    def __init__(self) -> None:
+        self.searches: list = []
+
+    def search(self, dense, sparse, **kw):
+        self.searches.append(kw)
+        return _Res([])
+
+
+def _retriever(decompose_llm=None, hyde_llm=None):
+    from query.config import load_query_config
+    from query.retrieve.hybrid import Retriever
+
+    return Retriever(
+        _FakeEmbed(), _FakeMilvus(), load_query_config(),
+        hyde_llm=hyde_llm, decompose_llm=decompose_llm,
+    )
+
+
+def test_subqueries_for_noop_without_decompose_llm():
+    r = _retriever(decompose_llm=None)
+    assert r._subqueries_for(_Q) == [_Q]  # 关/stub → 单查询(byte 等价)
+
+
+def test_subqueries_for_decomposes():
+    r = _retriever(decompose_llm=_FakeLLM({"subqueries": ["q1", "q2"]}))
+    assert r._subqueries_for(_Q) == ["q1", "q2"]
+
+
+def test_retrieve_single_query_when_no_decompose(monkeypatch):
+    r = _retriever(decompose_llm=None)
+    calls = []
+    monkeypatch.setattr(r, "_search_candidates", lambda q, **k: calls.append(q) or {})
+    r.retrieve(_Q)
+    assert calls == [_Q]  # _subqueries_for→[query],_search_candidates 调 1 次
+
+
+def test_retrieve_fans_out_union(monkeypatch):
+    from query.retrieve.hybrid import Candidate
+
+    r = _retriever(decompose_llm=_FakeLLM({"subqueries": ["q1", "q2"]}))
+    calls = []
+
+    def fake_search(q, **k):
+        calls.append(q)
+        cid = "A" if q == "q1" else "B"  # 不同子查询命中不同 chunk
+        return {cid: Candidate(cid, 1.0, "P-INT", "DV1", None, None, False, "hybrid")}
+
+    monkeypatch.setattr(r, "_search_candidates", fake_search)
+    out = r.retrieve(_Q)
+    assert calls == ["q1", "q2"]                      # fan-out 两子查询
+    assert {c.chunk_id for c in out} == {"A", "B"}    # 候选并集
+
+
+def test_enumerate_cases_no_decompose():
+    llm = _FakeLLM({"subqueries": ["q1", "q2"]})
+    r = _retriever(decompose_llm=llm)
+    r.retrieve_enumerate(_Q)
+    r.retrieve_cases(_Q)
+    assert llm.calls == 0  # 枚举/案例不 decompose(仅主 retrieve)
+
+
+def test_build_decompose_llm_only_gateway_and_on(monkeypatch):
+    import query.retrieve.hybrid as hyb
+    from query.config import load_query_config
+
+    monkeypatch.setattr("query.llm.make_llm_client", lambda cfg, *, model=None: ("sentinel", model))
+    base = load_query_config()
+    assert hyb._build_decompose_llm(base) is None  # stub(默认)→ 不建
+    gw_on = base.model_copy(update={"llm_backend": "gateway", "decompose": True})
+    assert hyb._build_decompose_llm(gw_on) == ("sentinel", gw_on.decompose_model or gw_on.llm_model)
+    gw_off = base.model_copy(update={"llm_backend": "gateway", "decompose": False})
+    assert hyb._build_decompose_llm(gw_off) is None  # 关 → 不建
