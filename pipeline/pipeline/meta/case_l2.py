@@ -196,12 +196,13 @@ def apply(ctx, case_text: str, fields: dict, *, client=None) -> None:
     """连 ctx 跑案例 L2,把结果 merge 进 ``fields``(in-place)。**非阻断**:任何异常(LLMError /
     对齐失败)吞掉记日志,保留 L1 占位(None/[]/False),不阻塞案例入库(§9)。
 
-    ``client`` 为 None 时经 ``make_llm_client(ctx.config.llm.model)`` 构造
+    ``client`` 为 None 时经 ``make_llm_client(case_l2_model or model)`` 构造——案例 L2 可独立
+    选模型档(T2.1 引用外规抽取吃推理),``case_l2_model`` 未设则回落 ``model``
     (测试注入 fake 即免真调用)。
     """
     try:
         if client is None:
-            client = make_llm_client(ctx.config.llm.model)
+            client = make_llm_client(ctx.config.llm.case_l2_model or ctx.config.llm.model)
         allowed = {v.name: v.dict_version for v in ctx.db.get_violation_types()}
         fields.update(
             l2_fields(
