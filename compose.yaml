@@ -1,7 +1,6 @@
-# 隔离 demo 栈(与主仓测试栈 audit-doc-pipeline-demo 并存):独立项目名 → 独立卷/网络;
-# 宿主端口重映射(5433/19531/9092)避开主栈(5432/19530/9091)。64G 机可同跑两栈。
-# etcd/minio 内网不发布,无需改。
-name: audit-demo
+# 本地 demo 持久栈:PostgreSQL 16 + Milvus 2.4 standalone(自带 etcd/minio,与业务 ObjectStore 无关)。
+# 仅对外暴露 5432(pg)/19530(milvus)/9091(milvus 健康),etcd/minio 走内网不发布端口。
+name: audit-doc-pipeline-demo
 
 services:
   pg:
@@ -11,7 +10,7 @@ services:
       POSTGRES_PASSWORD: pipeline
       POSTGRES_DB: audit_pipeline
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -61,8 +60,8 @@ services:
     volumes:
       - milvus_data:/var/lib/milvus
     ports:
-      - "19531:19530"
-      - "9092:9091"
+      - "19530:19530"
+      - "9091:9091"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 10s

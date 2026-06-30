@@ -2,13 +2,13 @@
 # 所有 ⚠ 值集中于此;运行期/敏感值(DSN、endpoint、密钥、HF_HOME)可由 env 覆盖。
 
 [db]
-# env 覆盖:PIPELINE_DB_DSN。⚠ demo 隔离栈:宿主端口 5433(避开主测试栈 5432)
-dsn = "postgresql+psycopg://pipeline:pipeline@localhost:5433/audit_pipeline"
+# env 覆盖:PIPELINE_DB_DSN
+dsn = "postgresql+psycopg://pipeline:pipeline@localhost:5432/audit_pipeline"
 
 [milvus]
-# env 覆盖:PIPELINE_MILVUS_HOST。⚠ demo 隔离栈:宿主端口 19531(避开主测试栈 19530)
+# env 覆盖:PIPELINE_MILVUS_HOST
 host = "localhost"
-port = 19531
+port = 19530
 collection = "audit_corpus"
 hnsw_m = 16                     # ⚠ HNSW M
 hnsw_ef_construction = 200      # ⚠ HNSW efConstruction
@@ -26,17 +26,15 @@ retries = 3                     # ⚠ 指数退避次数
 root = "./_objectstore"
 
 [toggles]
-l2_enabled = false              # 全量 manifest 下 L2 本就旁路(biz_domain 由 manifest 提供),保持关
+l2_enabled = false              # L2 业务域 LLM 打标(§7.1,T2.3);默认关,开时经 env 提供 OPENAI_API_KEY
 e1_enabled = true               # E1 义务预打标默认开(零 LLM 正则)
-e2_enabled = false              # ⚠ bulk 入库关(逐 chunk LLM 太慢);已在样本验过,留入库后单独富集
-case_l2_enabled = false         # ⚠ bulk 入库关(846 案例 case_l2 太贵);已验过,留入库后单独富集
+e2_enabled = false              # E2 LLM 打标(事项/部门/实体类型);默认关,开时经 env 提供 OPENAI_API_KEY
+case_l2_enabled = false         # 案例 L2(引用外规对齐 + 违规事由分类,§9);默认关,开时经 env 提供 OPENAI_API_KEY
 auto_confirm_meta_no_conflict = true # 无元数据冲突时自动放行 META_REVIEW(演示体验开关)
 
 [llm]
-# E2/L2/案例 LLM 辅助。key/base_url 走 env(OPENAI_API_KEY / OPENAI_BASE_URL=https://api.deepseek.com),绝不入库。
-# ⚠ 不要设 env OPENAI_MODEL —— 它同时覆盖管线与查询,会破坏 flash/pro 分档(见 .env.local 说明)。
-model = "deepseek-v4-flash"      # E2/L2/案例违规分类:高频批量 → 低成本档
-case_l2_model = "deepseek-v4-pro"  # 案例 L2(T2.1 引用外规抽取+对齐=最高价值字段)→ 强推理档;案例量小
+# E2/L2 LLM 辅助(默认关)。key/base_url 走 env(OPENAI_API_KEY / OPENAI_BASE_URL),绝不入库。
+model = "gpt-5.4-nano"          # ⚠ env OPENAI_MODEL 可覆盖
 
 [align]
 header_band_pct = 0.08          # ⚠ 顶部页眉带占页高比例
@@ -66,9 +64,6 @@ partition_topk = 25         # ⚠ 内规/外规各分区召回条数(§5.2 top25
 sufficiency_min_hits = 1    # ⚠ 事项分区内充分判据最少命中(§8.1 务实版)
 attach_cases = true         # ⚠ R1 依据答复尾挂相关案例卡(§6.3 附挂通道);false 可关
 attach_topk = 3             # ⚠ 附挂案例卡条数(§6.3 top3)
-llm_backend = "stub"        # stub(零网络)| gateway(OpenAI 兼容);.env.local 设 QUERY_LLM_BACKEND=gateway 覆盖
+llm_backend = "stub"        # stub(零网络)| gateway(OpenAI 兼容);env QUERY_LLM_BACKEND 覆盖
 rerank_backend = "none"     # none(用 RRF 序)| bge(bge-reranker,需本地模型);env QUERY_RERANK_BACKEND 覆盖
-llm_model = "deepseek-v4-pro"  # 主答 R1 + R5 构成要件框定:用户可见/吃推理 → 强推理档(⚠ 无 query 专属 env,只此处)
-judge_constituent_llm = true   # R5 构成要件框定用 LLM 抽取(§6.5②);用 llm_model(pro)
-judge_multimodel_review = true # R5 §9.2 忠实性复核;用 review_model(QUERY_REVIEW_MODEL=pro,见 .env.local)
-# N0 归并 / N1 HyDE / N3 分解默认开,模型走 .env.local 的 QUERY_MERGE/HYDE/DECOMPOSE_MODEL=flash
+llm_model = "gpt-5.4-nano"  # ⚠ gateway 时模型名;env OPENAI_MODEL 可覆盖
