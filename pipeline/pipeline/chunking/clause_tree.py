@@ -250,9 +250,14 @@ def build_tree(blocks: list[Block]) -> ClauseNode:
     root = ClauseNode(NodeType.ROOT, None, "", "", None)
     stack: list[ClauseNode] = [root]
     toc = _toc_block_indices(blocks)
-    for b in blocks:
-        h = None if b.index in toc else classify_heading(b.text)
-        if h is None:
+    heads = [None if b.index in toc else classify_heading(b.text) for b in blocks]
+    # 文档用「第X条」(纯整数条号)时,小数体例 N.M 视为附件/表单内容、非条款
+    # (避免附件小数重置 4.4→1.1 被当小数条款致层级倒挂);纯小数体例文档(无第X条)不受影响。
+    has_int_art = any(
+        h is not None and h.type is NodeType.ARTICLE and "." not in h.number for h in heads
+    )
+    for b, h in zip(blocks, heads, strict=True):
+        if h is None or (has_int_art and h.type is NodeType.ARTICLE and "." in h.number):
             stack[-1].body_block_indices.append(b.index)
             continue
         node = ClauseNode(h.type, h.number, h.raw_label, b.text.strip(), b.index)
