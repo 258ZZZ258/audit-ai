@@ -233,3 +233,67 @@ def test_embed_status_pending_on_new_chunks():
     # (d) 建块即 embed_status="pending"(父/条/表 全覆盖)
     chunks = build_chunks(make_doc(), BIG)
     assert chunks and all(c.embed_status == "pending" for c in chunks)
+
+
+# ── 章号重置(总则/分则)去重:同 clause_path_norm 多节点不得撞 chunk_id ──
+def _zongze_fenze_doc() -> IRDocument:
+    """模拟《刑法》体例:总则 + 分则各自有「第三章 第一节」(章号在分则重置)。
+
+    七类节点无「编/总则/分则」层,故两个「第三章第一节」都归一成 clause_path_norm='3/1'
+    → 节级父块 (norm='3/1', seq=0) 撞 chunk_id。两编的第三章各放一节一条复现撞车。
+    """
+    P = BlockType.PARAGRAPH
+    return IRDocument(
+        doc_version_id="DVCRIM",
+        source_format=SourceFormat.DOCX,
+        blocks=[
+            # 总则:第一/二章占位,第三章第一节带条(凑出 norm='3/1')
+            Block(index=0, type=P, text="第一章 总则一", page=1),
+            Block(index=1, type=P, text="第一条 总则第一条。", page=1),
+            Block(index=2, type=P, text="第二章 总则二", page=1),
+            Block(index=3, type=P, text="第二条 总则第二条。", page=1),
+            Block(index=4, type=P, text="第三章 总则三", page=2),
+            Block(index=5, type=P, text="第一节 总则三第一节", page=2),
+            Block(index=6, type=P, text="第三条 总则三一节第一条。", page=2),
+            # 分则:第一/二章占位,第三章第一节带条(章号重置 → 又一个 norm='3/1')
+            Block(index=7, type=P, text="第一章 分则一", page=3),
+            Block(index=8, type=P, text="第十条 分则第一条。", page=3),
+            Block(index=9, type=P, text="第二章 分则二", page=3),
+            Block(index=10, type=P, text="第十一条 分则第二条。", page=3),
+            Block(index=11, type=P, text="第三章 分则三", page=4),
+            Block(index=12, type=P, text="第一节 分则三第一节", page=4),
+            # 条号亦重置 → norm='3/1/3' 也与总则那条撞(测全级别去重)
+            Block(index=13, type=P, text="第三条 分则三一节第一条。", page=4),
+        ],
+    )
+
+
+def test_renumbered_sections_get_unique_chunk_ids():
+    # 总则/分则两个「第三章第一节」(norm='3/1')的节级父块去重后 chunk_id 不撞
+    chunks = build_chunks(_zongze_fenze_doc(), BIG)
+    sec_parents = [c for c in chunks if c.is_parent and c.clause_path_norm == "3/1"]
+    assert len(sec_parents) == 2  # 两个节点同归一路径
+    assert len({c.chunk_id for c in sec_parents}) == 2  # 去重后 id 唯一
+    assert {c.seq for c in sec_parents} == {0, 1}  # 出现序赋 seq 0,1
+
+
+def test_renumbered_doc_all_chunk_ids_unique():
+    # 全文档无重复 chunk_id(去重契约),且 (norm, seq) 与 chunk_id 互洽
+    from common.chunk_id import compute_chunk_id
+
+    chunks = build_chunks(_zongze_fenze_doc(), BIG)
+    ids = [c.chunk_id for c in chunks]
+    assert len(set(ids)) == len(ids)  # 全唯一
+    for c in chunks:
+        assert c.chunk_id == compute_chunk_id(c.doc_version_id, c.clause_path_norm, c.seq)
+
+
+def test_renumbered_children_relink_to_correct_section_parent():
+    # 去重后子条块的 parent_chunk_id 仍指向**自己那节**的父块(经节点身份回连,非旧二义 id)
+    chunks = build_chunks(_zongze_fenze_doc(), BIG)
+    sec_parents = {c.chunk_id: c for c in chunks if c.is_parent and c.clause_path_norm == "3/1"}
+    arts = [c for c in chunks if not c.is_parent and c.clause_path_norm.startswith("3/1/")]
+    assert len(arts) == 2  # 总则三一节第一条 + 分则三一节第一条
+    assert all(a.parent_chunk_id in sec_parents for a in arts)
+    # 两条各指向不同父块(不是都连到同一个旧撞车 id)
+    assert len({a.parent_chunk_id for a in arts}) == 2

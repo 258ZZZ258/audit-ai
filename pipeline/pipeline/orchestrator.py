@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from ulid import ULID
@@ -18,6 +19,8 @@ from common.pg_models import DocVersion, ReviewQueue
 from pipeline.index.pg_io import PgIO
 from pipeline.stage_base import QueueItem, StageContext, StageResult
 from pipeline.states import WORKER_ADVANCEABLE_STATES, PipelineState
+
+logger = logging.getLogger(__name__)
 
 Stage = Callable[[StageContext, str], StageResult]
 
@@ -62,14 +65,34 @@ class Orchestrator:
         return True
 
     def run_until_idle(self, max_steps: int = 10000) -> int:
-        """反复推进直至无可推进文档(或达 max_steps 安全上限)。返回总步数。"""
+        """反复推进直至无可推进文档(或达 max_steps 安全上限)。返回总步数。
+
+        单件 stage 抛异常 → 隔离:记录(log + 留原态,由调用方状态分布可见)+ 本轮排除该件,
+        **不连累整批**。否则一个坏件(如 chunk_id 撞车)会让整批 ingest 崩、其余件全搁浅
+        (B 模式批量驱动健壮性)。失败件留原态待下轮重试 / 人工处置,不静默成功失档。
+        """
         steps = 0
+        failed: set[str] = set()
         while steps < max_steps:
-            docs = self._advanceable()
+            docs = [d for d in self._advanceable() if d.doc_version_id not in failed]
             if not docs:
                 break
-            advanced = sum(int(self.step(dv)) for dv in docs)
+            advanced = 0
+            for dv in docs:
+                try:
+                    if self.step(dv):
+                        advanced += 1
+                except Exception as e:  # noqa: BLE001 单件失败隔离,不连累整批
+                    failed.add(dv.doc_version_id)
+                    logger.warning(
+                        "推进 %s 在 %s 失败(隔离,留原态):%s",
+                        dv.doc_version_id,
+                        dv.pipeline_status,
+                        e,
+                    )
             steps += advanced
             if advanced == 0:
                 break
+        if failed:
+            logger.warning("本批驱动隔离 %d 件失败(留原态,见上):%s", len(failed), sorted(failed))
         return steps

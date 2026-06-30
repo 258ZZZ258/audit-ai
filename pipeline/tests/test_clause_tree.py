@@ -3,6 +3,7 @@ import pytest
 from common.ir import Block, BlockType
 from pipeline.chunking.clause_tree import (
     NodeType,
+    _toc_block_indices,
     build_tree,
     classify_heading,
     find_internal_refs,
@@ -54,6 +55,54 @@ def test_cross_law_reference_not_treated_as_article():
     assert h is not None and h.type is NodeType.ARTICLE and h.number == "47"
     h2 = classify_heading("第四十七条")
     assert h2 is not None and h2.type is NodeType.ARTICLE and h2.number == "47"
+
+
+def test_inline_clause_ref_not_treated_as_article():
+    # 内联引用「第X条第X款/项/条」(如「适用公司法第一百八十四条第二款」断行后块首)→ 非条标题
+    assert classify_heading("第一百八十四条第二款的规定执行") is None
+    assert classify_heading("第一百八十四条的规定；") is None  # 断行块首「第X条的…」
+    assert classify_heading("第十五条第三项所列情形") is None
+    assert classify_heading("第二十条第二条规定") is None  # 第X条第X条 双引用
+    # 真条标题:条后跟正文(含以「第」起但非款/项/条的词,如「第三人」)仍识别
+    h = classify_heading("第六条第三人应当依法履行义务")
+    assert h is not None and h.type is NodeType.ARTICLE and h.number == "6"
+
+
+def test_decimal_appendix_under_article_doc_not_clauses():
+    # 文档以「第X条」编号 + 章内/附件含小数(N.M,会重置如 4.4→1.1)→ 小数判附件/表单内容、
+    # 非条款(避免附件小数被当小数体例条款、致层级倒挂)。纯小数体例文档(无第X条)不受影响。
+    blocks = [
+        blk(0, "第一条 总则……"), blk(1, "第二条 适用范围……"),
+        blk(2, "第六章 附则"),
+        blk(3, "1.1 附件项目一……"), blk(4, "1.2 附件项目二……"), blk(5, "4.4 附件项目末……"),
+        blk(6, "1.1 另一组附件项……"),  # 重置 → 旧版当小数条款致倒挂
+    ]
+    arts = [a.clause_path() for a in iter_articles(build_tree(blocks))]
+    assert arts == ["第一条", "第二条"]  # 只第X条是条款,小数附件不成条
+    # 纯小数体例(无第X条)仍按小数条款解析
+    pure = [blk(0, "1.1 总则……"), blk(1, "1.2 范围……"), blk(2, "2.1 内容……")]
+    assert [a.clause_path() for a in iter_articles(build_tree(pure))] == ["1.1", "1.2", "2.1"]
+
+
+def test_toc_clean_headings_stripped():
+    # 国家法律体例:正文前有「干净」目录(章/节标题行,无点引导/无页码/无『目录』锚)。
+    # 结构信号:章/节标题在其跨度内无『条』→ 判目录、不成节点(否则正文章号倒挂、章重复)。
+    blocks = [
+        blk(0, "第一章 总则"), blk(1, "第二章 行政许可的设定"),
+        blk(2, "第三章 行政许可的实施"), blk(3, "第一节 申请与受理"),
+        blk(4, "第二节 审查与决定"),
+        blk(5, "第一章 总则"), blk(6, "第一条 为了规范行政许可的设定……"),
+        blk(7, "第二条 本法所称行政许可……"), blk(8, "第二章 行政许可的设定"),
+        blk(9, "第三条 行政许可的设定和实施……"), blk(10, "第三章 行政许可的实施"),
+        blk(11, "第四条 行政许可由具有……"),
+    ]
+    toc = _toc_block_indices(blocks)
+    # 目录区 5 个章/节标题块(跨度内无条)应被识别;正文章/条块不剥
+    assert {0, 1, 2, 3, 4} <= toc
+    assert 5 not in toc and 6 not in toc and 8 not in toc
+    # 建树后正文章号单调、章不重复(剥目录后无 8→1 倒挂)
+    paths = [a.clause_path() for a in iter_articles(build_tree(blocks))]
+    assert paths == ["第一章 > 第一条", "第一章 > 第二条", "第二章 > 第三条", "第三章 > 第四条"]
 
 
 # ── 小数编号(交易所规则体例:2.17 / 3.1.2),做全小数规则 ─────────────────────
