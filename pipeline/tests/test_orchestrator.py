@@ -122,3 +122,40 @@ def test_no_registered_stage_stops(pg, doc_version):
     stages = {PS.REGISTERED: _stage(PS.PARSING), PS.PARSING: _stage(PS.QC_PENDING)}
     Orchestrator(pg, _ctx(), stages).run_until_idle()
     assert pg.get(DocVersion, doc_version).pipeline_status == PS.QC_PENDING.value
+
+
+def test_failing_stage_isolated_others_advance(pg, doc_version):
+    # 健壮性:一个件 stage 抛异常(如 chunk_id 撞车)→ 隔离(留原态)、不连累整批,其余件正常推进。
+    bid2, lid2, dvid2 = "test_" + str(ULID())[:10], str(ULID()), str(ULID())
+    pg.add(ImportBatch(batch_id=bid2, source_dir="x"))
+    pg.add(Document(logical_id=lid2, corpus_type="P-INT"))
+    pg.add(
+        DocVersion(
+            doc_version_id=dvid2,
+            logical_id=lid2,
+            batch_id=bid2,
+            source_format="docx",
+            source_hash="h2",
+            raw_object_key="k2",
+            pipeline_status=PS.REGISTERED.value,
+        )
+    )
+    try:
+
+        def reg_stage(ctx, dvid):
+            if dvid == doc_version:  # 这件 stage 抛异常
+                raise RuntimeError("boom: chunk_id 撞车模拟")
+            return StageResult(next_state=PS.PARSING)
+
+        stages = {PS.REGISTERED: reg_stage, PS.PARSING: _stage(PS.QC_PENDING)}
+        steps = Orchestrator(pg, _ctx(), stages).run_until_idle()  # 不应抛
+        # 失败件留原态(隔离),其余件一路推进到无 stage 处
+        assert pg.get(DocVersion, doc_version).pipeline_status == PS.REGISTERED.value
+        assert pg.get(DocVersion, dvid2).pipeline_status == PS.QC_PENDING.value
+        assert steps == 2  # 仅 dvid2 推进两步(REGISTERED→PARSING→QC_PENDING)
+    finally:
+        with pg.session() as s:
+            s.execute(delete(PipelineEvent).where(PipelineEvent.doc_version_id == dvid2))
+            s.execute(delete(DocVersion).where(DocVersion.doc_version_id == dvid2))
+            s.execute(delete(Document).where(Document.logical_id == lid2))
+            s.execute(delete(ImportBatch).where(ImportBatch.batch_id == bid2))
