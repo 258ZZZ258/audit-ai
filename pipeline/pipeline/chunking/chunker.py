@@ -60,27 +60,68 @@ def count_tokens(text: str) -> int:
 
 
 def build_chunks(doc: IRDocument, cfg: ChunkConfig) -> list[ChunkSpec]:
-    """从 IR 建条款树并产出全部 chunk(节级父块 + 各条文本块/表格块)。"""
+    """从 IR 建条款树并产出全部 chunk(节级父块 + 各条文本块/表格块)。
+
+    末尾跑 ``_dedup_seq`` 去重:总则/分则等**章号重置**体例(《刑法》总则有第三章、分则也有)
+    令两个结构节点产出同一 ``clause_path_norm``(七类节点无「编/总则/分则」层)→ 同 ``(norm, seq)``
+    → 撞 chunk_id / PG 主键。去重只在已用 ``seq`` 上递增使其全局唯一(**不改 chunk_id 公式**);
+    父块 ``seq`` 变了 → 经**节点身份**(非已二义的旧 chunk_id)重连子块 ``parent_chunk_id``。
+    """
     blocks = {b.index: b for b in doc.blocks}
     root = build_tree(doc.blocks)
     out: list[ChunkSpec] = []
+    sec_nodes: list[ClauseNode | None] = []  # 与 out 平行:每 spec 所属节级节点(无则 None)
     for sec in _iter_by_type(root, NodeType.SECTION):
         out.append(_parent_chunk(doc.doc_version_id, sec, blocks, cfg))
+        sec_nodes.append(sec)  # 父块自身的归属节点 = 该节点(供去重后据身份回连)
     for art in iter_articles(root):
-        parent_id = _section_parent_id(doc.doc_version_id, art)
-        out.extend(_article_chunks(doc.doc_version_id, art, blocks, cfg, parent_id))
+        sec = _section_node(art)
+        art_chunks = _article_chunks(doc.doc_version_id, art, blocks, cfg, parent_chunk_id=None)
+        out.extend(art_chunks)
+        sec_nodes.extend([sec] * len(art_chunks))
+    _dedup_seq(doc.doc_version_id, out, sec_nodes)
     return out
 
 
 # ── 内部 ──────────────────────────────────────────────────────
-def _section_parent_id(dvid: str, art: ClauseNode) -> str | None:
-    """条所属节级父块的 chunk_id(父块用 sec.clause_path_norm()+seq 0);无节(虚拟根直条)→ None。"""
+def _section_node(art: ClauseNode) -> ClauseNode | None:
+    """条所属的最近节级祖先节点;无节(虚拟根直条)→ None。"""
     n: ClauseNode | None = art.parent
     while n is not None:
         if n.type is NodeType.SECTION:
-            return compute_chunk_id(dvid, n.clause_path_norm(), 0)
+            return n
         n = n.parent
     return None
+
+
+def _dedup_seq(
+    dvid: str, specs: list[ChunkSpec], sec_nodes: list[ClauseNode | None]
+) -> None:
+    """就地保证同文档内 ``(clause_path_norm, seq)`` 唯一,并据**节点身份**回连子块 parent_chunk_id。
+
+    seq 原语义 = 同一 clause 超长硬切的序号;本去重**兼容**之:按 ``specs`` 出现序遍历,见到已用过的
+    ``(norm, seq)`` 就把 seq 递增到未用值(在现有 seq 基础上加偏移),再据新 seq 重算 chunk_id。
+    父块(``is_parent``)与其归属节点 1:1 → 去重后建「节点 → 父块新 chunk_id」表,
+    给每个子块按其所属节级节点回填 ``parent_chunk_id``(旧 id 因撞车已二义,不能用作回连键)。
+    """
+    used: set[tuple[str, int]] = set()
+    for spec in specs:
+        seq = spec.seq
+        while (spec.clause_path_norm, seq) in used:
+            seq += 1
+        used.add((spec.clause_path_norm, seq))
+        if seq != spec.seq:
+            spec.seq = seq
+            spec.chunk_id = compute_chunk_id(dvid, spec.clause_path_norm, seq)
+    # 节点身份 → 父块去重后的 chunk_id(父块与节点 1:1)
+    sec_to_pid = {
+        id(sec): spec.chunk_id
+        for spec, sec in zip(specs, sec_nodes, strict=True)
+        if spec.is_parent and sec is not None
+    }
+    for spec, sec in zip(specs, sec_nodes, strict=True):
+        if not spec.is_parent and sec is not None:
+            spec.parent_chunk_id = sec_to_pid.get(id(sec))
 
 
 def _iter_by_type(root: ClauseNode, ntype: NodeType) -> list[ClauseNode]:
