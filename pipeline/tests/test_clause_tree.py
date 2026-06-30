@@ -68,6 +68,22 @@ def test_inline_clause_ref_not_treated_as_article():
     assert h is not None and h.type is NodeType.ARTICLE and h.number == "6"
 
 
+def test_decimal_appendix_under_article_doc_not_clauses():
+    # 文档以「第X条」编号 + 章内/附件含小数(N.M,会重置如 4.4→1.1)→ 小数判附件/表单内容、
+    # 非条款(避免附件小数被当小数体例条款、致层级倒挂)。纯小数体例文档(无第X条)不受影响。
+    blocks = [
+        blk(0, "第一条 总则……"), blk(1, "第二条 适用范围……"),
+        blk(2, "第六章 附则"),
+        blk(3, "1.1 附件项目一……"), blk(4, "1.2 附件项目二……"), blk(5, "4.4 附件项目末……"),
+        blk(6, "1.1 另一组附件项……"),  # 重置 → 旧版当小数条款致倒挂
+    ]
+    arts = [a.clause_path() for a in iter_articles(build_tree(blocks))]
+    assert arts == ["第一条", "第二条"]  # 只第X条是条款,小数附件不成条
+    # 纯小数体例(无第X条)仍按小数条款解析
+    pure = [blk(0, "1.1 总则……"), blk(1, "1.2 范围……"), blk(2, "2.1 内容……")]
+    assert [a.clause_path() for a in iter_articles(build_tree(pure))] == ["1.1", "1.2", "2.1"]
+
+
 def test_toc_clean_headings_stripped():
     # 国家法律体例:正文前有「干净」目录(章/节标题行,无点引导/无页码/无『目录』锚)。
     # 结构信号:章/节标题在其跨度内无『条』→ 判目录、不成节点(否则正文章号倒挂、章重复)。
