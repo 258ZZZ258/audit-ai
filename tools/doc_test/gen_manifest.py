@@ -116,6 +116,7 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--model", default="deepseek-v4-flash")
     ap.add_argument("--perm-tag", default="公开")
+    ap.add_argument("--no-title", action="store_true", help="title 留空交 L1(bulk 入库免标题冲突 META_REVIEW)")
     ap.add_argument("--workers", type=int, default=8)
     args = ap.parse_args()
 
@@ -135,7 +136,8 @@ def main() -> None:
     filled = {c: 0 for c in COLUMNS}
     for rec, m in zip(rows, metas, strict=True):
         row = {
-            "filename": rec["filename"], "title": m["title"], "doc_number": m["doc_number"],
+            # --no-title:title 也留空交 L1(消除标题冲突 → 免 mass-META_REVIEW;副作用:停用标题+文号疑似重复闸)
+            "filename": rec["filename"], "title": ("" if args.no_title else m["title"]), "doc_number": m["doc_number"],
             "issuer": m["issuer"], "perm_tag": args.perm_tag, "corpus_type": rec["corpus_type_code"],
             "sub_type": rec.get("sub_type") or "", "biz_domain": m["biz_domain"],
             # ⚠ issue_date/effective_date 留空:交管线 L1 抽正文权威日期,避免与文件名日期系统性冲突
