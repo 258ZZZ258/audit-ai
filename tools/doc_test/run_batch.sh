@@ -14,7 +14,7 @@ NOISE='Loading weights|Inference Embeddings|pre tokenize|fork_posix|absl::|pkg_r
 echo "### batch_$N · stage ###"
 $PY tools/doc_test/stage_corpus.py --in "$O/batches/batch_$N.jsonl" --batch-dir "$O/b$N" --out "$O/staged_$N.jsonl" 2>&1 | tail -3
 echo "### batch_$N · manifest ###"
-$PY tools/doc_test/gen_manifest.py --in "$O/staged_$N.jsonl" --batch-dir "$O/b$N" --seeds seeds --out "$O/manifest_$N.xlsx" 2>&1 | grep -vE "$NOISE" | tail -2
+$PY tools/doc_test/gen_manifest.py --in "$O/staged_$N.jsonl" --batch-dir "$O/b$N" --seeds seeds --no-title --out "$O/manifest_$N.xlsx" 2>&1 | grep -vE "$NOISE" | tail -2
 echo "### batch_$N · ingest(扫描走 OCR,可能很慢)###"
 $PY -m pipeline.cli ingest "$O/b$N" -m "$O/manifest_$N.xlsx" 2>&1 | grep -vE "$NOISE" | tail -3
 bid=$($PY -c "
@@ -27,6 +27,17 @@ with pg.session() as s:
 " 2>/dev/null | tail -1)
 echo "### batch_$N · meta confirm (bid=$bid) ###"
 $PY -m pipeline.cli meta confirm --batch "$bid" >/dev/null 2>&1
+echo "### batch_$N · degrade QC_FAILED(全文可检索;条款树体例随见随修,解析层失败直接降级)###"
+QIDS=$($PY -c "
+from pipeline.config import load_config
+from pipeline.index.pg_io import PgIO
+from sqlalchemy import text
+pg=PgIO.from_config(load_config())
+with pg.session() as s:
+    print(' '.join(r[0] for r in s.execute(text(\"select rq.queue_id from review_queue rq join doc_versions dv on dv.doc_version_id=rq.doc_version_id where dv.batch_id='$bid' and dv.pipeline_status='QC_FAILED' and rq.queue_type='qc_fix' and rq.status='open'\"))))
+" 2>/dev/null | tail -1)
+for q in $QIDS; do $PY -m pipeline.cli queue degrade "$q" >/dev/null 2>&1; done
+$PY -m pipeline.cli meta confirm --batch "$bid" >/dev/null 2>&1  # 推降级件到 DEGRADED_INDEXED
 echo "### batch_$N · 状态 ###"
 BID="$bid" $PY -c "
 import os
