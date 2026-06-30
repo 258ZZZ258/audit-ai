@@ -151,6 +151,8 @@ def main() -> None:
     ap.add_argument("--target", type=int, default=250)
     ap.add_argument("--out", default="tools/doc_test/out")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--all", action="store_true", help="输出全部唯一文档(非抽样),供全量分批入库")
+    ap.add_argument("--exclude", default="", help="排除清单(jsonl,按 orig_path/path 去掉已入库件)")
     args = ap.parse_args()
     rng = random.Random(args.seed)
 
@@ -159,6 +161,25 @@ def main() -> None:
     cases = [d for d in unique if is_case(d["type"])]
     exts = [d for d in unique if d["type"].startswith("外规")]
     undecided = [d for d in unique if d["type"] == "未判定"]
+
+    if args.all:  # 全量模式:输出全部唯一文档(减去已入库),不抽样
+        excl: set[str] = set()
+        if args.exclude:
+            for line in Path(args.exclude).read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    r = json.loads(line)
+                    excl.add(r.get("orig_path") or r.get("path") or "")
+        alld = [d for d in unique if d["path"] not in excl]
+        outdir = Path(args.out)
+        outdir.mkdir(parents=True, exist_ok=True)
+        (outdir / "curated_all.jsonl").write_text(
+            "\n".join(json.dumps(d, ensure_ascii=False) for d in alld), encoding="utf-8"
+        )
+        print(f"去重唯一 {stats['unique']} · 排除已入库 {len(excl)} · 输出 {len(alld)} → {outdir/'curated_all.jsonl'}")
+        print(f"  按启发式:案例 {sum(1 for d in alld if is_case(d['type']))} · "
+              f"外规 {sum(1 for d in alld if d['type'].startswith('外规'))} · "
+              f"未判定 {sum(1 for d in alld if d['type']=='未判定')}")
+        return
 
     # 配额:案例 ~36% / 外规 ~56% / 未判定 ~8%
     n_case = round(args.target * 0.36)

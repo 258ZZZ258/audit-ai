@@ -28,8 +28,8 @@ root = "./_objectstore"
 [toggles]
 l2_enabled = false              # 全量 manifest 下 L2 本就旁路(biz_domain 由 manifest 提供),保持关
 e1_enabled = true               # E1 义务预打标默认开(零 LLM 正则)
-e2_enabled = true               # E2 LLM 打标(实体/部门/事项,flash);大批量慎开(逐 chunk),小样本验证用
-case_l2_enabled = true          # 案例 L2 T2.1 引用外规对齐(pro)+ T2.2 违规分类(flash);对外规 no-op
+e2_enabled = false              # ⚠ bulk 入库关(逐 chunk LLM 太慢);已在样本验过,留入库后单独富集
+case_l2_enabled = false         # ⚠ bulk 入库关(846 案例 case_l2 太贵);已验过,留入库后单独富集
 auto_confirm_meta_no_conflict = true # 无元数据冲突时自动放行 META_REVIEW(演示体验开关)
 
 [llm]
