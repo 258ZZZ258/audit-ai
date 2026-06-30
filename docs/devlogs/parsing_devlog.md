@@ -35,4 +35,15 @@ docx **无原生页码**,页码**不从 docx 猜**:s1 用 soffice 渲染一份 c
 - **table block 嵌套多一层**:html 在 `block.blocks[].lines[].spans[].html`(普通块是 `block.lines[].spans[].content`);table conf 在**块级** `score`(html span 无 score)。
 - **三处 GAP/PLAN 假设其实已实现**:`IR.ocr_conf` 字段、`Table.to_markdown`、指标6 ocr_conf 逻辑+阈值+单测(`test_qc.py:65`)——同 R4 的 dict_aliases/seed,实现前核实省返工。
 
-**测试**:`test_mineru_parser`(映射 7 + parse monkeypatch 2 + 真跑门控 1)、`test_ocr_routing`(make_ocr_parser 3 + detect/whitelist/SourceFormat 5 + s1 路由 4)、`test_s1_parse`(图片 OCR 门控 1 + OCR 关 E202 真跑 1);波及范围 67 passed;golden/light 零回归;alembic 零漂移。MinerU 可选 extra `[ocr]`,默认 none,门控 skip-if-no-MinerU。**端到端真跑(图片→INDEXED + BGE-M3)需装 MinerU 的环境,留交付前(spike 已验 OCR→IR 核心,下游走统一 IR 契约)**。
+**测试**:`test_mineru_parser`(映射 7 + parse monkeypatch 2 + 真跑门控 1)、`test_ocr_routing`(make_ocr_parser 3 + detect/whitelist/SourceFormat 5 + s1 路由 4)、`test_s1_parse`(图片 OCR 门控 1 + OCR 关 E202 真跑 1);波及范围 67 passed;golden/light 零回归;alembic 零漂移。MinerU 可选 extra `[ocr]`,默认 none,门控 skip-if-no-MinerU。**端到端真跑(图片→INDEXED + BGE-M3)需装 MinerU 的环境,留交付前(spike 已验 OCR→IR 核心,下游走统一 IR 契约)**。spike 独立 venv 保留在 `~/mineru-spike`(备端到端真跑用)。
+
+## DeepDoc 解析器接入明确搁置(2026-06-29)
+
+`DeepDocParser` stub 继续保留(**路由仍在 factory 映射,但 `parse()` 继承 `_StubParser` 仍抛
+`NotImplementedError`——`PIPELINE_PARSER_BACKEND=deepdoc` 不可用,留待未来 CP 实装**),不立项实装。决定过程:
+
+1. **能力重叠**:MinerU 3.4 pipeline 后端**库层**可覆盖 pdf/office/image,与 DeepDoc 定位高度重叠——两个重依赖全要素解析器同时维护代价高。**⚠ 但本仓实际接入只覆盖扫描 PDF / 图片 OCR**:`s1_parse` 路由 docx→light_parser+soffice、文本层 pdf→light_parser,**仅扫描 pdf(无文本层 + OCR 开)与 jpg/png 才走 MinerU**;`_run_mineru` 也仅 jpg/png→pdf、其余按 PDF bytes 传,**无 office 转换层**。故 **office 全要素能力未在本仓实现/验证**——搁置依据是潜在能力重叠,**不代表已实现覆盖**(避免把 DeepDoc 误判为与已实现能力完全重叠)。
+2. **痛点在下游**:走查代码发现"解析器换不提升质量"——历史走查显示 golden F1 失分集中在 `clause_tree`/切块层,换解析器改善不了条款树解析的正确率。
+3. **用户明确决定**:"那先不考虑 deepdoc 了"(2026-06-29)。
+
+**结论**:`PIPELINE_PARSER_BACKEND=deepdoc` 路由保留(升格契约),但实装留到有真实需要时(如 DeepDoc 独有的 office 全要素特性在生产中成为瓶颈)。
