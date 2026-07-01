@@ -514,3 +514,33 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
   - **worktree 解析陷阱**(同前):`PYTHONPATH=<wt>/{query,...}` 使 PathFinder 先于主 venv `_EditableFinder` 解析到 worktree。
 - **未做(SPEC-OBSERVE §0)**:深层 per-stage span 树(检索/重排/生成/复核各 span + 耗时);敏感词/SSO/操作日志/AI 页脚(§9.3 余项);
   §13 V0 分析逻辑;采样率/PII 脱敏/保留(运维);候选数/更多字段进 trace。**待 Codex 复审 + 真 Langfuse 跑绿。**
+
+## 阶段 B-API —— 制度查询 HTTP API(前端接缝,SPEC/PLAN/TASKS-API;参考产品原型 V3)
+
+> B 轨:把原型「审计 AI 原型 V3」四交互面(对话流式 / 结构化四-Tab / 会话历史 / 导出·推荐·上传)落成
+> FastAPI + SSE 接缝。**独立 worktree `feat/query-api`(从 origin/main 开)**,离线写码+单测,栈验证留合并门。
+> 详见 `SPEC-API.md`(§13 决策记录 8 项)/ `PLAN-API.md` / `TASKS-API.md`。
+
+- **决策 8 项(§13)**:HTTP=FastAPI;match_score 归一%直显;附件只存不消费;鉴权 stub+导出点 403;会话标题 LLM 概括(默认关→首问截断);
+  功能2 独立会话表;导出 xlsx;**先 gateway 真流式再 SSE**(T10→T11)。
+- **契约加法保 §10 byte 等价(踩坑)**:`QueryResult +structured/+meta`,但**默认时 `to_dict` 缺省省略这两键**(`structured=None`+`meta={}`
+  不加键)——否则 `test_contract` 的「恰 8 键」断言破、CLI `query ask` 输出变。命中项可选字段同样缺省省略(零臆造,承 `CaseCard`)。
+- **四-Tab 装配(§4)分区口径**:`retrieve()` 候选按 `corpus_type` 分 **P-INT→命中制度(按 dvid 去重)+ 命中条款(逐 chunk)** /
+  **P-EXT→监管规则**;`retrieve_cases()` P-CASE→相关案例。**监管规则/相关案例无「匹配度」列**(原型无)→ 两个 Hit 无 `match_score`
+  字段(T2 一度误传致 `TypeError`,修正)。`match_score`=候选集内 min-max 归一;⚠-data(theme/关联内规/违规主题)缺失即省略、
+  ⚠-model(摘要走截断/卡片/引用建议)LLM 默认关缺省空。装配在 **API 边界层 `api/structured.py`,不进 graph 节点**。
+- **会话表落 `common.pg_models`(踩坑)**:`QueryConversation`/`QueryMessage` 加进 common(全仓单一 Base metadata + 根 Alembic 单链),
+  **非 query 自建 Base**——否则双迁移头。迁移是 **0012**(实际最新 0011,非 PLAN 假设的 0008)。单向只读红线:query 只写 `query_*` 表。
+- **真流式与结构化引用的张力(T10 核心)**:LLM 输出是结构化 JSON `{answer,cited_ids}`,与 token 流式 + 「裸结论需全文判定」冲突。
+  决策**两次调用**:`chat_json` 取忠实引用(与同步 `generate_evidence` 一致、红线安全,无引用→**流式前**降级拒答)+ `llm.stream` 真流式
+  答复正文。`pipeline.llm_client +stream`(httpx SSE,add-only,共享)。答复红线=prompt 约束(§7.1)+ 最终 `sanitize_answer` 兜底
+  (**流式中途无法回撤**,故 prompt 为主防线)。
+- **SSE 编排(T11)**:`accepted→route→structured(四-Tab 一次)→answer_delta*→citations→done`;evidence 走 `generate_evidence_stream`
+  真流式喂 delta,其余路由 `agent.ask` 全量、答复块作 delta;异常兜底 `error` 事件(不静默)。**流式路径与 graph 非流式路径并存**
+  (复用 classify/resolve_scope/retrieve,不改 graph 节点)。同一 `messages` 端点 **Accept 分支**:`text/event-stream`→SSE,否则同步 JSON
+  (同契约,One-Version)。
+- **ruff bugbear**:FastAPI DI 默认值(`Depends()/Query()/File()`)触 B008 → 仿 `typer.Argument` 先例加进 `extend-immutable-calls`。
+- **离线可测边界**:契约/装配纯函数/错误语义/端点(TestClient+fake svc)/xlsx 读回/SSE 序列(fake+monkeypatch)全离线绿(330 passed);
+  **alembic apply/check、所有 `_integration`(含真流式 gateway 门)留合并前全仓门**(并行栈协调,不贸然打共享栈)。
+- **未做 / 留合并门**:match_score 归一窗口标定;附件检索侧消费(下一迭代);真 Casbin 六类权限点 + 操作日志 + AI 页脚落地;真流式
+  首 token<3s 验证;theme/关联内规/违规主题 依赖 clause_tags 打标·clause_references·案例 L2(未落即省略)。

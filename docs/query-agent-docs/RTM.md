@@ -193,6 +193,26 @@
 
 > 多数 §15 项是**生产确认待办**,demo 已用 workaround 交付(本地 BGE-M3=② · consumed-when-present=⑤ · 规则分类=① · 务实判据=⑥)。真正 demo 阶段未触的大块:R5 产品形态(④)、网关/Langfuse/Casbin/SSO 横切、V0 评估。
 
+## B-API 前端接缝(SPEC-API,产品原型 V3)
+
+> B 轨 HTTP API:§10 契约加法 + 结构化四-Tab + 会话持久化 + SSE 流式 + 导出/推荐/上传。
+> **独立 worktree `feat/query-api`;离线 TestClient/纯函数全绿(330 passed);`_integration`/alembic apply/真流式 gateway 门留合并前全仓门。**
+
+| Req | 需求 | 状态 | 证据(SPEC-API §/test) |
+|---|---|---|---|
+| API-1 | §10 契约加法 structured/meta(byte 等价)| ✅ | §4/§5;`test_api_contract`(缺省省略保恰 8 键)|
+| API-2 | 结构化四-Tab 装配(分区/min-max 归一/⚠缺省省略、零臆造)| ✅ | §4;`test_structured_assembly`(+`_integration` 门)|
+| API-3 | 会话持久化(query_* add-only 0012 + CRUD/分页/搜索/统计卡)| 🟡 | §7;`test_session_store`(离线 paginate/模型✅;CRUD 集成 + alembic check 门)|
+| API-4 | 统一错误语义 + 鉴权 stub(状态码全 + 导出点 403)| ✅ | §9;`test_api_errors` |
+| API-5 | 会话端点(CRUD/分页/标题搜索/详情统计卡)| ✅ | §3/§7;`test_api_conversations` |
+| API-6 | 问答端点(同步 JSON,校验 query≤2000/附件/corpus + 落库)| ✅ | §6;`test_api_ask` |
+| API-7 | 条款回查(联动/查看原文,四级锚点+全文+父块)| ✅ | §8.3;`test_api_clauses`(+`_integration` 门)|
+| API-8 | 推荐问题(config 驱动)+ 上传(415/413/只存不消费)| ✅ | §8.2/§8.4;`test_api_suggestions`/`test_api_uploads` |
+| API-9 | 导出 xlsx + AI 标识页脚 + 导出点 403 | ✅ | §8.1;`test_api_export`(读回验模板/页脚)|
+| API-10 | 真流式生成(两次调用:chat_json 引用 + stream 正文;§7.2)| 🟡 | §6.2;`test_stream_generate`(stub 逐块✅;真 gateway 首 token<3s 门)|
+| API-11 | SSE 端点(事件序列 + error 兜底)| ✅ | §6.2;`test_api_sse`(+`_integration` 门)|
+| API-12 | 单向只读红线(query 只写 query_* 表,不回写 corpus)| 🟡 | 架构(会话表 query 自有);合并门集成核 |
+
 ## 维护规则(每轮 SDD 收口强制 reconcile)
 
 1. 实装一条需求 → 该行改 ✅ **并挂 test_id**(无测试只能记 🟡)。
