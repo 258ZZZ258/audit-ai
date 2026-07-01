@@ -39,8 +39,11 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.flake8-bugbear]
-# typer 的 CLI 参数默认值本就是 Argument()/Option() 调用,非 B008 针对的可变默认值。
-extend-immutable-calls = ["typer.Argument", "typer.Option"]
+# typer CLI 参数、FastAPI 依赖注入默认值本就是 Argument()/Depends() 等调用,非 B008 针对的可变默认值。
+extend-immutable-calls = [
+    "typer.Argument", "typer.Option",
+    "fastapi.Depends", "fastapi.Query", "fastapi.Body", "fastapi.File", "fastapi.Form",
+]
 
 [tool.ruff.lint.isort]
 # 升格后 workspace 三成员均为本仓首方包(否则 isort 误判 common/eval 为第三方,分组错乱)。
