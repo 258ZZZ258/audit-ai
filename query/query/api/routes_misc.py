@@ -39,9 +39,10 @@ def suggestions(
 
 @router.post("/uploads", status_code=201)
 def upload(file: UploadFile = File(...), svc: QueryService = Depends(get_service)) -> dict:
-    _check_content_type(file)
+    _check_declared_type(file)          # 415 快速拒(声明类型 或 通用+扩展名)
     max_bytes = getattr(svc.qcfg, "max_upload_bytes", _DEFAULT_MAX)
     data = _read_bounded(file, max_bytes)
+    _verify_content(file, data)         # 415:通用 content-type 时按魔数校验(防扩展名绕过,F4)
     upload_id = str(ULID())
     updir = Path(getattr(svc.qcfg, "upload_dir", None) or _default_dir())
     updir.mkdir(parents=True, exist_ok=True)
@@ -54,12 +55,30 @@ def upload(file: UploadFile = File(...), svc: QueryService = Depends(get_service
     return meta
 
 
-def _check_content_type(file: UploadFile) -> None:
+#: 通用/未知 content-type:浏览器常对合法文件误标 → 暂放行,但读后按魔数校验(F4 不信任扩展名)。
+_GENERIC_CT = {"application/octet-stream", "binary/octet-stream", ""}
+#: 文件魔数:PDF(%PDF)/ OOXML zip(docx/xlsx)/ OLE2(旧 doc/xls)。
+_MAGIC = (b"%PDF", b"PK\x03\x04", b"\xd0\xcf\x11\xe0")
+
+
+def _check_declared_type(file: UploadFile) -> None:
+    """读前快速判:声明类型在白名单 → 直放;通用类型 + 允许扩展名 → 暂放(读后魔数校验);否则 415。"""
     ct = (file.content_type or "").lower()
     name = (file.filename or "").lower()
-    if ct in _ALLOWED_CT or name.endswith(_ALLOWED_EXT):
+    if ct in _ALLOWED_CT:
+        return
+    if ct in _GENERIC_CT and name.endswith(_ALLOWED_EXT):
         return
     raise unsupported_media("仅支持 PDF/Word/Excel")
+
+
+def _verify_content(file: UploadFile, data: bytes) -> None:
+    """通用 content-type 时**必须魔数匹配**(防 malware.pdf + octet-stream 绕过白名单)。"""
+    ct = (file.content_type or "").lower()
+    if ct in _ALLOWED_CT:
+        return   # 声明为白名单类型 → 信任
+    if not any(data.startswith(m) for m in _MAGIC):
+        raise unsupported_media("文件内容与类型不符(魔数校验失败)")
 
 
 def _read_bounded(file: UploadFile, max_bytes: int) -> bytes:

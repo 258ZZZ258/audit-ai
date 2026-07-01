@@ -45,6 +45,14 @@ def test_upload_oversize_returns_413(tmp_path):
 
 def test_upload_by_extension_when_content_type_generic(tmp_path):
     c, _ = _client(tmp_path)
-    # 浏览器有时给 application/octet-stream → 按扩展名放行
-    files = {"file": ("f.docx", b"data", "application/octet-stream")}
+    # 浏览器给 application/octet-stream + 合法 docx(OOXML zip 魔数 PK\x03\x04)→ 魔数校验通过 201
+    files = {"file": ("f.docx", b"PK\x03\x04real-docx-bytes", "application/octet-stream")}
     assert c.post(f"{_PREFIX}/uploads", files=files).status_code == 201
+
+
+def test_upload_generic_ct_bad_magic_rejected_415(tmp_path):
+    # F4:malware.pdf + octet-stream + 任意字节(非 %PDF 魔数)→ 不得存为允许附件
+    c, _ = _client(tmp_path)
+    files = {"file": ("malware.pdf", b"MZ\x90\x00 not a pdf", "application/octet-stream")}
+    r = c.post(f"{_PREFIX}/uploads", files=files)
+    assert r.status_code == 415 and r.json()["error"]["code"] == "UNSUPPORTED_MEDIA_TYPE"

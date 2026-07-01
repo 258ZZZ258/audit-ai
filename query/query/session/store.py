@@ -101,12 +101,14 @@ class SessionStore:
         self, cid: str, *, role: str, content: str | None = None,
         route_type: str | None = None, result_json: dict | None = None,
         hit_counts: dict | None = None, elapsed_ms: int | None = None, ai_label: bool = True,
+        message_id: str | None = None,
     ) -> str:
         """追加一轮消息(seq 自增),同步 conversation.message_count / last_hit_counts。
 
+        ``message_id`` 显式给(SSE 用广告的 id 落库,保 accepted/done 的 id 可回查)否则自生 ULID。
         会话不存在 → ``KeyError``。assistant 消息带 hit_counts 时刷新会话统计卡冗余。
         """
-        mid = str(ULID())
+        mid = message_id or str(ULID())
         with self._pg.session() as s:
             conv = s.get(QueryConversation, cid)
             if conv is None:

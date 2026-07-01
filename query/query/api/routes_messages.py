@@ -61,7 +61,7 @@ def ask(cid: str, body: AskBody, request: Request, svc: QueryService = Depends(g
     result.meta = {
         "elapsed_ms": elapsed_ms, "total_hits": sum(hit_counts.values()), "hit_counts": hit_counts,
     }
-    _persist(svc, cid, body.query, result, hit_counts, elapsed_ms)
+    result.meta["message_id"] = _persist(svc, cid, body.query, result, hit_counts, elapsed_ms)
     return result.to_dict()
 
 
@@ -80,10 +80,10 @@ def _hit_counts(structured) -> dict:
     }
 
 
-def _persist(svc, cid, query, result, hit_counts, elapsed_ms) -> None:
-    """落 user + assistant(在结果算出后,失败则不留半截)。assistant 存契约快照供历史/导出。"""
+def _persist(svc, cid, query, result, hit_counts, elapsed_ms) -> str:
+    """落 user + assistant(在结果算出后,失败则不留半截);返 assistant message_id 供 meta/导出。"""
     svc.store.append_message(cid, role="user", content=query)
-    svc.store.append_message(
+    return svc.store.append_message(
         cid, role="assistant", content=_answer_text(result),
         route_type=result.route_type.value, result_json=result.to_dict(),
         hit_counts=hit_counts, elapsed_ms=elapsed_ms, ai_label=result.ai_label,

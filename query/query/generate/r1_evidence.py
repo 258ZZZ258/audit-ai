@@ -106,12 +106,22 @@ def generate_evidence_stream(
         closest = list(fetch_anchors(pg, ids[:_CLOSEST_N]).values())
         yield ("result", refuse_coverage(exhausted_scope, closest))
         return
-    # 2) 真流式答复正文(逐块 yield)
+    # 2) 真流式答复正文:**句段缓冲 + 逐段 sanitize**(红线:裸结论绝不流达客户端——流式中途无法
+    #    回撤,故整段过检再流出;流出的 delta 拼接 == 最终存档答复,流式/存档一致)。
     parts: list[str] = []
+    buf = ""
     for chunk in llm.stream(system, user):
-        parts.append(chunk)
-        yield ("delta", chunk)
-    answer = sanitize_answer("".join(parts)) or _NEUTRAL_ANSWER
+        buf += chunk
+        segments, buf = _split_sentences(buf)
+        for seg in segments:
+            safe = sanitize_answer(seg)
+            parts.append(safe)
+            yield ("delta", safe)
+    if buf.strip():                       # 收尾:未以句末标点结束的残尾
+        safe = sanitize_answer(buf)
+        parts.append(safe)
+        yield ("delta", safe)
+    answer = "".join(parts) or _NEUTRAL_ANSWER
     yield (
         "result",
         QueryResult(
@@ -121,3 +131,18 @@ def generate_evidence_stream(
             confidence=0.7,
         ),
     )
+
+
+#: 句末边界(全角 + 半角,不含 ASCII 句点以免拆小数编号):按句段切,整段过 sanitize 再流出。
+_SENTENCE_END = set("。！？；!?;\n")
+
+
+def _split_sentences(buf: str) -> tuple[list[str], str]:
+    """切出已完成句段(到句末标点)→ ``(完成段列表, 未完成尾)``。未完成尾留缓冲、下一 chunk 续。"""
+    segments: list[str] = []
+    start = 0
+    for i, ch in enumerate(buf):
+        if ch in _SENTENCE_END:
+            segments.append(buf[start:i + 1])
+            start = i + 1
+    return segments, buf[start:]

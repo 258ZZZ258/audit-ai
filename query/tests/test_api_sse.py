@@ -98,6 +98,8 @@ def test_sse_full_sequence_non_evidence():
     done = dict(evs)["done"]
     assert "hit_counts" in done and "elapsed_ms" in done
     assert [a["role"] for a in svc.store.appended] == ["user", "assistant"]   # 落库
+    # F2:done 广告的 message_id == 落库 assistant 的 id(前端可据此 GET/导出)
+    assert svc.store.appended[1]["message_id"] == done["message_id"]
 
 
 def test_sse_evidence_streams_real_deltas(monkeypatch):
@@ -107,7 +109,7 @@ def test_sse_evidence_streams_real_deltas(monkeypatch):
     svc = _svc(RouteType.EVIDENCE, result, _make_structured())
     monkeypatch.setattr(
         sse_mod, "_evidence_stream",
-        lambda s, q, inc: iter([("delta", "甲"), ("delta", "乙"), ("result", result)]),
+        lambda s, q, inc, corpus: iter([("delta", "甲"), ("delta", "乙"), ("result", result)]),
     )
     r = TestClient(create_app(service=svc)).post(
         f"{_PREFIX}/conversations/C1/messages", json={"query": "依据查询"}, headers=_SSE,

@@ -12,13 +12,14 @@ from fastapi import Request
 class QueryService:
     """API 域装配门面。共享一套 retriever/pg(问答 + 结构化装配 + 会话共用)。"""
 
-    def __init__(self, *, agent, pg, store, retriever, qcfg, llm=None) -> None:
+    def __init__(self, *, agent, pg, store, retriever, qcfg, llm=None, merge_llm=None) -> None:
         self.agent = agent
         self.pg = pg
         self.store = store
         self.retriever = retriever
         self.qcfg = qcfg
         self.llm = llm            # 主答 LLM(SSE 真流式 generate_evidence_stream 用)
+        self.merge_llm = merge_llm  # N0 归并客户端(SSE 多轮 parity;None → 规则版离线兜底)
         self.uploads: dict = {}   # upload_id → meta(只存不消费;附件引用校验用,SPEC-API §8.4)
 
     def structured_for(self, query, *, include_superseded=False, corpus=None):
@@ -66,7 +67,7 @@ class QueryService:
         from pipeline.index.pg_io import PgIO
         from query.config import load_query_config
         from query.graph import QueryAgent
-        from query.llm import make_llm_client
+        from query.llm import make_llm_client, maybe_make_llm_client
         from query.observe import make_tracer
         from query.retrieve.hybrid import Retriever
         from query.session.store import SessionStore
@@ -76,9 +77,14 @@ class QueryService:
         tracer = make_tracer(qcfg)
         retriever = Retriever.from_config(qcfg, tracer=tracer)
         llm = make_llm_client(qcfg)
+        # N0 归并客户端(与 QueryAgent._merge_llm 同构):SSE 多轮 parity;stub/无 key → None 规则版
+        merge_llm = maybe_make_llm_client(
+            qcfg.merge_context, qcfg, model=qcfg.merge_model or qcfg.llm_model
+        )
         agent = QueryAgent(retriever, pg, llm, qcfg, tracer=tracer)
         return cls(
-            agent=agent, pg=pg, store=SessionStore(pg), retriever=retriever, qcfg=qcfg, llm=llm,
+            agent=agent, pg=pg, store=SessionStore(pg), retriever=retriever, qcfg=qcfg,
+            llm=llm, merge_llm=merge_llm,
         )
 
 

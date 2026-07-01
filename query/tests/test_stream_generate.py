@@ -46,6 +46,31 @@ def test_stream_deltas_then_result_with_faithful_citations(monkeypatch):
     assert all(t not in answer for t in _BARE)              # 无裸结论
 
 
+class _BareLLM:
+    """chat_json 选 a1;stream 跨 chunk 吐出含裸结论的句子(测句段缓冲过检,F1 critical)。"""
+
+    def chat_json(self, system, user):
+        import re
+
+        ids = re.findall(r"\[\[clause_id:([^\]]+)\]\]", user)
+        return {"answer": "x", "cited_clause_ids": ids[:1]}
+
+    def stream(self, system, user):
+        yield from ["该行为构成", "违", "规。", "依据第三条应当留痕。"]
+
+
+def test_stream_sanitizes_bare_conclusion_across_chunks(monkeypatch):
+    _patch(monkeypatch, {"a1": "第一条 全文"}, {"a1": Citation(clause_id="a1", status="effective")})
+    events = list(generate_evidence_stream("q", [_cand("a1")], pg=None, llm=_BareLLM()))
+    deltas = [d for k, d in events if k == "delta"]
+    for d in deltas:                          # 每个流出的 delta 都无裸结论(句段过 sanitize)
+        assert all(t not in d for t in _BARE)
+    result = events[-1][1]
+    answer = "".join(b.content for b in result.answer_blocks)
+    assert all(t not in answer for t in _BARE)
+    assert "".join(deltas) == answer          # 流出拼接 == 存档答复(一致)
+
+
 def test_stream_no_faithful_citation_refuses_before_streaming(monkeypatch):
     _patch(monkeypatch, {}, {})   # 无 text → 无 blocks → 无引用
     events = list(

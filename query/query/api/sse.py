@@ -30,6 +30,9 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
     try:
         yield _sse("accepted", {"conversation_id": cid, "message_id": mid})
 
+        # N0 多轮归并(与 agent.ask 内部一致):route/structured/检索均用归并后问句,保多轮 parity(F3)
+        query = _merge(svc, query, history)
+
         route = svc.agent.route_only(query)
         yield _sse("route", {
             "route_type": route.value, "review_required": route is RouteType.JUDGMENTAL,
@@ -43,7 +46,7 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
         t0 = time.perf_counter()
         if route is RouteType.EVIDENCE:
             result = None
-            for kind, payload in _evidence_stream(svc, query, include_superseded):
+            for kind, payload in _evidence_stream(svc, query, include_superseded, corpus):
                 if kind == "delta":
                     yield _sse("answer_delta", {"text": payload})
                 else:
@@ -62,7 +65,7 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
             "elapsed_ms": elapsed_ms, "total_hits": sum(hit_counts.values()),
             "hit_counts": hit_counts,
         }
-        _persist(svc, cid, query, result, hit_counts, elapsed_ms)
+        _persist(svc, cid, query, result, hit_counts, elapsed_ms, mid)
 
         yield _sse("done", {
             "message_id": mid, "elapsed_ms": elapsed_ms,
@@ -75,16 +78,26 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
         yield _sse("error", {"error": {"code": "INTERNAL_ERROR", "message": "生成失败"}})
 
 
-def _evidence_stream(svc, query, include_superseded):
-    """evidence 路由:检索 + T10 真流式生成(yield (delta|result, payload))。"""
+def _evidence_stream(svc, query, include_superseded, corpus):
+    """evidence 路由:检索(带 corpus 过滤,与同步 parity F3)+ T10 真流式生成。"""
+    from query.api.service import _filter_corpus
     from query.generate.r1_evidence import generate_evidence_stream
     from query.graph import resolve_scope
     from query.retrieve.hybrid import drop_degraded
     from query.understand.classify import classify
 
-    cands = drop_degraded(svc.retriever.retrieve(query, include_superseded=include_superseded))
+    cands = _filter_corpus(
+        drop_degraded(svc.retriever.retrieve(query, include_superseded=include_superseded)), corpus,
+    )
     scope = resolve_scope(classify(query).matters)
     yield from generate_evidence_stream(query, cands, svc.pg, svc.llm, exhausted_scope=scope)
+
+
+def _merge(svc, query, history):
+    """N0 归并(F3 parity):有 history 时补全指代/省略为自足问句;llm=None → 规则版兜底。"""
+    from query.understand.merge import merge_context
+
+    return merge_context(query, history, llm=getattr(svc, "merge_llm", None))
 
 
 def _hit_counts(structured) -> dict:
@@ -94,10 +107,11 @@ def _hit_counts(structured) -> dict:
     }
 
 
-def _persist(svc, cid, query, result, hit_counts, elapsed_ms) -> None:
+def _persist(svc, cid, query, result, hit_counts, elapsed_ms, mid) -> None:
     svc.store.append_message(cid, role="user", content=query)
+    # assistant 用**广告的 mid** 落库 → accepted/done 的 id 可经 GET messages/export 回查(F2)
     svc.store.append_message(
         cid, role="assistant", content="".join(b.content for b in result.answer_blocks),
         route_type=result.route_type.value, result_json=result.to_dict(),
-        hit_counts=hit_counts, elapsed_ms=elapsed_ms, ai_label=result.ai_label,
+        hit_counts=hit_counts, elapsed_ms=elapsed_ms, ai_label=result.ai_label, message_id=mid,
     )
