@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from query.api import routes_conversations
+from query.api import routes_conversations, routes_messages
 from query.api.errors import install_error_handlers
 
 _API_PREFIX = "/api/query/v1"
@@ -28,6 +28,7 @@ def create_app(service=None) -> FastAPI:
 
     # 业务路由(T5–T11 逐个挂载,前缀 /api/query/v1)
     app.include_router(routes_conversations.router, prefix=_API_PREFIX)
+    app.include_router(routes_messages.router, prefix=_API_PREFIX)
     return app
 
 

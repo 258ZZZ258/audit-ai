@@ -199,11 +199,13 @@ class TabPayload:
     items: list = field(default_factory=list)
     total: int | None = None
 
+    @property
+    def count(self) -> int:
+        """计数(驱动「命中制度(3)」):显式 total 优先,否则 len(items)。"""
+        return self.total if self.total is not None else len(self.items)
+
     def to_dict(self) -> dict:
-        return {
-            "total": self.total if self.total is not None else len(self.items),
-            "items": [i.to_dict() for i in self.items],
-        }
+        return {"total": self.count, "items": [i.to_dict() for i in self.items]}
 
 
 @dataclass

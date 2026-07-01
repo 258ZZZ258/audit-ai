@@ -19,6 +19,25 @@ class QueryService:
         self.retriever = retriever
         self.qcfg = qcfg
 
+    def structured_for(self, query, *, include_superseded=False, corpus=None):
+        """检索 + PG 回查 + 装配 → ``StructuredResult``(四-Tab)。
+
+        与 ``agent.ask`` 各检索一次(PLAN 接受的双检索;确定性 → 同候选)。``corpus`` 限内规/外规。
+        """
+        from query.api.structured import assemble_structured, fetch_pg_context
+        from query.retrieve.hybrid import drop_degraded
+
+        cands = drop_degraded(
+            self.retriever.retrieve(query, include_superseded=include_superseded)
+        )
+        cands = _filter_corpus(cands, corpus)
+        case_cands = (
+            drop_degraded(self.retriever.retrieve_cases(query))
+            if getattr(self.qcfg, "attach_cases", False) else []
+        )
+        chunk_doc, case_rows = fetch_pg_context(self.pg, cands, case_cands)
+        return assemble_structured(cands, case_cands, chunk_doc, case_rows)
+
     @classmethod
     def from_config(cls) -> QueryService:
         """连真栈(生产):惰性建;共享 retriever/pg 给 QueryAgent(不重复建)。"""
@@ -37,6 +56,17 @@ class QueryService:
         retriever = Retriever.from_config(qcfg, tracer=tracer)
         agent = QueryAgent(retriever, pg, make_llm_client(qcfg), qcfg, tracer=tracer)
         return cls(agent=agent, pg=pg, store=SessionStore(pg), retriever=retriever, qcfg=qcfg)
+
+
+_CORPUS_MAP = {"internal": "P-INT", "external": "P-EXT"}
+
+
+def _filter_corpus(cands, corpus):
+    """按 corpus 限定候选(internal→P-INT / external→P-EXT);None → 全留。"""
+    if not corpus:
+        return cands
+    ct = _CORPUS_MAP[corpus]
+    return [c for c in cands if c.corpus_type == ct]
 
 
 def get_service(request: Request) -> QueryService:
