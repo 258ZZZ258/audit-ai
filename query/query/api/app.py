@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from query.api import (
     routes_clauses,
     routes_conversations,
+    routes_export,
     routes_messages,
     routes_misc,
 )
@@ -36,6 +37,7 @@ def create_app(service=None) -> FastAPI:
     app.include_router(routes_messages.router, prefix=_API_PREFIX)
     app.include_router(routes_clauses.router, prefix=_API_PREFIX)
     app.include_router(routes_misc.router, prefix=_API_PREFIX)
+    app.include_router(routes_export.router, prefix=_API_PREFIX)
     return app
 
 
