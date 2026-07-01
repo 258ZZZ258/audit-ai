@@ -73,3 +73,51 @@ def generate_evidence(
         citations=citations,
         confidence=0.7,  # ⚠ Q8 待标定:置信度口径占位(有引用方达此路径)
     )
+
+
+def generate_evidence_stream(
+    query: str, candidates: Sequence, pg, llm, *, exhausted_scope: Sequence[str] = ()
+):
+    """流式 R1(SPEC-API §6.2 / v1.5 §7.2)。**两次调用**(决策已定):
+
+    1. ``chat_json`` 取结构化忠实引用(与同步 ``generate_evidence`` 一致、红线安全);无忠实引用
+       → **流式前**降级覆盖拒答(绝不流出无依据答复)。
+    2. ``llm.stream`` 真流式答复正文。
+
+    产出事件:``("delta", 文本块)`` 重复 → ``("result", QueryResult)`` 收尾。答复正文红线:系统
+    prompt 约束无裸结论(§7.1)+ 最终结果 ``sanitize_answer`` 兜底(流式中途无法回撤,故 prompt 为
+    主防线;最终存档/契约用 sanitize 版)。degraded 候选不进上下文、不作引用(CLAUDE.md 契约)。
+    """
+    clause_cands = [c for c in candidates if not c.degraded]
+    ids = [c.chunk_id for c in clause_cands]
+    texts = fetch_texts(pg, ids)
+    blocks = [
+        {"clause_id": c.chunk_id, "text": texts[c.chunk_id], "clause_path": c.clause_path}
+        for c in clause_cands
+        if texts.get(c.chunk_id)
+    ]
+    system, user = build_citation_prompt(query, blocks)
+    # 1) 结构化引用(红线安全);无忠实引用 → 流式前降级拒答
+    out = llm.chat_json(system, user) if blocks else {"cited_clause_ids": []}
+    cited = select_faithful(out.get("cited_clause_ids", []), [b["clause_id"] for b in blocks])
+    anchors = fetch_anchors(pg, cited)
+    citations: list[Citation] = [anchors[c] for c in cited if c in anchors]
+    if not citations:
+        closest = list(fetch_anchors(pg, ids[:_CLOSEST_N]).values())
+        yield ("result", refuse_coverage(exhausted_scope, closest))
+        return
+    # 2) 真流式答复正文(逐块 yield)
+    parts: list[str] = []
+    for chunk in llm.stream(system, user):
+        parts.append(chunk)
+        yield ("delta", chunk)
+    answer = sanitize_answer("".join(parts)) or _NEUTRAL_ANSWER
+    yield (
+        "result",
+        QueryResult(
+            route_type=RouteType.EVIDENCE,
+            answer_blocks=[AnswerBlock(BlockType.TEXT, answer)],
+            citations=citations,
+            confidence=0.7,
+        ),
+    )

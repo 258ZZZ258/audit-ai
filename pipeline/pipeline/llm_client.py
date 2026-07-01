@@ -71,6 +71,45 @@ class LLMClient:
         except json.JSONDecodeError as e:
             raise LLMError(f"LLM 响应非合法 JSON: {raw[:200]!r}") from e
 
+    def stream(self, system: str, user: str):
+        """流式 chat/completions:逐块 yield answer 文本增量(SSE ``data:`` 行的 ``delta.content``)。
+
+        add-only(不动 chat/chat_json)。真 token 流式(§7.2 首 token<3s);流式中途**不重试**
+        (重试语义复杂),HTTP/连接失败即抛 ``LLMError``。``[DONE]`` 或流结束即止。
+        """
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "stream": True,
+        }
+        try:
+            with httpx.stream(
+                "POST",
+                f"{self._base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json=payload,
+                timeout=self._timeout,
+            ) as resp:
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = obj.get("choices", [{}])[0].get("delta", {}).get("content")
+                    if delta:
+                        yield delta
+        except httpx.HTTPError as e:
+            raise LLMError(f"LLM 流式调用失败: {e}") from e
+
 
 def make_llm_client(model: str | None = None) -> LLMClient:
     """从 env 构造;``OPENAI_API_KEY`` 缺失即抛(LLM 默认关,启用时须经 env 提供 key)。"""
