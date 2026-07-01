@@ -18,6 +18,7 @@ class QueryService:
         self.store = store
         self.retriever = retriever
         self.qcfg = qcfg
+        self.uploads: dict = {}   # upload_id → meta(只存不消费;附件引用校验用,SPEC-API §8.4)
 
     def structured_for(self, query, *, include_superseded=False, corpus=None):
         """检索 + PG 回查 + 装配 → ``StructuredResult``(四-Tab)。

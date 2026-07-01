@@ -10,7 +10,12 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from query.api import routes_clauses, routes_conversations, routes_messages
+from query.api import (
+    routes_clauses,
+    routes_conversations,
+    routes_messages,
+    routes_misc,
+)
 from query.api.errors import install_error_handlers
 
 _API_PREFIX = "/api/query/v1"
@@ -30,6 +35,7 @@ def create_app(service=None) -> FastAPI:
     app.include_router(routes_conversations.router, prefix=_API_PREFIX)
     app.include_router(routes_messages.router, prefix=_API_PREFIX)
     app.include_router(routes_clauses.router, prefix=_API_PREFIX)
+    app.include_router(routes_misc.router, prefix=_API_PREFIX)
     return app
 
 
