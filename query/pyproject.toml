@@ -16,6 +16,8 @@ dependencies = [
     "audit-pipeline",   # 依赖方向:query → pipeline → common
     "langgraph>=1.0",   # 运行时编排(§1.2 状态机);节点纯函数,可换底座(PLAN §2.5-1)
     "typer>=0.9",       # CLI(query ask / query route)
+    "fastapi>=0.115",   # HTTP API(SPEC-API):原生 SSE/multipart/校验(query.api)
+    "uvicorn>=0.30",    # ASGI 服务器(query-api 启动)
 ]
 
 # §9.3 Langfuse 观测(可选):默认 NoopTracer 零网络、不需 langfuse;observe 开 + creds 时按需装。
