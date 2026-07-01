@@ -12,12 +12,13 @@ from fastapi import Request
 class QueryService:
     """API 域装配门面。共享一套 retriever/pg(问答 + 结构化装配 + 会话共用)。"""
 
-    def __init__(self, *, agent, pg, store, retriever, qcfg) -> None:
+    def __init__(self, *, agent, pg, store, retriever, qcfg, llm=None) -> None:
         self.agent = agent
         self.pg = pg
         self.store = store
         self.retriever = retriever
         self.qcfg = qcfg
+        self.llm = llm            # 主答 LLM(SSE 真流式 generate_evidence_stream 用)
         self.uploads: dict = {}   # upload_id → meta(只存不消费;附件引用校验用,SPEC-API §8.4)
 
     def structured_for(self, query, *, include_superseded=False, corpus=None):
@@ -74,8 +75,11 @@ class QueryService:
         pg = PgIO.from_config(load_config())
         tracer = make_tracer(qcfg)
         retriever = Retriever.from_config(qcfg, tracer=tracer)
-        agent = QueryAgent(retriever, pg, make_llm_client(qcfg), qcfg, tracer=tracer)
-        return cls(agent=agent, pg=pg, store=SessionStore(pg), retriever=retriever, qcfg=qcfg)
+        llm = make_llm_client(qcfg)
+        agent = QueryAgent(retriever, pg, llm, qcfg, tracer=tracer)
+        return cls(
+            agent=agent, pg=pg, store=SessionStore(pg), retriever=retriever, qcfg=qcfg, llm=llm,
+        )
 
 
 _CORPUS_MAP = {"internal": "P-INT", "external": "P-EXT"}
