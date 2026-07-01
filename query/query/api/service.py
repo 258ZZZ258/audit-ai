@@ -38,6 +38,25 @@ class QueryService:
         chunk_doc, case_rows = fetch_pg_context(self.pg, cands, case_cands)
         return assemble_structured(cands, case_cands, chunk_doc, case_rows)
 
+    def clause_detail(self, clause_id):
+        """条款回查(SPEC-API §8.3):四级锚点 + 全文 + 节级父块。不存在 → None。
+
+        权威 PG(``anchors``/``chunks.text``,非 Milvus 截断);「查看原文/详细释义/完整定义」都打它。
+        """
+        from common.pg_models import Chunk
+        from query.generate.anchors import fetch_anchors, fetch_parent_text
+
+        cit = fetch_anchors(self.pg, [clause_id]).get(clause_id)
+        if cit is None:
+            return None
+        with self.pg.session() as s:
+            chunk = s.get(Chunk, clause_id)
+            text = chunk.text if chunk is not None else None
+        detail = cit.to_dict()
+        detail["text"] = text
+        detail["parent_text"] = fetch_parent_text(self.pg, clause_id)
+        return detail
+
     @classmethod
     def from_config(cls) -> QueryService:
         """连真栈(生产):惰性建;共享 retriever/pg 给 QueryAgent(不重复建)。"""
