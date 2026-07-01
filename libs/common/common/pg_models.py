@@ -337,6 +337,43 @@ class Case(AuditMixin, Base):
     ref_unresolved: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
+# ── 制度查询智能体会话(功能1,SPEC-API §7;query 自有域)──────────────────────
+# add-only,迁移 0012。**query 只写这两张表**,绝不回写 corpus 权威表(单向只读红线)。
+# 功能2(制度比对)会话另建独立表,不复用本表(SPEC-API §13-6)。
+class QueryConversation(AuditMixin, Base):
+    """制度查询会话。created_at/updated_at 由 AuditMixin 提供(列表按 updated_at 排序)。"""
+
+    __tablename__ = "query_conversations"
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True)  # ULID
+    title: Mapped[str | None] = mapped_column(String(512))  # LLM 概括(默认关→回落首问截断)
+    agent_type: Mapped[str] = mapped_column(
+        String(32), default="institution_query", server_default="institution_query"
+    )  # 恒功能1
+    asker_role: Mapped[str | None] = mapped_column(String(32))  # 提问角色(鉴权上下文)
+    message_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_hit_counts: Mapped[dict | None] = mapped_column(JSONB)  # {regulations,…} 统计卡冗余
+
+
+class QueryMessage(AuditMixin, Base):
+    """会话内一轮消息。``result_json`` = §10+structured 契约快照(历史回看/复制摘要/导出源)。"""
+
+    __tablename__ = "query_messages"
+
+    id: Mapped[str] = mapped_column(String(26), primary_key=True)  # ULID
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("query_conversations.id", ondelete="CASCADE"), index=True
+    )
+    seq: Mapped[int] = mapped_column(Integer)  # 轮内序
+    role: Mapped[str] = mapped_column(String(16))  # user | assistant
+    content: Mapped[str | None] = mapped_column(Text)  # user=问句;assistant=答复摘要
+    route_type: Mapped[str | None] = mapped_column(String(16))  # assistant 带
+    result_json: Mapped[dict | None] = mapped_column(JSONB)  # 完整契约快照
+    hit_counts: Mapped[dict | None] = mapped_column(JSONB)  # 该轮四类计数(统计卡)
+    elapsed_ms: Mapped[int | None] = mapped_column(Integer)
+    ai_label: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+
+
 # ── 未建表(add-only 保留,后续触发式建设;见 SPEC §5 / V0.1 §1.3)──────────────
 # 注:clause_references 表结构已建(见上 ClauseReference);但其填充逻辑 ref_resolver
 #     尚未实现(§6.7,TODO 先不做)——表已就位,resolver 落地时按 §6.7 R1–R4 补写。
