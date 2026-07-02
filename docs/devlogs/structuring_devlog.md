@@ -56,4 +56,13 @@
 - **R3/R4 span 重叠双写**:`《X》第十五条` 里的「第十五条」会被既有 R3 正则也抓(→ R3 unresolved + R4 resolved 双写同一处)。**修**:`run_resolver` 里 R3 候选 span 若落在某 R4 候选 span 内 → 丢弃(跨文档优先)。R1/R2 不与 R4 重叠,无此问题;既有 R1–R3 用例无《》→ xspans 空,行为零回归。
 - **测试唯一后缀**:R4 lookup 不限 corpus 全库查,集成 fixture 的 title/doc_number/alias 须带 ULID 唯一后缀,否则撞库中真实 effective doc → 误判 multiple。
 
+## PR #35(`fix/clause-tree-law-conventions`,条款树补国家法律/司法解释体例)合并(2026-06-30)
+
+- **合并时分支落后 main 10 个提交**,`main` 侧另有 chunk_id 撞车修复(`be7dd64`)与小数混排体例(`836beb7`)同改 `clause_tree.py`。
+  `clause_tree.py` 自动合并无冲突;`test_clause_tree.py` 冲突(两边各在同位置新增一个测试函数)手解,**两条测试都保留**,非二选一。
+- **⚠ 合并前只跑了非栈门,全量模型门控未跑**:因本机 PG/Milvus 栈当时**正被另一并行会话占用**(demo/corpus 批量入库工作),
+  按"绝不在别人占着的栈上并发跑集成"的约定放弃了全量集成门,只跑了 `--collect-only`(824 collected,验证 10 提交合并无 import
+  断裂)+ 条款树/golden(41 passed)+ common(20 passed)+ ruff + CI 的 `lint-and-test`。**全仓模型门控全量门这次没有跑**,欠账,
+  下次拿到干净栈时应补跑一次做确认。
+
 **测试**:`test_ref_resolver.py` +23 用例(extract×8 / align 四态×6 / PgXRefLookup×6 / run_resolver R4×3);全 36 passed;案例侧零回归;`alembic check` 无漂移。

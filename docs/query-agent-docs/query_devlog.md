@@ -544,3 +544,45 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
   **alembic apply/check、所有 `_integration`(含真流式 gateway 门)留合并前全仓门**(并行栈协调,不贸然打共享栈)。
 - **未做 / 留合并门**:match_score 归一窗口标定;附件检索侧消费(下一迭代);真 Casbin 六类权限点 + 操作日志 + AI 页脚落地;真流式
   首 token<3s 验证;theme/关联内规/违规主题 依赖 clause_tags 打标·clause_references·案例 L2(未落即省略)。
+
+## N2+N4 意图识别接 LLM(场景+八路路由,DeepSeek v4)(2026-06-30,分支 `feat/query-intent-llm`,commit `ab4a58f`,**未合并**)
+
+> 背景:业务方给了两份真实业务问句集(`东方/提问方式.docx` 18 条 + `东方/应用场景.docx` 5 条,合 23 条),要求把 N0/N2/N4
+> 的 LLM 接缝真正接上并实测识别正确率(此前 N0 归并接缝已就绪,N2 场景分类 / N4 八路路由此前是纯规则、无 LLM 接缝)。
+
+- **flash vs pro 选型(实测,非拍脑袋)**:定稿 22 问上,规则基线 45.5%(10/22,几乎全是"…吗/合规吗/是否违反要求"判定句被
+  误判 evidence)、**flash 100%(22/22,2.26s)**、pro 95.5%(21/22,3.50s,错 P9 列举→evidence)。上一轮(校对前 23 问)两者
+  打平 87%,但 pro 在明显判定句 P10 上栽了(flash 对)。**结论:N0/N2/N4 全用 `deepseek-v4-flash`;pro 留给主答生成
+  (R1/R5)**——意图本质是分类任务,flash 够、更快。一次 LLM 调用同出 scene+route(避免双往返);matters/entity 仍守规则
+  词典,不让 LLM 乱造 entity_type。
+- **黄金集校对是业务方拍板,非模型算出来的**:`应用场景.docx` 里 S1(上市公司控股子公司 PE 与关联方 PE 监管认定)、
+  S3(并购重组换股辨析)、S4(会计估计变更辨析)三条是专业辨析题,两模型也互有分歧。业务方最终拍板:**S4 舍去不用**
+  (不进 golden);**S1、S3 都定为 `evidence`(R1)**(判定型 judgmental 与拒答 refuse 都被排除)——与作者初稿一致但是
+  业务方明确认可后才定稿,不是从正确率数字推出来的。
+- **非显然踩坑:`temperature=0` 不能让推理模型确定性稳定**。给共享 `pipeline.llm_client` 加 add-only `temperature`
+  参数并给意图/归并客户端钉 0 后,重跑两次仍有差异(flash run1 21/22、run2 20/22;pro 两轮各错不同题)。原因:
+  `deepseek-v4-flash/pro` 是**推理模型**,每次都带 `reasoning_tokens`,思维链本身是采样出来的(叠加 MoE 路由/批处理抖动),
+  `temperature=0` 只压掉一部分方差。**残留抖动只落在 3 个本就边界的题(S1/S3/P9),其余 19/22 明确项跨轮完全稳定**。
+  要彻底消抖需要「多数票」(多次调用取众数),**评估过但未做**,记为后续。
+- **待续 / open**:
+  - `feat/query-intent-llm`(commit `ab4a58f`)是**独立分支,未合并**——它是在 `fix/clause-tree-law-conventions`(条款树/
+    解析线)工作期间并行做的,业务方明确"不管另一分支",两条线互不影响,合并时机待业务方后续指示。
+  - 多数票消抖机制未实现。
+  - 模型门控回归测试 `test_intent_integration.py` 本地真 gateway 验证过(12 个稳定明确项全对),但**尚未过 Codex 复审**。
+
+## audit-biz 边界契约:query 侧待改动发现(2026-07-01,来自姊妹仓 audit-biz Track0 SPEC-BOUNDARY)
+
+> 姊妹仓 audit-biz(Java,新建于 `~/Projects/audit-biz`,承接 v0.4 后端设计的对外服务)起草 v0.4 §8 边界契约(biz↔audit-ai
+> REST/SSE)时读了本仓 `query/query/contract.py` 以对齐 §10 输出契约,过程中发现一处**架构张力**,记于此供 Track B 排期时用。
+
+- **发现**:`contract.py` 现 `Citation` 是 audit-ai **自己回查 PG 装配满**(`doc_title`/`doc_no`/`clause_path`/`page_start`/
+  `page_end`/`version`/`status` 全填,MVP 阶段 audit-ai 即自身"后端");但 v0.4 §8.2 定 audit-ai 应**无状态**,边界只回轻量
+  `clause_id`/`chunk_id`,完整回查装配移到 biz 侧(Java 收口)。这是 v0.4 设计**已定**的约束,不是重开讨论——只是这次落地
+  contract-first SPEC 时才显式碰到,此前 MVP 实装未对齐。
+- **待办(Track B / Task B3,尚未实装)**:给 `Citation` 加"轻量引用模式"(只出 `clause_id`/`chunk_id`,完整字段可选/可关),
+  配合起 FastAPI 包裹现有 `query`/`pipeline` 域函数暴露 `/retrieve`(+`/generate`,其余 `/compare`/`/ocr`/`/ingest-batch` 后续)。
+  本会话只在 audit-biz 侧完成了字段对照表(Checkpoint A 已冻结,三列:`contract.py` 产出 → 边界 v1 → biz 装配后),本仓
+  代码**未改动**。
+- **顺带核实(现状,非新决策)**:`query/` 已有前端向 HTTP/API 层(阶段 B-API `query/query/api/*`,PR #39 合并),但**尚无 v0.4 §8 的 biz↔ai 边界端点**(`/retrieve`、`/generate`);`understand/router.py` 是语义路由,非 web 路由;
+  `route_type`(8 值)/`review_required`/`exhausted_scope` 均已在 `contract.py` 就位,边界可直接复用无需新增字段;Langfuse
+  trace 现按内部 name 建、未接外部 `request_id`——biz 若要关联 trace,只需在边界调用时注入 `request_id`,不需 query 侧改动。
