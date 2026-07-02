@@ -74,6 +74,14 @@ def test_extract_cited_normalizes_items():
     assert case_l2.extract_cited(FakeClient({"cited": cited}), "t") == cited
 
 
+def test_extract_cited_strips_book_title_marks():
+    """契约 title=「书名号内原文」;LLM 偶带首尾《》→ 剥除,保 PgRegLookup 标题精确匹配鲁棒。"""
+    cited = [{"title": "《上市公司信息披露管理办法》", "doc_number": None, "clause": "第十五条"}]
+    assert case_l2.extract_cited(FakeClient({"cited": cited}), "t") == [
+        {"title": "上市公司信息披露管理办法", "doc_number": None, "clause": "第十五条"}
+    ]
+
+
 def test_extract_cited_drops_items_without_anchor():
     client = FakeClient({
         "cited": [
