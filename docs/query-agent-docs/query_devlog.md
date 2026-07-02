@@ -586,3 +586,29 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
 - **顺带核实(现状,非新决策)**:`query/` 已有前端向 HTTP/API 层(阶段 B-API `query/query/api/*`,PR #39 合并),但**尚无 v0.4 §8 的 biz↔ai 边界端点**(`/retrieve`、`/generate`);`understand/router.py` 是语义路由,非 web 路由;
   `route_type`(8 值)/`review_required`/`exhausted_scope` 均已在 `contract.py` 就位,边界可直接复用无需新增字段;Langfuse
   trace 现按内部 name 建、未接外部 `request_id`——biz 若要关联 trace,只需在边界调用时注入 `request_id`,不需 query 侧改动。
+
+## audit-biz 边界契约 Track B: `/v1/query` 薄壳落地(2026-07-02)
+
+> 来源:`.review/findings.json` 的 `boundary.contract.query-api-drift` + audit-biz 主本
+> `docs/audit-biz-docs/openapi/boundary.v1.yaml` v1.1.0 / `BOUNDARY-RECONCILIATION-001.md` §3。
+
+- **实现边界**:保留既有前端向 `/api/query/v1/*` 会话式 API,新增独立 `POST /v1/query`
+  (`query/query/api/routes_boundary.py`)供 Java `audit-biz` 调用。该端点只做服务间 `X-Internal-Token`
+  校验(env `AUDIT_AI_INTERNAL_TOKEN`)、请求模型校验、检索 scope 注入、`QueryResult`→SSE 五事件
+  `meta/delta/citation/done/error` 映射;**不复用 `auth.py` 主体、不落 `query_*` 会话、不提供 `/clauses`
+  PG 回查、不导出**。
+- **轻量引用**:边界 `citation` 只出 `{clause_id, chunk_id, score}`;不透出 `doc_title/doc_no/page/version/status`
+  等回查字段,由 biz 按 `clause_id` 回查 PG 装配。`score` 用当前检索候选分做 min-max 归一(best effort);
+  非检索路径缺分可为 `null`,符合 boundary v1.1.0 nullable 约定。
+- **前置过滤接缝**:`Retriever.scoped(...)` 用 `contextvars` 给当前请求内所有 `retrieve*` 注入
+  `corpora/topk/extra_expr`,并传到 `MilvusIO.search(corpus=..., extra_expr=...)`;默认无 scope 时保持原
+  P-INT/P-EXT 行为 byte 等价。`perm_tags` 构 `array_contains_any(perm_tag, [...])`;`corpus_types`
+  映射 internal/external/qa/case/audit_project → P-INT/P-EXT/P-QA/P-CASE/audit_project。
+- **audit_project 限制(诚实处理)**:本仓 v1.6 Milvus schema **没有 `project_id`/`owner` 字段**,
+  file-processing GAP 已标 `audit_project(project_id)` 交接《审计报告智能化》。因此 `/v1/query` 对制度语料
+  按契约忽略 `owner`;若请求 `audit_project` 且带 `project_id/owner`,先 422 拒绝,避免静默放宽为未隔离检索
+  或做检索后过滤(红线)。完整支持需后续 add-only schema + 摄取字段链路。
+- **trace**:`QueryAgent.ask(..., trace_id=request_id)` 把边界 `request_id` 放入 trace id 字段与 metadata;
+  NoopTracer 默认零网络不受影响。
+- **验证**:`test_api_boundary.py` 覆盖 B104、SSE 五事件、轻量 citation、score、filters scope、owner 不入制度语料、
+  audit_project schema 未接入拒绝;`test_observe`/`test_api_sse`/`test_api_ask`/`test_graph` 回归通过。

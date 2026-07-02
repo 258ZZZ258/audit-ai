@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from query.api import (
+    routes_boundary,
     routes_clauses,
     routes_conversations,
     routes_export,
@@ -38,6 +39,8 @@ def create_app(service=None) -> FastAPI:
     app.include_router(routes_clauses.router, prefix=_API_PREFIX)
     app.include_router(routes_misc.router, prefix=_API_PREFIX)
     app.include_router(routes_export.router, prefix=_API_PREFIX)
+    # audit-biz 边界二:无状态 /v1/query,独立于前端向 /api/query/v1/*。
+    app.include_router(routes_boundary.router)
     return app
 
 

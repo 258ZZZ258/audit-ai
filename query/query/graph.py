@@ -225,24 +225,29 @@ class QueryAgent:
             g.add_edge(n, END)
         return g.compile()
 
-    def ask(self, query: str, history: list[dict] | None = None) -> QueryResult:
+    def ask(
+        self, query: str, history: list[dict] | None = None, *, trace_id: str | None = None
+    ) -> QueryResult:
         """端到端问答。``history``(多轮对话,N0 归并用)缺省单轮(空 → N0 no-op,byte 等价)。
 
         §9.3:包一条 trace —— ask 开 trace(set contextvar),Retriever 的 HyDE/子查询 event 挂同一条;
         output = result 摘要(计数+标志,可回放本次输出)、metadata = 归并句/scene/route_type。
         tracer 只读旁路,observe 关 → Noop 零开销。
         """
-        with self._tracer.trace("query", input=query) as span:
+        trace_fields = {"input": query}
+        if trace_id:
+            trace_fields["id"] = trace_id
+        with self._tracer.trace("query", **trace_fields) as span:
             final = self._app.invoke(QueryState(query=query, history=history or []))
             result = final["result"]
-            span.update(
-                output=_result_summary(result),
-                metadata={
-                    "merged_query": final.get("query"),
-                    "scene": final.get("scene"),
-                    "route_type": final.get("route_type"),
-                },
-            )
+            metadata = {
+                "merged_query": final.get("query"),
+                "scene": final.get("scene"),
+                "route_type": final.get("route_type"),
+            }
+            if trace_id:
+                metadata["request_id"] = trace_id
+            span.update(output=_result_summary(result), metadata=metadata)
             return result
 
     def route_only(self, query: str) -> RouteType:
