@@ -148,6 +148,40 @@ def test_sse_emits_error_event_on_failure():
                for a in svc.store.appended)
 
 
+def test_sse_user_persisted_even_on_early_failure():
+    # F8:被 accepted 的 user 原问在 accepted 前先落 → 即便随后早失败,问题不丢
+    svc = _svc(RouteType.CHANGE, _make_result(), _make_structured())
+
+    def boom(_q):
+        raise RuntimeError("route 阶段失败")
+
+    svc.agent.route_only = boom
+    r = TestClient(create_app(service=svc)).post(
+        f"{_PREFIX}/conversations/C1/messages", json={"query": "早失败问句"}, headers=_SSE,
+    )
+    assert any(k == "error" for k, _ in _parse_sse(r.text))
+    assert any(a["role"] == "user" and a["content"] == "早失败问句" for a in svc.store.appended)
+
+
+def test_evidence_stream_sufficiency_gate_refuses(monkeypatch):
+    # F9:充分性闸(与同步一致)—— min_hits 不足 → 覆盖拒答,不流出 evidence 答复
+    import query.retrieve.sufficiency as suff_mod
+    from query.api.sse import _evidence_stream
+
+    monkeypatch.setattr(
+        suff_mod, "assess",
+        lambda cands, matters, min_hits=1: SimpleNamespace(sufficient=False),
+    )
+    svc = SimpleNamespace(
+        retriever=SimpleNamespace(retrieve=lambda q, include_superseded=False: []),
+        pg=None, llm=None,
+        qcfg=SimpleNamespace(sufficiency_min_hits=2, attach_cases=True),
+    )
+    events = list(_evidence_stream(svc, "费用报销规定", False, None))
+    assert [k for k, _ in events] == ["result"]        # 无 delta,直接拒答
+    assert events[0][1].route_type is RouteType.REFUSE
+
+
 def test_sse_persists_raw_query_and_no_double_merge(monkeypatch):
     import query.api.sse as sse_mod
 

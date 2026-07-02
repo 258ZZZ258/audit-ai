@@ -29,6 +29,8 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
     mid = str(ULID())
     raw_query = query   # 用户原问:落库存它(F5:history/审计看原问,非内部展开句)
     try:
+        # F8:先落 user 原问(在 accepted 之前)——即使随后断连/关流,被 accepted 的问题也不丢
+        svc.store.append_message(cid, role="user", content=raw_query)
         yield _sse("accepted", {"conversation_id": cid, "message_id": mid})
 
         # N0 多轮归并(与 agent.ask 内部一致):route/structured/检索用归并句(多轮 parity,F3)
@@ -67,7 +69,7 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
             "elapsed_ms": elapsed_ms, "total_hits": sum(hit_counts.values()),
             "hit_counts": hit_counts,
         }
-        _persist(svc, cid, raw_query, result, hit_counts, elapsed_ms, mid)   # 存原问(F5)
+        _append_assistant(svc, cid, result, hit_counts, elapsed_ms, mid)   # user 已落,仅补答复
 
         yield _sse("done", {
             "message_id": mid, "elapsed_ms": elapsed_ms,
@@ -77,24 +79,52 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
             "export_enabled": result.export_enabled,
         })
     except Exception:
-        # §9 推进可靠性:失败不静默 + 落失败态(history/审计可见);best-effort(F6)
-        _persist_failure(svc, cid, raw_query, mid)
+        # §9 推进可靠性:失败不静默 + 落失败态(user 已落,仅补失败 assistant);best-effort(F6)
+        _append_failed(svc, cid, mid)
         yield _sse("error", {"error": {"code": "INTERNAL_ERROR", "message": "生成失败"}})
 
 
 def _evidence_stream(svc, query, include_superseded, corpus):
-    """evidence 路由:检索(带 corpus 过滤,与同步 parity F3)+ T10 真流式生成。"""
+    """evidence SSE:**对齐同步 graph._evidence**(One-Version parity,F3/F9)——
+
+    corpus 过滤 → **充分性闸**(``assess(min_hits)`` 不足则覆盖拒答,不流出)→ T10 真流式生成 →
+    **案例附挂**(``_maybe_attach_cases`` 同款:开关 + evidence + 非概念判断型)。产出 (delta|result)。
+    """
     from query.api.service import _filter_corpus
-    from query.generate.r1_evidence import generate_evidence_stream
+    from query.case.r3_case import attach_cases
+    from query.generate.anchors import fetch_anchors
+    from query.generate.r1_evidence import _CLOSEST_N, generate_evidence_stream
     from query.graph import resolve_scope
+    from query.refuse.coverage_refusal import refuse_coverage
     from query.retrieve.hybrid import drop_degraded
-    from query.understand.classify import classify
+    from query.retrieve.sufficiency import assess
+    from query.understand.classify import SceneType, classify
 
     cands = _filter_corpus(
         drop_degraded(svc.retriever.retrieve(query, include_superseded=include_superseded)), corpus,
     )
-    scope = resolve_scope(classify(query).matters)
-    yield from generate_evidence_stream(query, cands, svc.pg, svc.llm, exhausted_scope=scope)
+    scene = classify(query)
+    scope = resolve_scope(scene.matters)
+    # 充分性闸(与同步一致):不足 → 覆盖拒答(附最接近 N 条),绝不流出无覆盖答复
+    if not assess(cands, scene.matters, min_hits=svc.qcfg.sufficiency_min_hits).sufficient:
+        closest = list(fetch_anchors(svc.pg, [c.chunk_id for c in cands][:_CLOSEST_N]).values())
+        yield ("result", refuse_coverage(scope, closest))
+        return
+    # 充分 → 真流式;delta 照流,终态 result 捕获后再附挂案例
+    result = None
+    for kind, payload in generate_evidence_stream(
+        query, cands, svc.pg, svc.llm, exhausted_scope=scope
+    ):
+        if kind == "delta":
+            yield ("delta", payload)
+        else:
+            result = payload
+    # 案例附挂(与 _maybe_attach_cases 同款:开关 + evidence + 非概念判断型)
+    if (result is not None and svc.qcfg.attach_cases
+            and result.route_type is RouteType.EVIDENCE
+            and scene.scene_type is not SceneType.DEFINITION):
+        result = attach_cases(result, query, result.citations, svc.retriever, svc.pg, svc.qcfg)
+    yield ("result", result)
 
 
 def _merge(svc, query, history):
@@ -111,10 +141,9 @@ def _hit_counts(structured) -> dict:
     }
 
 
-def _persist_failure(svc, cid, raw_query, mid) -> None:
-    """§9:SSE 失败落失败态快照(user 原问 + assistant route_type=failed);best-effort 吞异常。"""
+def _append_failed(svc, cid, mid) -> None:
+    """§9:SSE 失败仅补失败态 assistant(user 已在 accepted 前落);best-effort 吞异常(F6/F8)。"""
     try:
-        svc.store.append_message(cid, role="user", content=raw_query)
         svc.store.append_message(
             cid, role="assistant", content="(生成失败)", route_type="failed",
             ai_label=True, message_id=mid,
@@ -123,9 +152,8 @@ def _persist_failure(svc, cid, raw_query, mid) -> None:
         pass   # 落库失败不掩盖原 error 事件
 
 
-def _persist(svc, cid, query, result, hit_counts, elapsed_ms, mid) -> None:
-    svc.store.append_message(cid, role="user", content=query)
-    # assistant 用**广告的 mid** 落库 → accepted/done 的 id 可经 GET messages/export 回查(F2)
+def _append_assistant(svc, cid, result, hit_counts, elapsed_ms, mid) -> None:
+    """仅补 assistant(user 已在 accepted 前落,F8)。用**广告的 mid** → GET/导出可回查(F2)。"""
     svc.store.append_message(
         cid, role="assistant", content="".join(b.content for b in result.answer_blocks),
         route_type=result.route_type.value, result_json=result.to_dict(),
