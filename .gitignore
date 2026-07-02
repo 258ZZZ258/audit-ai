@@ -29,7 +29,9 @@ _web_uploads/
 /lo_resave/
 /.understand-anything/
 
-# AGENTS.md 已入库(Codex 指令,团队共享;见 CLAUDE.md 开发协作流程)。
+# CLAUDE.md / AGENTS.md 改本地私有,不入库(2026-07-02 决策;原团队共享 → git rm --cached 停跟踪,保留本地副本)
+CLAUDE.md
+AGENTS.md
 # 用户意留未跟踪(不入库):cursor 本地设置 / Office 临时锁文件
 /.cursor/settings.json
 ~$*
