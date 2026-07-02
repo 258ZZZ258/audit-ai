@@ -67,6 +67,15 @@ class QueryConfig(BaseModel):
     scenario_expand: bool = False  # ⚠ §5.4 dict 扩 sparse 命中面;QUERY_SCENARIO_EXPAND 覆盖
     scenario_expand_factor: float = 1.0  # ⚠ V0 法言词扩展系数
     scenario_terms_path: str = DEFAULT_SCENARIO_TERMS  # QUERY_SCENARIO_TERMS_PATH 覆盖
+    # SPEC-API §8:首页推荐问题(config 驱动,settings.toml [query].suggestions 可覆盖;非硬编码)。
+    suggestions: list[str] = [
+        "客户适当性管理的监管要求有哪些?",
+        "持续管理的留痕要求是什么?",
+        "相关监管处罚案例有哪些?",
+        "投诉处置制度依据有哪些?",
+    ]
+    upload_dir: str | None = None  # ⚠ 附件上传目录;None → 系统临时目录/audit-query-uploads
+    max_upload_bytes: int = 50 * 1024 * 1024  # ⚠ 上传大小上限(50MB,SPEC-API §8.4)
 
 
 def _apply_env(raw: dict) -> None:
