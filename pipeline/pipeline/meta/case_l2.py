@@ -81,7 +81,10 @@ def _coerce_item(item: object) -> dict | None:
     if not isinstance(item, dict):
         return None
     title = item.get("title")
-    title = title.strip() if isinstance(title, str) and title.strip() else None
+    # 契约:title=「书名号内原文」;LLM 偶带首尾《》→ 剥除,保标题精确匹配鲁棒(PgRegLookup 标题兜底)
+    if isinstance(title, str):
+        title = title.strip().strip("《》").strip()
+    title = title if isinstance(title, str) and title else None
     doc_number = item.get("doc_number")
     doc_number = doc_number.strip() if isinstance(doc_number, str) and doc_number.strip() else None
     if title is None and doc_number is None:
