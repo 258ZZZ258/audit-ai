@@ -120,6 +120,24 @@ def test_sse_evidence_streams_real_deltas(monkeypatch):
     assert [k for k, _ in evs][-1] == "done"
 
 
+def test_sse_evidence_result_only_refusal_emits_delta(monkeypatch):
+    # F10:evidence 路由流式前拒答(result-only,无 delta)→ 补发拒答正文到流,客户端不空
+    import query.api.sse as sse_mod
+
+    refuse = _make_result(RouteType.REFUSE, answer="未检索到明确禁止性规定",
+                          citations=[], exhausted_scope=["投顾业务"])
+    svc = _svc(RouteType.EVIDENCE, refuse, _make_structured())
+    monkeypatch.setattr(sse_mod, "_evidence_stream", lambda s, q, i, c: iter([("result", refuse)]))
+    r = TestClient(create_app(service=svc)).post(
+        f"{_PREFIX}/conversations/C1/messages", json={"query": "二维码开户违规吗"}, headers=_SSE,
+    )
+    evs = _parse_sse(r.text)
+    deltas = "".join(d["text"] for k, d in evs if k == "answer_delta")
+    assert "未检索到明确禁止性规定" in deltas          # 拒答正文补发到流
+    assert [k for k, _ in evs][-1] == "done"
+    assert dict(evs)["done"]["exhausted_scope"] == ["投顾业务"]
+
+
 def test_sse_refuse_route_carries_exhausted_scope():
     refuse = _make_result(RouteType.REFUSE, answer="未检索到明确禁止性规定",
                           citations=[], exhausted_scope=["投顾业务"])

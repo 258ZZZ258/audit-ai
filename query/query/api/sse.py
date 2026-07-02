@@ -49,11 +49,17 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
         t0 = time.perf_counter()
         if route is RouteType.EVIDENCE:
             result = None
+            streamed = False
             for kind, payload in _evidence_stream(svc, query, include_superseded, corpus):
                 if kind == "delta":
+                    streamed = True
                     yield _sse("answer_delta", {"text": payload})
                 else:
                     result = payload
+            # F10:result-only(覆盖拒答:充分性闸/无忠实引用,流式前决定)→ 补发答复正文,客户端不空
+            if not streamed and result is not None:
+                for block in result.answer_blocks:
+                    yield _sse("answer_delta", {"text": block.content})
         else:
             # 已归并 → 传空 history 避免 agent 二次归并(F5;query 已自足)
             result = svc.agent.ask(query, history=[])
