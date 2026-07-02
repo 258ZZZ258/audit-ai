@@ -42,7 +42,8 @@ def main() -> None:
             for r in s.execute(
                 text(
                     "select doc_version_id from doc_versions "
-                    "where pipeline_status in ('STRUCTURING','QC_PENDING','PARSING','EMBEDDING','INDEXING')"
+                    "where pipeline_status in "
+                    "('STRUCTURING','QC_PENDING','PARSING','EMBEDDING','INDEXING')"
                 )
             )
         ]

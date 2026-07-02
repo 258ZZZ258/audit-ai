@@ -122,7 +122,7 @@ def _safe_e2(ctx: StageContext, dvid: str) -> None:
     """
     try:
         e2_tag.run_e2(ctx, dvid)
-    except Exception as e:  # noqa: BLE001 E2(含 LLMError / 网络失败)不阻断管线
+    except Exception as e:  # noqa: BLE001 — E2(含 LLMError / 网络失败)不阻断管线
         logger.warning("E2 条款级打标(%s)失败(不阻断):%s", dvid, e)
 
 
