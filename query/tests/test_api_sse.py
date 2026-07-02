@@ -142,3 +142,31 @@ def test_sse_emits_error_event_on_failure():
         f"{_PREFIX}/conversations/C1/messages", json={"query": "q"}, headers=_SSE,
     )
     assert any(k == "error" for k, _ in _parse_sse(r.text))
+    # F6:失败态落库(user + assistant route_type=failed),供 history/审计
+    assert any(a["role"] == "user" for a in svc.store.appended)
+    assert any(a["role"] == "assistant" and a.get("route_type") == "failed"
+               for a in svc.store.appended)
+
+
+def test_sse_persists_raw_query_and_no_double_merge(monkeypatch):
+    import query.api.sse as sse_mod
+
+    result = _make_result(RouteType.CHANGE)
+    svc = _svc(RouteType.CHANGE, result, _make_structured())
+    calls = {}
+
+    def _ask(q, history=None):
+        calls["q"] = q
+        calls["history"] = history
+        return result
+
+    svc.agent.ask = _ask
+    monkeypatch.setattr(sse_mod, "_merge", lambda s, q, h: "MERGED-自足问句")
+    TestClient(create_app(service=svc)).post(
+        f"{_PREFIX}/conversations/C1/messages", json={"query": "它的留痕要求?"}, headers=_SSE,
+    )
+    # F5:非 evidence 路由 ask 收归并句 + **空 history**(不二次归并)
+    assert calls["q"] == "MERGED-自足问句" and calls["history"] == []
+    # F5:落库 user 存**原问**(非归并展开句)
+    assert svc.store.appended[0]["role"] == "user"
+    assert svc.store.appended[0]["content"] == "它的留痕要求?"

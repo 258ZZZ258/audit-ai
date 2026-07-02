@@ -56,3 +56,10 @@ def test_upload_generic_ct_bad_magic_rejected_415(tmp_path):
     files = {"file": ("malware.pdf", b"MZ\x90\x00 not a pdf", "application/octet-stream")}
     r = c.post(f"{_PREFIX}/uploads", files=files)
     assert r.status_code == 415 and r.json()["error"]["code"] == "UNSUPPORTED_MEDIA_TYPE"
+
+
+def test_upload_declared_pdf_bad_magic_rejected_415(tmp_path):
+    # F7:声明 application/pdf(客户端可控)但字节非 %PDF → 也按魔数拒(所有路径校验)
+    c, _ = _client(tmp_path)
+    files = {"file": ("x.pdf", b"totally not a pdf", "application/pdf")}
+    assert c.post(f"{_PREFIX}/uploads", files=files).status_code == 415

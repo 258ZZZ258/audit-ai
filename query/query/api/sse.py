@@ -27,11 +27,12 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
     from ulid import ULID
 
     mid = str(ULID())
+    raw_query = query   # 用户原问:落库存它(F5:history/审计看原问,非内部展开句)
     try:
         yield _sse("accepted", {"conversation_id": cid, "message_id": mid})
 
-        # N0 多轮归并(与 agent.ask 内部一致):route/structured/检索均用归并后问句,保多轮 parity(F3)
-        query = _merge(svc, query, history)
+        # N0 多轮归并(与 agent.ask 内部一致):route/structured/检索用归并句(多轮 parity,F3)
+        query = _merge(svc, raw_query, history)
 
         route = svc.agent.route_only(query)
         yield _sse("route", {
@@ -52,7 +53,8 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
                 else:
                     result = payload
         else:
-            result = svc.agent.ask(query, history=history)
+            # 已归并 → 传空 history 避免 agent 二次归并(F5;query 已自足)
+            result = svc.agent.ask(query, history=[])
             for block in result.answer_blocks:
                 yield _sse("answer_delta", {"text": block.content})
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
@@ -65,7 +67,7 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
             "elapsed_ms": elapsed_ms, "total_hits": sum(hit_counts.values()),
             "hit_counts": hit_counts,
         }
-        _persist(svc, cid, query, result, hit_counts, elapsed_ms, mid)
+        _persist(svc, cid, raw_query, result, hit_counts, elapsed_ms, mid)   # 存原问(F5)
 
         yield _sse("done", {
             "message_id": mid, "elapsed_ms": elapsed_ms,
@@ -75,6 +77,8 @@ def stream_ask(svc, cid, query, history, *, include_superseded=False, corpus=Non
             "export_enabled": result.export_enabled,
         })
     except Exception:
+        # §9 推进可靠性:失败不静默 + 落失败态(history/审计可见);best-effort(F6)
+        _persist_failure(svc, cid, raw_query, mid)
         yield _sse("error", {"error": {"code": "INTERNAL_ERROR", "message": "生成失败"}})
 
 
@@ -105,6 +109,18 @@ def _hit_counts(structured) -> dict:
         "regulations": structured.regulations.count, "clauses": structured.clauses.count,
         "regulatory_rules": structured.regulatory_rules.count, "cases": structured.cases.count,
     }
+
+
+def _persist_failure(svc, cid, raw_query, mid) -> None:
+    """§9:SSE 失败落失败态快照(user 原问 + assistant route_type=failed);best-effort 吞异常。"""
+    try:
+        svc.store.append_message(cid, role="user", content=raw_query)
+        svc.store.append_message(
+            cid, role="assistant", content="(生成失败)", route_type="failed",
+            ai_label=True, message_id=mid,
+        )
+    except Exception:
+        pass   # 落库失败不掩盖原 error 事件
 
 
 def _persist(svc, cid, query, result, hit_counts, elapsed_ms, mid) -> None:

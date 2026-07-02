@@ -73,10 +73,10 @@ def _check_declared_type(file: UploadFile) -> None:
 
 
 def _verify_content(file: UploadFile, data: bytes) -> None:
-    """通用 content-type 时**必须魔数匹配**(防 malware.pdf + octet-stream 绕过白名单)。"""
-    ct = (file.content_type or "").lower()
-    if ct in _ALLOWED_CT:
-        return   # 声明为白名单类型 → 信任
+    """**所有路径按魔数校验**(F7:content-type 客户端可控,声明白名单类型也不单信)。
+
+    5 类允许格式魔数齐全:PDF=%PDF、docx/xlsx=OOXML zip、旧 doc/xls=OLE2。真文件必匹配其一。
+    """
     if not any(data.startswith(m) for m in _MAGIC):
         raise unsupported_media("文件内容与类型不符(魔数校验失败)")
 
