@@ -101,6 +101,22 @@ class StructuredResult:
 | `clause_excerpt` | str | 条款内容(节选) | `chunks.text` 截断 ✅ |
 | `version` / `status` | str? | (版本/状态角标) | `doc_versions.issue_date` / `version_status` ✅ |
 
+真实知识库字段叠加(公司制度库模块,add-only):
+
+| JSON 字段 | 中文列 | 来源 |
+|---|---|---|
+| `file_name` | 文件名称 | `doc_versions.title` |
+| `document_number` | 文号 | `doc_versions.doc_number` |
+| `issuing_department` | 发文部门 | `doc_versions.issuer` |
+| `validity_level` | 效力层级 | `doc_versions.sub_type` |
+| `validity_status` | 效力状态 | `doc_versions.version_status` |
+| `business_category` | 业务类别 | `doc_versions.biz_domains` / `biz_domain` |
+| `file_number` | 文件编号 | 当前无权威来源,为空 |
+| `creator` | 创建人 | `doc_versions.created_by` |
+| `compliance_review_record` | 合规审查记录 | 当前无权威来源,为空 |
+| `tags` | 标签 | 业务类别 + `chunks.entity_type` |
+| `display_fields` | 固定中文列视图 | 以上字段按中文列名展开,空值保留 |
+
 ### 4.2 `ClauseHit`(命中条款)
 
 | JSON 字段 | 类型 | 原型列 | 来源 |
@@ -128,6 +144,20 @@ class StructuredResult:
 | `related_internal` | list[str] | 关联内部制度 | `clause_references` 指代表反查 ⚠(Q5 空表 TODO) |
 | `theme` | str? | 适用主题 | `clause_tags` ⚠ |
 
+真实知识库字段叠加(法律法规模块,add-only):
+
+| JSON 字段 | 中文列 | 来源 |
+|---|---|---|
+| `file_name` | 文件名称 | `doc_versions.title` |
+| `document_number` | 文号 | `doc_versions.doc_number` |
+| `issuing_unit` | 发文单位 | `doc_versions.issuer` |
+| `issue_date` | 发文日期 | `doc_versions.issue_date` |
+| `validity_status` | 效力状态 | `doc_versions.version_status` |
+| `legal_hierarchy` | 法律位阶 | `doc_versions.sub_type` |
+| `tags` | 标签 | 业务类别 + `chunks.entity_type` |
+| `applicable_objects` | 适用对象 | `chunks.entity_type` |
+| `display_fields` | 固定中文列视图 | 以上字段按中文列名展开,空值保留 |
+
 ### 4.4 `CaseHit`(相关案例)
 
 | JSON 字段 | 类型 | 原型列 | 来源 |
@@ -143,6 +173,18 @@ class StructuredResult:
 | `insight` | str? | 启示要点 | LLM 提炼(开关)/ 占位 ⚠ |
 
 > **红线**:案例要素**逐字来自 PG `cases`/`doc_versions`**,复用 `case/case_card.py::CaseCard`;L2/LLM 字段缺失时**省略、零臆造**(与既有 `CaseCard.to_content` 一致)。`core_issue`/`insight` 若未开 LLM 提炼 → 缺省 `null`,前端隐藏该列,**不硬凑**。
+
+真实知识库字段叠加(行业案例模块,add-only):
+
+| JSON 字段 | 中文列 | 来源 |
+|---|---|---|
+| `case_name` | 案例名称 | `doc_versions.title` |
+| `document_number` | 文号 | `cases.doc_number` / `doc_versions.doc_number` |
+| `issuing_unit` | 发文单位 | `cases.penalty_org` / `doc_versions.issuer` |
+| `issue_date` | 发文日期 | `doc_versions.issue_date` / `cases.penalty_date` |
+| `case_type` | 案例类型 | `cases.violation_category` |
+| `tags` | 标签 | `violation_category` + `penalty_type` + `respondent_type` |
+| `display_fields` | 固定中文列视图 | 以上字段按中文列名展开,空值保留 |
 
 ### 4.5 `DigestCard`(监管要求提炼 / 案例启示摘要卡片)
 

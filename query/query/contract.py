@@ -82,7 +82,11 @@ def _compact(**kv) -> dict:
 
 @dataclass
 class RegulationHit:
-    """命中制度(SPEC-API §4.1)。日期为 ISO 串(装配层 ``date.isoformat()``);可选缺失省略。"""
+    """公司制度库命中(SPEC-API §4.1)。
+
+    兼容旧字段(``title/doc_no/issuing_dept``),同时补真实知识库字段与中文展示字段。
+    日期为 ISO 串(装配层 ``date.isoformat()``);可选缺失省略,``display_fields`` 固定列保留空值。
+    """
 
     seq: int
     doc_id: str
@@ -96,14 +100,47 @@ class RegulationHit:
     issuing_dept: str | None = None    # 发布部门(doc_versions.issuer)
     version: str | None = None
     status: str | None = None          # effective | superseded | abolished
+    file_name: str | None = None
+    document_number: str | None = None
+    issuing_department: str | None = None
+    validity_level: str | None = None
+    validity_status: str | None = None
+    business_category: list[str] = field(default_factory=list)
+    file_number: str | None = None
+    creator: str | None = None
+    compliance_review_record: str | None = None
+    tags: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
+        file_name = self.file_name or self.title
+        document_number = self.document_number or self.doc_no
+        issuing_department = self.issuing_department or self.issuing_dept
+        validity_status = self.validity_status or self.status
         return _compact(
             seq=self.seq, doc_id=self.doc_id, doc_version_id=self.doc_version_id,
             title=self.title, match_score=self.match_score, clause_excerpt=self.clause_excerpt,
             doc_no=self.doc_no, publish_date=self.publish_date,
             effective_date=self.effective_date, issuing_dept=self.issuing_dept,
             version=self.version, status=self.status,
+            file_name=file_name, document_number=document_number,
+            issuing_department=issuing_department, validity_level=self.validity_level,
+            validity_status=validity_status, business_category=self.business_category or None,
+            file_number=self.file_number, creator=self.creator,
+            compliance_review_record=self.compliance_review_record, tags=self.tags or None,
+            display_fields={
+                "序号": self.seq,
+                "文件名称": file_name,
+                "文号": document_number,
+                "发文部门": issuing_department,
+                "生效日期": self.effective_date,
+                "效力层级": self.validity_level,
+                "效力状态": validity_status,
+                "业务类别": self.business_category,
+                "文件编号": self.file_number,
+                "创建人": self.creator,
+                "合规审查记录": self.compliance_review_record,
+                "标签": self.tags,
+            },
         )
 
 
@@ -131,7 +168,11 @@ class ClauseHit:
 
 @dataclass
 class RegulatoryRuleHit:
-    """监管规则(外规,SPEC-API §4.3)。``related_internal`` 依赖 clause_references,空则省略。"""
+    """法律法规命中(旧名监管规则,外规,SPEC-API §4.3)。
+
+    兼容旧字段(``title/issuing_body/doc_no``),同时补法律法规模块真实字段。
+    ``related_internal`` 依赖 clause_references,空则省略。
+    """
 
     seq: int
     clause_id: str
@@ -143,19 +184,49 @@ class RegulatoryRuleHit:
     publish_date: str | None = None
     theme: str | None = None
     related_internal: list[str] = field(default_factory=list)
+    file_name: str | None = None
+    document_number: str | None = None
+    issuing_unit: str | None = None
+    issue_date: str | None = None
+    validity_status: str | None = None
+    legal_hierarchy: str | None = None
+    tags: list[str] = field(default_factory=list)
+    applicable_objects: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
+        file_name = self.file_name or self.title
+        document_number = self.document_number or self.doc_no
+        issuing_unit = self.issuing_unit or self.issuing_body
+        issue_date = self.issue_date or self.publish_date
         return _compact(
             seq=self.seq, clause_id=self.clause_id, doc_id=self.doc_id, title=self.title,
             core_requirement=self.core_requirement, issuing_body=self.issuing_body,
             doc_no=self.doc_no, publish_date=self.publish_date, theme=self.theme,
             related_internal=self.related_internal or None,
+            file_name=file_name, document_number=document_number, issuing_unit=issuing_unit,
+            issue_date=issue_date, validity_status=self.validity_status,
+            legal_hierarchy=self.legal_hierarchy, tags=self.tags or None,
+            applicable_objects=self.applicable_objects or None,
+            display_fields={
+                "序号": self.seq,
+                "文件名称": file_name,
+                "文号": document_number,
+                "发文单位": issuing_unit,
+                "发文日期": issue_date,
+                "效力状态": self.validity_status,
+                "法律位阶": self.legal_hierarchy,
+                "标签": self.tags,
+                "适用对象": self.applicable_objects,
+            },
         )
 
 
 @dataclass
 class CaseHit:
-    """相关案例(SPEC-API §4.4)。要素逐字来自 PG ``cases``;L2/LLM 字段缺失省略(零臆造)。"""
+    """行业案例命中(SPEC-API §4.4)。
+
+    要素逐字来自 PG ``cases``/``doc_versions``;L2/LLM 字段缺失省略(零臆造)。
+    """
 
     seq: int
     case_id: str
@@ -167,13 +238,34 @@ class CaseHit:
     core_issue: str | None = None      # 核心问题(LLM 提炼,默认关 → None)
     insight: str | None = None         # 启示要点(LLM 提炼,默认关 → None)
     related_regulations: list[str] = field(default_factory=list)
+    case_name: str | None = None
+    document_number: str | None = None
+    issuing_unit: str | None = None
+    issue_date: str | None = None
+    case_type: str | None = None
+    tags: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
+        case_name = self.case_name or self.title
+        issuing_unit = self.issuing_unit or self.regulator
+        issue_date = self.issue_date or self.penalty_date
+        case_type = self.case_type or self.violation_theme
         return _compact(
             seq=self.seq, case_id=self.case_id, doc_version_id=self.doc_version_id,
             title=self.title, regulator=self.regulator, penalty_date=self.penalty_date,
             violation_theme=self.violation_theme, core_issue=self.core_issue,
             insight=self.insight, related_regulations=self.related_regulations or None,
+            case_name=case_name, document_number=self.document_number,
+            issuing_unit=issuing_unit, issue_date=issue_date, case_type=case_type,
+            tags=self.tags or None,
+            display_fields={
+                "案例名称": case_name,
+                "文号": self.document_number,
+                "发文单位": issuing_unit,
+                "发文日期": issue_date,
+                "案例类型": case_type,
+                "标签": self.tags,
+            },
         )
 
 

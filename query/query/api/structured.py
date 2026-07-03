@@ -78,6 +78,10 @@ def _regulations(cands, chunk_doc, norm) -> list[RegulationHit]:
             doc_no=_attr(dv, "doc_number"), publish_date=_iso(_attr(dv, "issue_date")),
             effective_date=_iso(_attr(dv, "effective_date")), issuing_dept=_attr(dv, "issuer"),
             version=_iso(_attr(dv, "issue_date")), status=_attr(dv, "version_status"),
+            file_name=_title(dv), document_number=_attr(dv, "doc_number"),
+            issuing_department=_attr(dv, "issuer"), validity_level=_attr(dv, "sub_type"),
+            validity_status=_attr(dv, "version_status"), business_category=_biz_categories(dv),
+            creator=_attr(dv, "created_by"), tags=_tags(dv, chunk),
         ))
     return out
 
@@ -94,6 +98,10 @@ def _reg_rules(cands, chunk_doc) -> list[RegulatoryRuleHit]:
             core_requirement=_truncate(chunk.text, _EXCERPT_LEN),
             issuing_body=_attr(dv, "issuer"), doc_no=_attr(dv, "doc_number"),
             publish_date=_iso(_attr(dv, "issue_date")),
+            file_name=_title(dv), document_number=_attr(dv, "doc_number"),
+            issuing_unit=_attr(dv, "issuer"), issue_date=_iso(_attr(dv, "issue_date")),
+            validity_status=_attr(dv, "version_status"), legal_hierarchy=_attr(dv, "sub_type"),
+            tags=_tags(dv, chunk), applicable_objects=_entity_types(chunk),
             # related_internal(⚠-data):clause_references 未落 → 空(省略);theme 同
         ))
     return out
@@ -118,6 +126,11 @@ def _cases(cands, case_rows, norm) -> list[CaseHit]:
             regulator=_attr(case, "penalty_org"), penalty_date=_iso(_attr(case, "penalty_date")),
             violation_theme=_attr(case, "violation_category"),   # L2:缺→省略
             related_regulations=list(_attr(case, "cited_regulations") or []),  # L2:缺→省略
+            case_name=_title(dv),
+            document_number=_attr(case, "doc_number") or _attr(dv, "doc_number"),
+            issuing_unit=_attr(case, "penalty_org") or _attr(dv, "issuer"),
+            issue_date=_iso(_attr(dv, "issue_date")) or _iso(_attr(case, "penalty_date")),
+            case_type=_attr(case, "violation_category"), tags=_case_tags(case),
             # core_issue/insight(⚠-model):LLM 关 → None(省略)
         ))
     return out
@@ -214,3 +227,40 @@ def _attr(obj, name):
 
 def _title(dv) -> str:
     return _attr(dv, "title") or ""
+
+
+def _biz_categories(dv) -> list[str]:
+    """业务类别:优先多值 ``biz_domains``,回落旧单值 ``biz_domain``。"""
+    values = list(_attr(dv, "biz_domains") or [])
+    single = _attr(dv, "biz_domain")
+    if single:
+        values.append(single)
+    return _unique(values)
+
+
+def _entity_types(chunk) -> list[str]:
+    return _unique(list(_attr(chunk, "entity_type") or []))
+
+
+def _tags(dv, chunk) -> list[str]:
+    """标签来自已落库结构化标签,不把密级 ``perm_tag`` 当业务标签外显。"""
+    return _unique([*_biz_categories(dv), *_entity_types(chunk)])
+
+
+def _case_tags(case) -> list[str]:
+    return _unique([
+        _attr(case, "violation_category"),
+        _attr(case, "penalty_type"),
+        _attr(case, "respondent_type"),
+    ])
+
+
+def _unique(values) -> list[str]:
+    out: list[str] = []
+    for v in values:
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s and s not in out:
+            out.append(s)
+    return out

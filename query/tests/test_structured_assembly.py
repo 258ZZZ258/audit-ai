@@ -21,20 +21,36 @@ def _cand(cid, score, corpus, dvid) -> Candidate:
     )
 
 
-def _chunk(dvid, clause_path, text):
-    return SimpleNamespace(doc_version_id=dvid, clause_path=clause_path, text=text)
-
-
-def _dv(title, doc_number=None, issue=None, eff=None, issuer=None, status="effective"):
+def _chunk(dvid, clause_path, text, entity_type=None):
     return SimpleNamespace(
-        title=title, doc_number=doc_number, issue_date=issue,
-        effective_date=eff, issuer=issuer, version_status=status,
+        doc_version_id=dvid, clause_path=clause_path, text=text,
+        entity_type=entity_type or [],
     )
 
 
-def _case(org=None, pdate=None, vcat=None, cited=None):
+def _dv(
+    title,
+    doc_number=None,
+    issue=None,
+    eff=None,
+    issuer=None,
+    status="effective",
+    sub_type=None,
+    biz_domain=None,
+    biz_domains=None,
+    created_by="system",
+):
+    return SimpleNamespace(
+        title=title, doc_number=doc_number, issue_date=issue,
+        effective_date=eff, issuer=issuer, version_status=status, sub_type=sub_type,
+        biz_domain=biz_domain, biz_domains=biz_domains, created_by=created_by,
+    )
+
+
+def _case(org=None, pdate=None, vcat=None, cited=None, doc_number=None, ptype=None, rtype=None):
     return SimpleNamespace(
         penalty_org=org, penalty_date=pdate, violation_category=vcat, cited_regulations=cited,
+        doc_number=doc_number, penalty_type=ptype, respondent_type=rtype,
     )
 
 
@@ -100,6 +116,51 @@ def test_regulation_fields_and_dedup_keep_best_score():
     assert r["match_score"] == 1.0 and r["clause_excerpt"] == "高分节选"  # 取最高分块节选
 
 
+def test_company_policy_fields_match_real_kb_columns():
+    cands = [_cand("i1", 9.0, "P-INT", "DV1")]
+    chunk_doc = {
+        "i1": (_chunk("DV1", "第三条", "正文", entity_type=["客户"]),
+               _dv(
+                   "《客户适当性管理实施细则》", doc_number="DFZQ-2024-001",
+                   eff=date(2024, 1, 1), issuer="合规管理部", sub_type="公司基本制度",
+                   biz_domains=["经纪业务"], created_by="u001",
+               )),
+    }
+    item = assemble_structured(cands, [], chunk_doc, {}).to_dict()["regulations"]["items"][0]
+    assert item["file_name"] == "《客户适当性管理实施细则》"
+    assert item["document_number"] == "DFZQ-2024-001"
+    assert item["issuing_department"] == "合规管理部"
+    assert item["validity_level"] == "公司基本制度"
+    assert item["business_category"] == ["经纪业务"]
+    assert item["creator"] == "u001"
+    assert item["tags"] == ["经纪业务", "客户"]
+    assert item["display_fields"]["文件名称"] == item["file_name"]
+    assert item["display_fields"]["合规审查记录"] is None
+
+
+def test_legal_regulation_fields_match_real_kb_columns():
+    cands = [_cand("e1", 8.0, "P-EXT", "DE1")]
+    chunk_doc = {
+        "e1": (_chunk("DE1", "第十八条", "外规正文", entity_type=["证券公司"]),
+               _dv(
+                   "《证券期货投资者适当性管理办法》", doc_number="证监会令第130号",
+                   issue=date(2023, 5, 1), issuer="中国证监会", status="effective",
+                   sub_type="部门规章", biz_domain="适当性管理",
+               )),
+    }
+    item = assemble_structured(cands, [], chunk_doc, {}).to_dict()
+    rule = item["regulatory_rules"]["items"][0]
+    assert rule["file_name"] == "《证券期货投资者适当性管理办法》"
+    assert rule["document_number"] == "证监会令第130号"
+    assert rule["issuing_unit"] == "中国证监会"
+    assert rule["issue_date"] == "2023-05-01"
+    assert rule["validity_status"] == "effective"
+    assert rule["legal_hierarchy"] == "部门规章"
+    assert rule["tags"] == ["适当性管理", "证券公司"]
+    assert rule["applicable_objects"] == ["证券公司"]
+    assert rule["display_fields"]["法律位阶"] == "部门规章"
+
+
 def test_clause_theme_omitted_summary_present():
     cands = [_cand("i1", 9.0, "P-INT", "DV1")]
     chunk_doc = {"i1": (_chunk("DV1", "第三章 识别/第三条 适还比例界定", "条款正文摘要"), _dv("A"))}
@@ -125,6 +186,24 @@ def test_case_verbatim_and_l2_omitted_when_absent():
     assert "core_issue" not in c1 and "insight" not in c1  # LLM 关 → 省略
     # DC2 的 L2 字段缺失 → 省略(零臆造)
     assert "violation_theme" not in c2 and "related_regulations" not in c2
+
+
+def test_industry_case_fields_match_real_kb_columns():
+    case_cands = [_cand("c1", 5.0, "P-CASE", "DC1")]
+    case_rows = {
+        "DC1": (_case(
+            org="上海证监局", pdate=date(2024, 10, 17), vcat="适当性评估不足",
+            doc_number="沪证监处罚字〔2024〕1号", ptype="罚款", rtype="机构",
+        ), _dv("某证券公司适当性管理违规案", issue=date(2024, 10, 18))),
+    }
+    item = assemble_structured([], case_cands, {}, case_rows).to_dict()["cases"]["items"][0]
+    assert item["case_name"] == "某证券公司适当性管理违规案"
+    assert item["document_number"] == "沪证监处罚字〔2024〕1号"
+    assert item["issuing_unit"] == "上海证监局"
+    assert item["issue_date"] == "2024-10-18"
+    assert item["case_type"] == "适当性评估不足"
+    assert item["tags"] == ["适当性评估不足", "罚款", "机构"]
+    assert item["display_fields"]["案例名称"] == item["case_name"]
 
 
 def test_empty_inputs_all_tabs_zero():

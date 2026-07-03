@@ -612,3 +612,18 @@ query 全量 **47 passed**(真栈 + 真 BGE-M3)/ 零网络默认(stub)/ ruff 全
   NoopTracer 默认零网络不受影响。
 - **验证**:`test_api_boundary.py` 覆盖 B104、SSE 五事件、轻量 citation、score、filters scope、owner 不入制度语料、
   audit_project schema 未接入拒绝;`test_observe`/`test_api_sse`/`test_api_ask`/`test_graph` 回归通过。
+
+## 知识库真实字段叠加:法律法规 / 公司制度库 / 行业案例(2026-07-03)
+
+> 背景:业务侧确认真实知识库字段与 B-API 原型四 Tab 字段不完全一致;两个对比模块本轮暂不接入。
+
+- **兼容策略**:不删除原 `structured.regulations/clauses/regulatory_rules/cases` 四 Tab,在
+  `RegulationHit`、`RegulatoryRuleHit`、`CaseHit` 上 add-only 增补真实模块字段,并给每条 item 加
+  `display_fields` 固定中文列视图。这样现有前端字段不破坏,新页面可直接按真实知识库列展示。
+- **字段映射**:公司制度库映射 `file_name/document_number/issuing_department/effective_date/
+  validity_level/validity_status/business_category/creator/tags`;法律法规映射 `file_name/
+  document_number/issuing_unit/issue_date/validity_status/legal_hierarchy/tags/applicable_objects`;
+  行业案例映射 `case_name/document_number/issuing_unit/issue_date/case_type/tags`。
+- **缺口诚实保留**:`file_number`、`compliance_review_record` 当前无权威来源,只在 `display_fields`
+  中保留空值,不臆造;标签来自业务类别、适用对象、案例类型等已落库字段,不把密级 `perm_tag` 外显为业务标签。
+- **验证**:`test_structured_assembly.py` 新增三类真实字段映射断言;`test_api_contract.py` 回归通过。
