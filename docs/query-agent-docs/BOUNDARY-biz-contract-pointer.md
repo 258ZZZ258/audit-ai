@@ -23,7 +23,10 @@ audit-ai 的 query-api(PR#39,已并 `main`)是对着产品原型**直连前端**
 
 ## 本仓要做什么(摘要;完整 build recipe 见上方 `BOUNDARY-RECONCILIATION-001.md §3`)
 
-在 `query/query/api/` 新增薄壳 `POST /v1/query`:
+已在 `query/query/api/` 新增薄壳 `POST /v1/query`。本仓侧联调说明见
+`docs/query-agent-docs/BOUNDARY-v1-query-api.md`。
+
+接口要点:
 
 1. `X-Internal-Token` 静态共享密钥鉴权、**无身份**(勿复用 `auth.py` 的 subject/role)。
 2. 请求 `filters{perm_tags, corpus_types, project_id, owner}` → 构 **Milvus 前置过滤**(检索**前**生效,红线:算在 Java、用在 Python)。
@@ -34,7 +37,6 @@ audit-ai 的 query-api(PR#39,已并 `main`)是对着产品原型**直连前端**
 
 差异对照 BR-1~8(端点形状 / 前置过滤红线 / 无身份 / 状态-回查-导出归属)见 `BOUNDARY-RECONCILIATION-001.md §2`。
 
-> ⚠ **分支**:query-api 在 `main`。请从 audit-ai `main` 切分支实施(如 `feat/v1-query-boundary`)。
 > **同机可执行 finding**(gitignore、不入库):本仓 `.review/findings.json` → `boundary.contract.query-api-drift`(critical)。
 
 ## 双向引用坐标(remote ↔ remote)
@@ -42,4 +44,4 @@ audit-ai 的 query-api(PR#39,已并 `main`)是对着产品原型**直连前端**
 | 方向 | 位置 |
 |---|---|
 | audit-ai → audit-biz | 即本文件;引 `https://github.com/258ZZZ258/audit-biz` 的 `boundary.v1.yaml` + `BOUNDARY-RECONCILIATION-001.md` |
-| audit-biz → audit-ai | `BOUNDARY-RECONCILIATION-001.md §7/§8`;远端坐标 `https://github.com/258ZZZ258/audit-ai`,待改代码 `query/query/api/*` |
+| audit-biz → audit-ai | `BOUNDARY-RECONCILIATION-001.md §7/§8`;远端坐标 `https://github.com/258ZZZ258/audit-ai`,落地代码 `query/query/api/routes_boundary.py` |
