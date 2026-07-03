@@ -27,8 +27,8 @@ def _svc():
                 "clause_path": "第三条", "page_start": 7, "status": "effective",
             }],
             "structured": {"cases": {"items": [
-                {"title": "某商业银行未评估风险等级案", "regulator": "上海证监局",
-                 "penalty_date": "2024-10-17"},
+                {"case_name": "某商业银行未评估风险等级案", "issuing_unit": "上海证监局",
+                 "issue_date": "2024-10-17"},
             ]}},
         },
     }

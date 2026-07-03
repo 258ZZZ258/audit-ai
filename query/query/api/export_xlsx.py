@@ -40,7 +40,11 @@ def build_export_xlsx(*, question, answer_summary, result, exporter, exported_at
     ws.append([])
     ws.append(["相关案例"])
     for case in _cases(result):
-        ws.append([case.get("title", ""), case.get("regulator", ""), case.get("penalty_date", "")])
+        ws.append([
+            case.get("case_name", ""),
+            case.get("issuing_unit", ""),
+            case.get("issue_date", ""),
+        ])
 
     ws.append([])
     ws.append([AI_LABEL])            # AI 标识页脚(数据行)

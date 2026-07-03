@@ -32,8 +32,8 @@ def test_structured_traceable_to_pg(indexed_stack):
         real_ids = {c.chunk_id for c in sess.scalars(select(Chunk))}
     assert all(c["clause_id"] in real_ids for c in s["clauses"]["items"])
 
-    # 命中制度标题追溯 PG doc_versions(seed 的「合同管理办法」)
-    titles = {r["title"] for r in s["regulations"]["items"]}
+    # 命中制度文件名称追溯 PG doc_versions(seed 的「合同管理办法」)
+    titles = {r["file_name"] for r in s["regulations"]["items"]}
     assert "合同管理办法" in titles
 
     # 四 Tab 恒在(未 seed 的案例/外规为空,不崩)

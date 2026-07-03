@@ -60,7 +60,7 @@ def _make_result(route=RouteType.EVIDENCE):
 
 def _make_structured():
     return StructuredResult(
-        regulations=TabPayload(items=[RegulationHit(1, "D", "V", "《细则》", 0.9, "节选")]),
+        regulations=TabPayload(items=[RegulationHit(1, "《细则》")]),
         clauses=TabPayload(items=[ClauseHit(1, "c1", "第六条", "《细则》", "D", 0.98)]),
         regulatory_rules=TabPayload(items=[]),
         cases=TabPayload(items=[]),

@@ -80,7 +80,7 @@ def test_partition_internal_external_case_counts():
     assert d["citation_advice"] == [] and d["regulatory_digest"] == [] and d["case_insights"] == []
 
 
-def test_match_score_minmax_normalized_over_retrieve_set():
+def test_clause_match_score_minmax_normalized_over_retrieve_set():
     cands = [_cand("i1", 9.0, "P-INT", "DV1"), _cand("i3", 6.0, "P-INT", "DV2"),
              _cand("e1", 8.0, "P-EXT", "DE1")]
     chunk_doc = {
@@ -92,9 +92,8 @@ def test_match_score_minmax_normalized_over_retrieve_set():
     clauses = {c["clause_id"]: c["match_score"] for c in d["clauses"]["items"]}
     assert clauses["i1"] == 1.0   # 全集 max=9 → 1.0
     assert clauses["i3"] == 0.0   # 全集 min=6 → 0.0
-    regs = {r["doc_id"]: r["match_score"] for r in d["regulations"]["items"]}
-    assert regs["DV1"] == 1.0 and regs["DV2"] == 0.0   # 命中制度同一归一窗口
-    assert "match_score" not in d["regulatory_rules"]["items"][0]  # 监管规则无匹配度列
+    assert "match_score" not in d["regulations"]["items"][0]
+    assert "match_score" not in d["regulatory_rules"]["items"][0]
 
 
 def test_regulation_fields_and_dedup_keep_best_score():
@@ -109,11 +108,11 @@ def test_regulation_fields_and_dedup_keep_best_score():
     regs = s.to_dict()["regulations"]["items"]
     assert len(regs) == 1
     r = regs[0]
-    assert r["title"].startswith("《客户适当性")
-    assert r["doc_no"] == "NEEQ-QF-2020-034"
-    assert r["publish_date"] == "2021-02-01" and r["effective_date"] == "2022-02-15"
-    assert r["issuing_dept"] == "合规管理部" and r["status"] == "effective"
-    assert r["match_score"] == 1.0 and r["clause_excerpt"] == "高分节选"  # 取最高分块节选
+    assert r["file_name"].startswith("《客户适当性")
+    assert r["document_number"] == "NEEQ-QF-2020-034"
+    assert r["effective_date"] == "2022-02-15"
+    assert r["issuing_department"] == "合规管理部"
+    assert "title" not in r and "doc_no" not in r and "clause_excerpt" not in r
 
 
 def test_company_policy_fields_match_real_kb_columns():
@@ -134,8 +133,8 @@ def test_company_policy_fields_match_real_kb_columns():
     assert item["business_category"] == ["经纪业务"]
     assert item["creator"] == "u001"
     assert item["tags"] == ["经纪业务", "客户"]
-    assert item["display_fields"]["文件名称"] == item["file_name"]
-    assert item["display_fields"]["合规审查记录"] is None
+    assert "display_fields" not in item
+    assert "title" not in item and "doc_id" not in item
 
 
 def test_legal_regulation_fields_match_real_kb_columns():
@@ -158,7 +157,8 @@ def test_legal_regulation_fields_match_real_kb_columns():
     assert rule["legal_hierarchy"] == "部门规章"
     assert rule["tags"] == ["适当性管理", "证券公司"]
     assert rule["applicable_objects"] == ["证券公司"]
-    assert rule["display_fields"]["法律位阶"] == "部门规章"
+    assert "display_fields" not in rule
+    assert "title" not in rule and "core_requirement" not in rule
 
 
 def test_clause_theme_omitted_summary_present():
@@ -180,12 +180,11 @@ def test_case_verbatim_and_l2_omitted_when_absent():
     }
     cases = assemble_structured([], case_cands, {}, case_rows).to_dict()["cases"]["items"]
     c1, c2 = cases[0], cases[1]
-    assert c1["regulator"] == "上海证监局" and c1["penalty_date"] == "2024-10-17"
-    assert c1["violation_theme"] == "适当性评估不足"
-    assert c1["related_regulations"] == ["《资管产品适当性管理办法》"]
-    assert "core_issue" not in c1 and "insight" not in c1  # LLM 关 → 省略
+    assert c1["issuing_unit"] == "上海证监局" and c1["issue_date"] == "2024-10-17"
+    assert c1["case_type"] == "适当性评估不足"
+    assert "title" not in c1 and "regulator" not in c1 and "penalty_date" not in c1
     # DC2 的 L2 字段缺失 → 省略(零臆造)
-    assert "violation_theme" not in c2 and "related_regulations" not in c2
+    assert "case_type" not in c2 and "tags" not in c2
 
 
 def test_industry_case_fields_match_real_kb_columns():
@@ -203,7 +202,8 @@ def test_industry_case_fields_match_real_kb_columns():
     assert item["issue_date"] == "2024-10-18"
     assert item["case_type"] == "适当性评估不足"
     assert item["tags"] == ["适当性评估不足", "罚款", "机构"]
-    assert item["display_fields"]["案例名称"] == item["case_name"]
+    assert "display_fields" not in item
+    assert "title" not in item and "regulator" not in item
 
 
 def test_empty_inputs_all_tabs_zero():

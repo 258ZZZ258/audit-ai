@@ -86,28 +86,15 @@ class StructuredResult:
     case_insights: list[dict]     # 案例启示摘要卡片(相关案例 Tab 下,DigestCard)
 ```
 
-### 4.1 `RegulationHit`(命中制度)
-
-| JSON 字段 | 类型 | 原型列 | 来源(§12 分档) |
-|---|---|---|---|
-| `seq` | int | 序号 | API 层排序赋号 |
-| `doc_id` / `doc_version_id` | str | (联动键) | `doc_versions` |
-| `title` | str | 制度名称 | `doc_versions.title` ✅ |
-| `match_score` | float 0–1 | 匹配度(%) | 检索融合分 min-max 归一 → 前端直显 0–100%(决策已定;归一窗口口径见 §12) |
-| `doc_no` | str? | 制度编号 | `doc_versions.doc_number` ✅ |
-| `publish_date` | date? | 发布日期 | `doc_versions.issue_date` ✅ |
-| `effective_date` | date? | 生效日期 | `doc_versions.effective_date` ✅ |
-| `issuing_dept` | str? | 发布部门 | `doc_versions.issuer` ✅ |
-| `clause_excerpt` | str | 条款内容(节选) | `chunks.text` 截断 ✅ |
-| `version` / `status` | str? | (版本/状态角标) | `doc_versions.issue_date` / `version_status` ✅ |
-
-真实知识库字段叠加(公司制度库模块,add-only):
+### 4.1 `RegulationHit`(公司制度库模块)
 
 | JSON 字段 | 中文列 | 来源 |
 |---|---|---|
+| `seq` | 序号 | API 层排序赋号 |
 | `file_name` | 文件名称 | `doc_versions.title` |
 | `document_number` | 文号 | `doc_versions.doc_number` |
 | `issuing_department` | 发文部门 | `doc_versions.issuer` |
+| `effective_date` | 生效日期 | `doc_versions.effective_date` |
 | `validity_level` | 效力层级 | `doc_versions.sub_type` |
 | `validity_status` | 效力状态 | `doc_versions.version_status` |
 | `business_category` | 业务类别 | `doc_versions.biz_domains` / `biz_domain` |
@@ -115,7 +102,9 @@ class StructuredResult:
 | `creator` | 创建人 | `doc_versions.created_by` |
 | `compliance_review_record` | 合规审查记录 | 当前无权威来源,为空 |
 | `tags` | 标签 | 业务类别 + `chunks.entity_type` |
-| `display_fields` | 固定中文列视图 | 以上字段按中文列名展开,空值保留 |
+
+> 旧字段 `title/doc_id/doc_version_id/match_score/clause_excerpt/doc_no/publish_date/
+> issuing_dept/version/status/display_fields` 不再输出。
 
 ### 4.2 `ClauseHit`(命中条款)
 
@@ -130,24 +119,11 @@ class StructuredResult:
 | `summary` | str | 条款摘要 | `chunks.text` 截断(默认)/ LLM 提炼(开关)⚠ |
 | `theme` | str? | 适用主题 | `clause_tags`(deontic/tag_value)/ E2 `entity_type` ⚠(未打标则空) |
 
-### 4.3 `RegulatoryRuleHit`(监管规则,外规)
-
-| JSON 字段 | 类型 | 原型列 | 来源 |
-|---|---|---|---|
-| `seq` | int | 序号 | API 排序 |
-| `clause_id` / `doc_id` | str | (查看键) | 外规 `chunks`/`doc_versions` ✅ |
-| `title` | str | 规则名称 | `doc_versions.title` ✅ |
-| `issuing_body` | str? | 发布机构 | `doc_versions.issuer` ✅ |
-| `doc_no` | str? | 文号 | `doc_versions.doc_number` ✅ |
-| `publish_date` | date? | 日期 | `doc_versions.issue_date` ✅ |
-| `core_requirement` | str | 核心监管要求 | `chunks.text` / E1 义务抽取 ✅/⚠ |
-| `related_internal` | list[str] | 关联内部制度 | `clause_references` 指代表反查 ⚠(Q5 空表 TODO) |
-| `theme` | str? | 适用主题 | `clause_tags` ⚠ |
-
-真实知识库字段叠加(法律法规模块,add-only):
+### 4.3 `RegulatoryRuleHit`(法律法规模块)
 
 | JSON 字段 | 中文列 | 来源 |
 |---|---|---|
+| `seq` | 序号 | API 层排序赋号 |
 | `file_name` | 文件名称 | `doc_versions.title` |
 | `document_number` | 文号 | `doc_versions.doc_number` |
 | `issuing_unit` | 发文单位 | `doc_versions.issuer` |
@@ -156,25 +132,11 @@ class StructuredResult:
 | `legal_hierarchy` | 法律位阶 | `doc_versions.sub_type` |
 | `tags` | 标签 | 业务类别 + `chunks.entity_type` |
 | `applicable_objects` | 适用对象 | `chunks.entity_type` |
-| `display_fields` | 固定中文列视图 | 以上字段按中文列名展开,空值保留 |
 
-### 4.4 `CaseHit`(相关案例)
+> 旧字段 `clause_id/doc_id/title/core_requirement/issuing_body/doc_no/publish_date/
+> related_internal/theme/display_fields` 不再输出。
 
-| JSON 字段 | 类型 | 原型列 | 来源 |
-|---|---|---|---|
-| `seq` | int | 序号 | API 排序 |
-| `case_id` / `doc_version_id` | str | (键) | `cases` ✅ |
-| `title` | str | 案例名称 | `doc_versions.title` ✅ |
-| `regulator` | str? | 监管机构 | `cases.penalty_org` ✅ |
-| `penalty_date` | date? | 处罚日期 | `cases.penalty_date` ✅ |
-| `violation_theme` | str? | 违规主题 | `cases.violation_category`(L2)⚠(默认空则省略) |
-| `related_regulations` | list[str] | 关联制度 | `cases.cited_regulations`(L2)⚠ |
-| `core_issue` | str? | 核心问题 | LLM 提炼(开关)/ 占位 ⚠(cases 无此列) |
-| `insight` | str? | 启示要点 | LLM 提炼(开关)/ 占位 ⚠ |
-
-> **红线**:案例要素**逐字来自 PG `cases`/`doc_versions`**,复用 `case/case_card.py::CaseCard`;L2/LLM 字段缺失时**省略、零臆造**(与既有 `CaseCard.to_content` 一致)。`core_issue`/`insight` 若未开 LLM 提炼 → 缺省 `null`,前端隐藏该列,**不硬凑**。
-
-真实知识库字段叠加(行业案例模块,add-only):
+### 4.4 `CaseHit`(行业案例模块)
 
 | JSON 字段 | 中文列 | 来源 |
 |---|---|---|
@@ -184,7 +146,10 @@ class StructuredResult:
 | `issue_date` | 发文日期 | `doc_versions.issue_date` / `cases.penalty_date` |
 | `case_type` | 案例类型 | `cases.violation_category` |
 | `tags` | 标签 | `violation_category` + `penalty_type` + `respondent_type` |
-| `display_fields` | 固定中文列视图 | 以上字段按中文列名展开,空值保留 |
+
+> **红线**:案例要素逐字来自 PG `cases`/`doc_versions`,字段缺失时省略、零臆造。
+> 旧字段 `seq/case_id/doc_version_id/title/regulator/penalty_date/violation_theme/
+> related_regulations/core_issue/insight/display_fields` 不再输出。
 
 ### 4.5 `DigestCard`(监管要求提炼 / 案例启示摘要卡片)
 
@@ -398,7 +363,7 @@ POST /uploads   (multipart/form-data, field=file)
 - **JSON 字段**:snake_case(与 `contract.py` 既有契约一致);枚举值小写(`route_type` 沿用 `evidence/change/case/…`);布尔 `is_*/has_*/*_enabled/*_required`(沿用 `export_enabled`/`review_required`)。
 - **日期**:ISO-8601 字符串(`date` → `YYYY-MM-DD`);`elapsed_ms` 整数毫秒。
 - **分页**:`{data, pagination:{page,page_size,total_items,total_pages}}`,全列表端点一致。
-- **演进**:只加可选字段;破坏性变更 → `/v2`。
+- **演进**:已对知识库模块字段按业务真实字段收口;后续若再做破坏性变更,应升 `/v2`。
 
 ---
 
@@ -408,10 +373,10 @@ POST /uploads   (multipart/form-data, field=file)
 
 | 分档 | 字段 | 处置 |
 |---|---|---|
-| ✅ 现成 | title / doc_no / issue_date / effective_date / issuer / clause_path / text 节选 / status;案例 penalty_org / penalty_date;四级锚点 | 直接回查填充 |
-| ✅-score(已定) | `match_score` 匹配度 | 检索融合分 **min-max 归一 → 前端直显 0–100%**(决策已定,贴原型 95%/92%)。⚠ 剩实现细节:归一窗口取「本次候选集内 min-max」还是「全局固定锚」,PLAN 定;契约字段恒 `0–1` float |
-| ⚠-data | `theme` 适用主题 / `related_internal` 关联内规 / 案例 `violation_theme` / `related_regulations` | 依赖 clause_tags 打标 / clause_references 指代表(Q5 空表)/ 案例 L2;**未落地即省略该列** |
-| ⚠-model | `summary` 条款摘要(可截断兜底)/ `core_issue` / `insight` / `citation_advice` / `regulatory_digest` / `case_insights` / 会话 `title`(LLM 概括) | LLM 提炼开关;**默认关** → 摘要走截断、标题回落首问截断、卡片/引用建议缺省空前端隐藏;**绝不用 LLM 生成依据类事实** |
+| ✅ 现成 | `file_name` / `document_number` / `issuing_department` / `issuing_unit` / `issue_date` / `effective_date` / `validity_status` / `legal_hierarchy` / `validity_level` / `business_category`;案例 `case_name` / `case_type` / `tags` | 直接从 PG `doc_versions` / `chunks` / `cases` 回查或派生 |
+| ✅-score(条款 Tab) | `clauses.match_score` 匹配度 | 仅条款命中保留匹配度;知识库模块列表不再输出匹配度字段 |
+| ⚠-data | `file_number` / `compliance_review_record` | 当前无权威来源;为空时省略,不占坑不臆造 |
+| ⚠-model | `summary` 条款摘要(可截断兜底)/ `citation_advice` / `regulatory_digest` / `case_insights` / 会话 `title`(LLM 概括) | LLM 提炼开关;**默认关** → 摘要走截断、标题回落首问截断、卡片/引用建议缺省空前端隐藏;**绝不用 LLM 生成依据类事实** |
 
 > 这张表是「不放水」的落地保证:原型好看的富集字段,**哪些真、哪些占位**一目了然,交付时按档实装,不以「demo 够用」蒙混。
 

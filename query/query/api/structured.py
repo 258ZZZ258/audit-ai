@@ -25,7 +25,6 @@ from query.contract import (
 
 _INT = "P-INT"   # corpus_type:内规
 _EXT = "P-EXT"   # corpus_type:外规
-_EXCERPT_LEN = 140   # 制度节选 / 核心监管要求 截断长度(⚠ 可调)
 _SUMMARY_LEN = 100   # 条款摘要截断长度(⚠-model 兜底,⚠ 可调)
 
 
@@ -70,18 +69,14 @@ def _clauses(cands, chunk_doc, norm) -> list[ClauseHit]:
 def _regulations(cands, chunk_doc, norm) -> list[RegulationHit]:
     """命中制度:按 doc_version_id 去重(保最高分块作节选),按分降序。"""
     out: list[RegulationHit] = []
-    for seq, (c, chunk, dv) in enumerate(_dedup_by_doc(cands, chunk_doc), 1):
+    for seq, (_c, chunk, dv) in enumerate(_dedup_by_doc(cands, chunk_doc), 1):
         out.append(RegulationHit(
-            seq=seq, doc_id=chunk.doc_version_id, doc_version_id=chunk.doc_version_id,
-            title=_title(dv), match_score=norm(c.score),
-            clause_excerpt=_truncate(chunk.text, _EXCERPT_LEN),
-            doc_no=_attr(dv, "doc_number"), publish_date=_iso(_attr(dv, "issue_date")),
-            effective_date=_iso(_attr(dv, "effective_date")), issuing_dept=_attr(dv, "issuer"),
-            version=_iso(_attr(dv, "issue_date")), status=_attr(dv, "version_status"),
-            file_name=_title(dv), document_number=_attr(dv, "doc_number"),
+            seq=seq, file_name=_title(dv), document_number=_attr(dv, "doc_number"),
             issuing_department=_attr(dv, "issuer"), validity_level=_attr(dv, "sub_type"),
-            validity_status=_attr(dv, "version_status"), business_category=_biz_categories(dv),
-            creator=_attr(dv, "created_by"), tags=_tags(dv, chunk),
+            validity_status=_attr(dv, "version_status"),
+            effective_date=_iso(_attr(dv, "effective_date")),
+            business_category=_biz_categories(dv), creator=_attr(dv, "created_by"),
+            tags=_tags(dv, chunk),
         ))
     return out
 
@@ -89,20 +84,15 @@ def _regulations(cands, chunk_doc, norm) -> list[RegulationHit]:
 def _reg_rules(cands, chunk_doc) -> list[RegulatoryRuleHit]:
     """监管规则(外规):按 doc_version_id 去重,核心监管要求取最高分块节选。
 
-    **无匹配度列**(原型 监管规则 tab 无「匹配度」)→ 不带 match_score。
+    输出字段按法律法规真实知识库列收口,不带旧的核心监管要求/匹配度字段。
     """
     out: list[RegulatoryRuleHit] = []
-    for seq, (c, chunk, dv) in enumerate(_dedup_by_doc(cands, chunk_doc), 1):
+    for seq, (_c, chunk, dv) in enumerate(_dedup_by_doc(cands, chunk_doc), 1):
         out.append(RegulatoryRuleHit(
-            seq=seq, clause_id=c.chunk_id, doc_id=chunk.doc_version_id, title=_title(dv),
-            core_requirement=_truncate(chunk.text, _EXCERPT_LEN),
-            issuing_body=_attr(dv, "issuer"), doc_no=_attr(dv, "doc_number"),
-            publish_date=_iso(_attr(dv, "issue_date")),
-            file_name=_title(dv), document_number=_attr(dv, "doc_number"),
+            seq=seq, file_name=_title(dv), document_number=_attr(dv, "doc_number"),
             issuing_unit=_attr(dv, "issuer"), issue_date=_iso(_attr(dv, "issue_date")),
             validity_status=_attr(dv, "version_status"), legal_hierarchy=_attr(dv, "sub_type"),
             tags=_tags(dv, chunk), applicable_objects=_entity_types(chunk),
-            # related_internal(⚠-data):clause_references 未落 → 空(省略);theme 同
         ))
     return out
 
@@ -119,13 +109,9 @@ def _cases(cands, case_rows, norm) -> list[CaseHit]:
             best[dvid] = c
     out: list[CaseHit] = []
     ranked = sorted(best.items(), key=lambda kv: kv[1].score, reverse=True)
-    for seq, (dvid, _c) in enumerate(ranked, 1):
+    for _seq, (dvid, _c) in enumerate(ranked, 1):
         case, dv = case_rows.get(dvid, (None, None))
         out.append(CaseHit(
-            seq=seq, case_id=dvid, doc_version_id=dvid, title=_title(dv),
-            regulator=_attr(case, "penalty_org"), penalty_date=_iso(_attr(case, "penalty_date")),
-            violation_theme=_attr(case, "violation_category"),   # L2:缺→省略
-            related_regulations=list(_attr(case, "cited_regulations") or []),  # L2:缺→省略
             case_name=_title(dv),
             document_number=_attr(case, "doc_number") or _attr(dv, "doc_number"),
             issuing_unit=_attr(case, "penalty_org") or _attr(dv, "issuer"),
