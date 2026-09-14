@@ -131,7 +131,7 @@ def _parse_pdf(ctx: StageContext, dvid: str, data: bytes) -> StageResult:
     res = make_parser().parse(data, "pdf", scanned_char_per_page_max=smax)
     if res.ok:
         return _ir_to_qc(ctx, dvid, res, "pdf")
-    # 扫描件(无文本层)+ OCR 启用 → 旁路 OCR 后端;否则维持 E202 隔离(向后兼容)
+    # 扫描件(无文本层或整页图像附带旧文字层) → OCR;未启用时仍隔离。
     if res.error_code == ErrorCode.SCANNED_OCR_DISABLED.value:
         ocr = make_ocr_parser()
         if ocr is not None:

@@ -43,3 +43,4 @@ include = ["pipeline*"]
 
 [tool.setuptools.package-data]
 "pipeline.web" = ["static/*"]
+"pipeline.supervision" = ["*.txt"]

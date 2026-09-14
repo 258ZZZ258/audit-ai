@@ -1,0 +1,14 @@
+# 已启用监督字段提取和逐项关联的大模型调用；凭据由运行环境加载。
+backend = "gateway"
+# 全量证据分组容量，超过单组容量的单段拒绝，绝不静默截断。
+max_evidence_chars = 16000
+# 监督长文提取独立配置，不影响制度查询客户端。
+model_timeout_seconds = 300
+# 每个证据组最多调用两次；不叠加 HTTP 层重试。
+model_attempts = 2
+# 全文抽取后再逐组核对遗漏，只补充，不覆盖原候选。
+coverage_review = true
+# 进程内缓存，0 可关闭；更换模型部署后重启服务。
+cache_entries = 32
+embedding_cache_entries = 4096
+cache_ttl_seconds = 900

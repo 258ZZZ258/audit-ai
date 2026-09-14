@@ -19,6 +19,7 @@ from openpyxl import load_workbook
 from common.ir import Block, BlockType, Table, TableCell
 from pipeline.chunking.normalize import normalize_radicals, strip_ws
 from pipeline.parsing.adapter import ParserAdapter, ParseResult
+from pipeline.parsing.pdf_tables import page_blocks
 from pipeline.states import ErrorCode
 
 
@@ -73,12 +74,23 @@ def _pdf_result(data: bytes, scanned_max: int) -> ParseResult:
     with pdfplumber.open(io.BytesIO(data)) as pdf:
         npages = len(pdf.pages)
         for pno, page in enumerate(pdf.pages, start=1):
+            # Full-page raster with a hidden text layer is still a scan. Its
+            # character count says nothing about the quality of that old OCR.
+            if any(
+                max(0, min(im["x1"], page.width) - max(im["x0"], 0))
+                * max(0, min(im["bottom"], page.height) - max(im["top"], 0))
+                >= .75 * page.width * page.height
+                for im in page.images
+            ):
+                return ParseResult(
+                    error_code=ErrorCode.SCANNED_OCR_DISABLED.value,
+                    reason=f"第{pno}页为整页扫描图像，须重新OCR，不能信任已有文字层",
+                )
             txt = normalize_radicals(page.extract_text() or "")  # 康熙部首字形伪影 → CJK
             total_chars += len(strip_ws(txt))
-            for line in txt.split("\n"):
-                if line.strip():
-                    blocks.append(Block(index=idx, type=BlockType.PARAGRAPH, text=line, page=pno))
-                    idx += 1
+            parsed = page_blocks(page, pno, idx)
+            blocks.extend(parsed)
+            idx += len(parsed)
     density = total_chars / max(1, npages)
     if density < scanned_max:
         return ParseResult(

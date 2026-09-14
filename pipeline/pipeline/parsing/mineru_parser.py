@@ -16,6 +16,7 @@ from pathlib import Path
 
 from common.ir import BBox, Block, BlockType, Table, TableCell
 from pipeline.parsing.adapter import ParserAdapter, ParseResult
+from pipeline.parsing.ocr_model_path import prepare_fasttext_path
 from pipeline.states import ErrorCode
 
 # MinerU para_block.type → IR BlockType(table 单独处理;image/equation 等无文本 → 跳过)
@@ -155,6 +156,7 @@ def _run_mineru(data: bytes, source_format: str) -> dict:
     """
     from mineru.cli.common import do_parse, images_bytes_to_pdf_bytes
 
+    prepare_fasttext_path()
     pdf_bytes = images_bytes_to_pdf_bytes(data) if source_format in ("jpg", "png") else data
     with tempfile.TemporaryDirectory(prefix="mineru_") as out:
         do_parse(
@@ -163,6 +165,7 @@ def _run_mineru(data: bytes, source_format: str) -> dict:
             pdf_bytes_list=[pdf_bytes],
             p_lang_list=["ch"],
             backend="pipeline",
+            parse_method="ocr",
             f_dump_middle_json=True,
             f_dump_md=False,
             f_dump_model_output=False,

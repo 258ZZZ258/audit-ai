@@ -1,0 +1,21 @@
+{
+  "scope": "Synthetic status contrasts; not public or customer source documents. Expected labels are not sent to the model.",
+  "cases": [
+    {"id":"application-result-unknown","evidence":"本问题涉及8家下属单位。1家已纳入预算，其余7家已提交纳入申请，未载明后续审批结果。","value":"部分完成","supported":false},
+    {"id":"application-explicitly-pending","evidence":"本问题涉及8家下属单位。1家已纳入预算，其余7家已提交申请，截至本次记录仍待审批、尚未纳入。","value":"部分完成","supported":true},
+    {"id":"all-approved","evidence":"本问题涉及的8家单位均已获批并纳入预算，本项整改全部完成。","value":"已完成","supported":true},
+    {"id":"plan-not-start-proof","evidence":"关于本项违规配租问题，部门将完善审核制度并严肃处理，未说明现有整改阶段。","value":"未开始","supported":false},
+    {"id":"explicit-not-started","evidence":"截至本次记录，本项整改尚未启动，计划次月开展。","value":"未开始","supported":true},
+    {"id":"policy-is-not-resolution","evidence":"针对审核不严问题，部门已印发管理制度并开展检查，未记载问题解决结果。","value":"已完成","supported":false},
+    {"id":"policy-is-not-partial-resolution","evidence":"针对审核不严问题，部门已印发管理制度并开展检查，未记载问题解决结果。","value":"部分完成","supported":false},
+    {"id":"full-recovery","evidence":"本项问题是3处房产被违规占用。该3处房产现已全部收回，违规占用已经终止。","value":"已完成","supported":true},
+    {"id":"recovery-running","evidence":"本项房产占用问题正在通过诉讼追索，尚未收回房产。","value":"进行中","supported":true},
+    {"id":"partial-recovery","evidence":"本项违规占用的3处房产中，2处已收回，剩余1处尚未收回。","value":"部分完成","supported":true},
+    {"id":"partial-not-whole","evidence":"本项违规占用的3处房产中，2处已收回，剩余1处尚未收回。","value":"已完成","supported":false},
+    {"id":"not-finished-no-stage","evidence":"本项整改尚未完成，未披露是否已经启动以及实施进度。","value":"未开始","supported":false},
+    {"id":"not-finished-explicit","evidence":"本项整改尚未完成，未披露是否已经启动以及实施进度。","value":"未完成","supported":true},
+    {"id":"other-matter-completed","evidence":"上一项房产问题已完成整改。本项资金未上缴问题尚未启动整改。","value":"已完成","supported":false},
+    {"id":"measures-done-problem-persists","evidence":"本项已完成制度修订和培训两项措施，但违规占用资金仍未归还。","value":"已完成","supported":false},
+    {"id":"explicit-ongoing","evidence":"本项资金占用整改正在持续推进，正在办理款项追索手续。","value":"进行中","supported":true}
+  ]
+}

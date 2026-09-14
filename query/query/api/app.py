@@ -17,6 +17,7 @@ from query.api import (
     routes_export,
     routes_messages,
     routes_misc,
+    routes_supervision,
 )
 from query.api.errors import install_error_handlers
 
@@ -41,6 +42,7 @@ def create_app(service=None) -> FastAPI:
     app.include_router(routes_export.router, prefix=_API_PREFIX)
     # 边界二(audit-biz → audit-ai):无状态 /v1/query,独立于前端向 /api/query/v1/*(无前缀)
     app.include_router(routes_boundary.router)
+    app.include_router(routes_supervision.router)
     return app
 
 

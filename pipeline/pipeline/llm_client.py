@@ -112,7 +112,9 @@ class LLMClient:
             raise LLMError(f"LLM 流式调用失败: {e}") from e
 
 
-def make_llm_client(model: str | None = None) -> LLMClient:
+def make_llm_client(
+    model: str | None = None, *, timeout: float = 60.0, retries: int = 3
+) -> LLMClient:
     """从 env 构造;``OPENAI_API_KEY`` 缺失即抛(LLM 默认关,启用时须经 env 提供 key)。"""
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
@@ -121,4 +123,6 @@ def make_llm_client(model: str | None = None) -> LLMClient:
         api_key=key,
         base_url=os.environ.get("OPENAI_BASE_URL", DEFAULT_BASE_URL),
         model=model or os.environ.get("OPENAI_MODEL", DEFAULT_MODEL),
+        timeout=timeout,
+        retries=retries,
     )
